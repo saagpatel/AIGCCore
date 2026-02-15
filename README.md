@@ -82,11 +82,11 @@ Phase 2 focuses on the “hard guarantees”:
 
 ## Where to look next (in this repo)
 If you are implementing or reviewing the system, start here:
-- **Codex_One_Shot_Driver_Prompt_v2.md** (implementation driver)
 - **Phase_2_5_Lock_Addendum_v2.5-lock-4.md** (non-negotiable locks)
 - **Annex_A_Evidence_Bundle_v1_Spec.md** (locked bundle contract)
 - **Annex_B_Adapter_Interface_v1_Spec.md** (locked adapter contract)
 - **Bundle_Validator_Checklist_v3.md** (what “valid” means)
+- **docs/spec-compliance-map.md** (requirement-to-implementation traceability)
 
 ## Non-negotiables (summary)
 - Offline-by-default; online is opt-in + allowlisted
