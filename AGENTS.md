@@ -27,3 +27,37 @@ Source of truth for scripts is `/Users/d/Projects/AIGCCore/package.json`.
 - Determinism mode must follow Addendum A + ZIP hardening rules.
 - Audit trail must be canonicalized and hash-chained per lock addendum and taxonomy.
 
+
+## Codex Reliability Contract
+
+### Canonical Verification Commands (Source of Truth)
+Source: `.codex/verify.commands` (derived from `AGENTS.md` and `package.json`)
+- lint: `pnpm lint`
+- format-check: `N/A (no standalone formatter check defined in AGENTS/CI)`
+- typecheck: `N/A (no standalone typecheck command defined in AGENTS/CI)`
+- unit-test: `pnpm test`; `cargo test --workspace`
+- integration-test: `pnpm gate:all`
+- build: `N/A (desktop packaging build is non-blocking for codex verify gates)`
+
+### Definition of Done
+- All commands in `.codex/verify.commands` pass via `.codex/scripts/run_verify_commands.sh`.
+- No open `critical` or `high` `ReviewFindingV1` findings.
+- Diff scope matches approved task scope.
+- Security checks (secrets, dependency, and SAST) are clean or explicitly waived with owner + expiry.
+
+### Agent Contract
+- Reviewer agent: read-only and emits only `ReviewFindingV1` findings.
+- Fixer agent: applies accepted findings in severity order and reports exact file patches + verification.
+- Final verifier: re-runs `.codex/scripts/run_verify_commands.sh` and summarizes `GateReportV1`.
+
+## UI Hard Gates (Required for frontend/UI changes)
+
+1) Read-only reviewer outputs `UIFindingV1[]` (`/Users/d/.codex/contracts/UIFindingV1.schema.json`).
+2) Fixer applies accepted findings in severity order: `P0 -> P1 -> P2 -> P3`.
+3) Required state coverage per changed UI surface: loading, empty, error, success, disabled, focus-visible.
+4) Required pre-done gates:
+   - `pnpm lint`
+   - `pnpm test`
+   - `pnpm gate:all`
+   - `pnpm build`
+5) Done-state is blocked if any required UI gate is `fail` or `not-run`.

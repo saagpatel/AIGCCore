@@ -1,0 +1,5 @@
+# Source: AGENTS.md, package.json
+pnpm lint
+pnpm test
+cargo test --workspace
+pnpm gate:all
