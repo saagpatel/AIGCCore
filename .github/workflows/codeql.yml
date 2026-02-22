@@ -12,12 +12,9 @@
 name: "CodeQL Advanced"
 
 on:
-  push:
-    branches: [ "master" ]
-  pull_request:
-    branches: [ "master" ]
-  schedule:
-    - cron: '26 14 * * 4'
+  # Keep advanced workflow manual-only while GitHub default setup is enabled.
+  # Running both simultaneously causes SARIF upload rejection.
+  workflow_dispatch:
 
 jobs:
   analyze:

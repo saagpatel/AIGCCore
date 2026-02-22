@@ -4,6 +4,15 @@ import { FinanceOSPanel } from "./packs/FinanceOSPanel";
 import { HealthcareOSPanel } from "./packs/HealthcareOSPanel";
 import { IncidentOSPanel } from "./packs/IncidentOSPanel";
 import { RedlineOSPanel } from "./packs/RedlineOSPanel";
+import {
+  SAMPLE_FINANCE_STATEMENT,
+  SAMPLE_HEALTHCARE_CONSENT,
+  SAMPLE_HEALTHCARE_TRANSCRIPT,
+  SAMPLE_INCIDENT_LOG,
+  buildFinanceCommandInputFromStatement,
+  buildHealthcareCommandInput,
+  buildIncidentCommandInput,
+} from "./packs/samplePayloads";
 import type { PackCommandStatus } from "./packs/types";
 
 type NetworkSnapshot = {
@@ -48,19 +57,23 @@ export function App() {
   const [selectedCapability, setSelectedCapability] = useState("ALL");
   const [artifactTitle, setArtifactTitle] = useState("Network policy evidence");
   const [artifactBody, setArtifactBody] = useState(
-    "Audit log excerpt proving offline mode and blocked egress."
+    "Audit log excerpt proving offline mode and blocked egress.",
   );
   const [artifactTags, setArtifactTags] = useState("OPS,NETWORK");
   const [controlFamilies, setControlFamilies] = useState(
-    "Auditability,NetworkGovernance,Traceability"
+    "Auditability,NetworkGovernance,Traceability",
   );
   const [claimText, setClaimText] = useState(
-    "The run stayed offline and blocked non-allowlisted egress requests."
+    "The run stayed offline and blocked non-allowlisted egress requests.",
   );
 
   const [futurePackRunning, setFuturePackRunning] = useState<string | null>(null);
   const [futurePackResult, setFuturePackResult] = useState<Record<string, PackCommandStatus>>({});
   const [futurePackError, setFuturePackError] = useState<Record<string, string>>({});
+  const [incidentPayload, setIncidentPayload] = useState("");
+  const [financePayload, setFinancePayload] = useState("");
+  const [healthcareTranscriptPayload, setHealthcareTranscriptPayload] = useState("");
+  const [healthcareConsentPayload, setHealthcareConsentPayload] = useState("");
 
   const status = useMemo(() => {
     if (!snap) return "Loading…";
@@ -81,7 +94,7 @@ export function App() {
         setSnap({
           network_mode: "OFFLINE",
           proof_level: "OFFLINE_STRICT",
-          ui_remote_fetch_disabled: true
+          ui_remote_fetch_disabled: true,
         });
       }
 
@@ -104,18 +117,16 @@ export function App() {
     setRunError(null);
     try {
       const payload: EvidenceOsRunInput = {
-        enabled_capabilities:
-          selectedCapability === "ALL" ? [] : [selectedCapability],
+        enabled_capabilities: selectedCapability === "ALL" ? [] : [selectedCapability],
         artifact_title: artifactTitle,
         artifact_body: artifactBody,
         artifact_tags_csv: artifactTags,
         control_families_csv: controlFamilies,
-        claim_text: claimText
+        claim_text: claimText,
       };
-      const result = await invoke<EvidenceOsRunResult>(
-        "generate_evidenceos_bundle",
-        { input: payload }
-      );
+      const result = await invoke<EvidenceOsRunResult>("generate_evidenceos_bundle", {
+        input: payload,
+      });
       setRunResult(result);
     } catch (error) {
       setRunError(String(error));
@@ -130,10 +141,23 @@ export function App() {
     setFuturePackError((prev) => ({ ...prev, [command]: "" }));
     try {
       const result = await invoke<PackCommandStatus>(command, { input });
+      if (result.status !== "SUCCESS") {
+        const errorLabel = result.error_code
+          ? `${result.message} (${result.error_code})`
+          : result.message;
+        setFuturePackError((prev) => ({ ...prev, [command]: errorLabel }));
+      }
       setFuturePackResult((prev) => ({ ...prev, [command]: result }));
     } catch (error) {
       setFuturePackError((prev) => ({ ...prev, [command]: String(error) }));
-      setFuturePackResult((prev) => ({ ...prev, [command]: { status: "FAILED", message: String(error) } }));
+      setFuturePackResult((prev) => ({
+        ...prev,
+        [command]: {
+          status: "FAILED",
+          message: String(error),
+          error_code: "INVOKE_RUNTIME_ERROR",
+        },
+      }));
     } finally {
       setFuturePackRunning(null);
     }
@@ -142,7 +166,7 @@ export function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <div className="brand">AIGC Core</div>
+        <h1 className="brand">AIGC Core</h1>
         <div className="badge" data-mode={snap?.network_mode ?? "UNKNOWN"}>
           Network: <strong>{status}</strong>
         </div>
@@ -162,7 +186,8 @@ export function App() {
         <section className="card">
           <h2>Phase 3 EvidenceOS Pack</h2>
           <p>
-            Capability-based control mapping and strict-citation narrative export through the Core export pipeline.
+            Capability-based control mapping and strict-citation narrative export through the Core
+            export pipeline.
           </p>
           <div className="row">
             <label htmlFor="capability-filter">Capability</label>
@@ -255,42 +280,39 @@ export function App() {
           running={futurePackRunning === "run_incidentos"}
           result={futurePackResult.run_incidentos ?? null}
           error={futurePackError.run_incidentos ?? null}
-          onRun={() =>
-            runFuturePack("run_incidentos", {
-              schema_version: "INCIDENTOS_INPUT_V1",
-              incident_artifacts: [{ artifact_id: "i_demo", sha256: "demo", source_type: "syslog" }],
-              timeline_start_hint: null,
-              timeline_end_hint: null,
-              customer_redaction_profile: "strict"
-            })
-          }
+          payloadText={incidentPayload}
+          onPayloadChange={setIncidentPayload}
+          onLoadSample={() => setIncidentPayload(SAMPLE_INCIDENT_LOG)}
+          onRun={() => runFuturePack("run_incidentos", buildIncidentCommandInput(incidentPayload))}
         />
         <FinanceOSPanel
           running={futurePackRunning === "run_financeos"}
           result={futurePackResult.run_financeos ?? null}
           error={futurePackError.run_financeos ?? null}
+          payloadText={financePayload}
+          onPayloadChange={setFinancePayload}
+          onLoadSample={() => setFinancePayload(SAMPLE_FINANCE_STATEMENT)}
           onRun={() =>
-            runFuturePack("run_financeos", {
-              schema_version: "FINANCEOS_INPUT_V1",
-              finance_artifacts: [{ artifact_id: "f_demo", sha256: "demo", artifact_kind: "invoice" }],
-              period: "2026-01",
-              exception_rules_profile: "default",
-              retention_profile: "ret_min"
-            })
+            runFuturePack("run_financeos", buildFinanceCommandInputFromStatement(financePayload))
           }
         />
         <HealthcareOSPanel
           running={futurePackRunning === "run_healthcareos"}
           result={futurePackResult.run_healthcareos ?? null}
           error={futurePackError.run_healthcareos ?? null}
+          transcriptText={healthcareTranscriptPayload}
+          consentText={healthcareConsentPayload}
+          onTranscriptChange={setHealthcareTranscriptPayload}
+          onConsentChange={setHealthcareConsentPayload}
+          onLoadSample={() => {
+            setHealthcareTranscriptPayload(SAMPLE_HEALTHCARE_TRANSCRIPT);
+            setHealthcareConsentPayload(SAMPLE_HEALTHCARE_CONSENT);
+          }}
           onRun={() =>
-            runFuturePack("run_healthcareos", {
-              schema_version: "HEALTHCAREOS_INPUT_V1",
-              consent_artifacts: [{ artifact_id: "c_demo", sha256: "demo", artifact_kind: "consent" }],
-              transcript_artifacts: [{ artifact_id: "t_demo", sha256: "demo", artifact_kind: "transcript" }],
-              draft_template_profile: "soap",
-              verifier_identity: "clinician_1"
-            })
+            runFuturePack(
+              "run_healthcareos",
+              buildHealthcareCommandInput(healthcareTranscriptPayload, healthcareConsentPayload),
+            )
           }
         />
       </main>

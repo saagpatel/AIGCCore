@@ -10,8 +10,10 @@
     "dev": "tauri dev",
     "build": "tauri build",
     "lint": "eslint .",
-    "test": "vitest run",
-    "gate:all": "node tools/gates/run-all.mjs"
+    "test": "pnpm test:unit",
+    "gate:all": "node tools/gates/run-all.mjs",
+    "test:unit": "vitest run --config vitest.config.ts",
+    "test:unit:coverage": "vitest run --config vitest.config.ts --coverage"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",
@@ -21,12 +23,15 @@
   "devDependencies": {
     "@eslint/js": "^9.39.2",
     "@tauri-apps/cli": "^2.0.0",
+    "@testing-library/react": "^16.3.2",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@typescript-eslint/eslint-plugin": "^8.55.0",
     "@typescript-eslint/parser": "^8.55.0",
     "@vitejs/plugin-react": "^4.3.2",
+    "@vitest/coverage-v8": "^2.1.9",
     "eslint": "^9.9.0",
+    "jsdom": "^28.1.0",
     "typescript": "^5.6.2",
     "vite": "^5.4.6",
     "vitest": "^2.0.5"

@@ -17,7 +17,7 @@ export default [
     },
   },
   {
-    files: ["tools/**/*.mjs"],
+    files: ["tools/**/*.mjs", "scripts/**/*.mjs"],
     languageOptions: {
       globals: {
         console: "readonly",
@@ -40,6 +40,7 @@ export default [
     },
     rules: {
       "no-unused-vars": "off",
+      "no-undef": "off",
       "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
     },
   },

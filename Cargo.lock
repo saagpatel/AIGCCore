@@ -81,6 +81,7 @@ name = "aigc_core_tauri"
 version = "0.0.0"
 dependencies = [
  "aigc_core",
+ "base64 0.22.1",
  "serde",
  "serde_json",
  "tauri",

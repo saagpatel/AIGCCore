@@ -1,9 +1,393 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "API Contract",
-    "version": "1.0.0"
+    "title": "AIGC Core Local Command Contract",
+    "version": "0.1.0",
+    "description": "Documentation contract for local Tauri command invocations."
   },
-  "paths": {},
-  "components": {}
+  "paths": {
+    "/commands/run_redlineos": {
+      "post": {
+        "summary": "Run RedlineOS and export a bundle",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RedlineCommandInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Pack command result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PackCommandStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/commands/run_incidentos": {
+      "post": {
+        "summary": "Run IncidentOS and export a bundle",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IncidentCommandInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Pack command result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PackCommandStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/commands/run_financeos": {
+      "post": {
+        "summary": "Run FinanceOS and export a bundle",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FinanceCommandInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Pack command result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PackCommandStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/commands/run_healthcareos": {
+      "post": {
+        "summary": "Run HealthcareOS and export a bundle",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HealthcareCommandInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Pack command result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PackCommandStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ArtifactPayloadInput": {
+        "type": "object",
+        "required": ["artifact_id"],
+        "properties": {
+          "artifact_id": {
+            "type": "string",
+            "description": "Artifact identifier that must match one declared artifact reference."
+          },
+          "content_text": {
+            "type": "string",
+            "description": "Text payload content. Use for JSON/NDJSON/text artifacts."
+          },
+          "content_base64": {
+            "type": "string",
+            "description": "Base64 payload content. Required for binary artifacts."
+          }
+        }
+      },
+      "PackCommandStatus": {
+        "type": "object",
+        "required": ["status", "message"],
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "bundle_path": {
+            "type": ["string", "null"]
+          },
+          "bundle_sha256": {
+            "type": ["string", "null"]
+          },
+          "error_code": {
+            "type": ["string", "null"],
+            "description": "Machine-readable runtime code (for example ARTIFACT_SHA256_MISMATCH, ARTIFACT_PAYLOAD_TOO_LARGE, REDLINE_ARTIFACT_NOT_PDF)."
+          },
+          "run_id": {
+            "type": ["string", "null"]
+          },
+          "audit_path": {
+            "type": ["string", "null"]
+          }
+        },
+        "examples": [
+          {
+            "status": "BLOCKED",
+            "message": "Declared sha256 does not match payload bytes for artifact_id=incident_001",
+            "error_code": "ARTIFACT_SHA256_MISMATCH"
+          },
+          {
+            "status": "BLOCKED",
+            "message": "Payload for artifact_id=incident_001 exceeds size limit (5242881 > 5242880 bytes)",
+            "error_code": "ARTIFACT_PAYLOAD_TOO_LARGE"
+          },
+          {
+            "status": "BLOCKED",
+            "message": "Artifact payload for contract_001 is not a valid PDF-like payload",
+            "error_code": "REDLINE_ARTIFACT_NOT_PDF"
+          }
+        ]
+      },
+      "RedlineCommandInput": {
+        "type": "object",
+        "required": [
+          "schema_version",
+          "contract_artifacts",
+          "extraction_mode",
+          "review_profile",
+          "artifact_payloads"
+        ],
+        "properties": {
+          "schema_version": {
+            "type": "string"
+          },
+          "contract_artifacts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["artifact_id", "sha256", "filename"],
+              "properties": {
+                "artifact_id": {
+                  "type": "string"
+                },
+                "sha256": {
+                  "type": "string"
+                },
+                "filename": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "extraction_mode": {
+            "type": "string"
+          },
+          "jurisdiction_hint": {
+            "type": ["string", "null"]
+          },
+          "review_profile": {
+            "type": "string"
+          },
+          "artifact_payloads": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ArtifactPayloadInput"
+            }
+          }
+        }
+      },
+      "IncidentCommandInput": {
+        "type": "object",
+        "required": [
+          "schema_version",
+          "incident_artifacts",
+          "customer_redaction_profile",
+          "artifact_payloads"
+        ],
+        "properties": {
+          "schema_version": {
+            "type": "string"
+          },
+          "incident_artifacts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["artifact_id", "sha256", "source_type"],
+              "properties": {
+                "artifact_id": {
+                  "type": "string"
+                },
+                "sha256": {
+                  "type": "string"
+                },
+                "source_type": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "timeline_start_hint": {
+            "type": ["string", "null"]
+          },
+          "timeline_end_hint": {
+            "type": ["string", "null"]
+          },
+          "customer_redaction_profile": {
+            "type": "string"
+          },
+          "artifact_payloads": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ArtifactPayloadInput"
+            }
+          }
+        }
+      },
+      "FinanceCommandInput": {
+        "type": "object",
+        "required": [
+          "schema_version",
+          "finance_artifacts",
+          "period",
+          "exception_rules_profile",
+          "retention_profile",
+          "artifact_payloads"
+        ],
+        "properties": {
+          "schema_version": {
+            "type": "string"
+          },
+          "finance_artifacts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["artifact_id", "sha256", "artifact_kind"],
+              "properties": {
+                "artifact_id": {
+                  "type": "string"
+                },
+                "sha256": {
+                  "type": "string"
+                },
+                "artifact_kind": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "period": {
+            "type": "string"
+          },
+          "exception_rules_profile": {
+            "type": "string"
+          },
+          "retention_profile": {
+            "type": "string"
+          },
+          "artifact_payloads": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ArtifactPayloadInput"
+            }
+          }
+        }
+      },
+      "HealthcareCommandInput": {
+        "type": "object",
+        "required": [
+          "schema_version",
+          "consent_artifacts",
+          "transcript_artifacts",
+          "draft_template_profile",
+          "verifier_identity",
+          "artifact_payloads"
+        ],
+        "properties": {
+          "schema_version": {
+            "type": "string"
+          },
+          "consent_artifacts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["artifact_id", "sha256", "artifact_kind"],
+              "properties": {
+                "artifact_id": {
+                  "type": "string"
+                },
+                "sha256": {
+                  "type": "string"
+                },
+                "artifact_kind": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "transcript_artifacts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["artifact_id", "sha256", "artifact_kind"],
+              "properties": {
+                "artifact_id": {
+                  "type": "string"
+                },
+                "sha256": {
+                  "type": "string"
+                },
+                "artifact_kind": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "draft_template_profile": {
+            "type": "string"
+          },
+          "verifier_identity": {
+            "type": "string"
+          },
+          "artifact_payloads": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ArtifactPayloadInput"
+            }
+          }
+        }
+      }
+    }
+  }
 }
