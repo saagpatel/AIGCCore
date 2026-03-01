@@ -1,6 +1,7 @@
 use crate::error::{CoreError, CoreResult};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
+#[cfg(target_os = "macos")]
 use std::process::Command;
 
 #[allow(non_camel_case_types)]
@@ -140,28 +141,28 @@ fn windows_get_or_create_kek_dpapi(vault_id: &str, path: &std::path::Path) -> Co
 
 #[cfg(target_os = "windows")]
 fn dpapi_protect(bytes: &[u8], entropy_label: &str) -> CoreResult<Vec<u8>> {
-    use windows_sys::Win32::Security::Cryptography::{CryptProtectData, DATA_BLOB};
-    use windows_sys::Win32::System::Memory::LocalFree;
+    use windows_sys::Win32::Foundation::LocalFree;
+    use windows_sys::Win32::Security::Cryptography::{CRYPT_INTEGER_BLOB, CryptProtectData};
 
-    let mut in_blob = DATA_BLOB {
+    let in_blob = CRYPT_INTEGER_BLOB {
         cbData: bytes.len() as u32,
         pbData: bytes.as_ptr() as *mut u8,
     };
     let mut entropy = entropy_label.as_bytes().to_vec();
-    let mut entropy_blob = DATA_BLOB {
+    let entropy_blob = CRYPT_INTEGER_BLOB {
         cbData: entropy.len() as u32,
         pbData: entropy.as_mut_ptr(),
     };
-    let mut out_blob = DATA_BLOB {
+    let mut out_blob = CRYPT_INTEGER_BLOB {
         cbData: 0,
         pbData: std::ptr::null_mut(),
     };
 
     let ok = unsafe {
         CryptProtectData(
-            &mut in_blob,
+            &in_blob,
             std::ptr::null(),
-            &mut entropy_blob,
+            &entropy_blob,
             std::ptr::null_mut(),
             std::ptr::null_mut(),
             0,
@@ -176,36 +177,36 @@ fn dpapi_protect(bytes: &[u8], entropy_label: &str) -> CoreResult<Vec<u8>> {
     let out =
         unsafe { std::slice::from_raw_parts(out_blob.pbData, out_blob.cbData as usize) }.to_vec();
     unsafe {
-        LocalFree(out_blob.pbData as isize);
+        LocalFree(out_blob.pbData as *mut core::ffi::c_void);
     }
     Ok(out)
 }
 
 #[cfg(target_os = "windows")]
 fn dpapi_unprotect(bytes: &[u8], entropy_label: &str) -> CoreResult<Vec<u8>> {
-    use windows_sys::Win32::Security::Cryptography::{CryptUnprotectData, DATA_BLOB};
-    use windows_sys::Win32::System::Memory::LocalFree;
+    use windows_sys::Win32::Foundation::LocalFree;
+    use windows_sys::Win32::Security::Cryptography::{CRYPT_INTEGER_BLOB, CryptUnprotectData};
 
     let mut input = bytes.to_vec();
-    let mut in_blob = DATA_BLOB {
+    let in_blob = CRYPT_INTEGER_BLOB {
         cbData: input.len() as u32,
         pbData: input.as_mut_ptr(),
     };
     let mut entropy = entropy_label.as_bytes().to_vec();
-    let mut entropy_blob = DATA_BLOB {
+    let entropy_blob = CRYPT_INTEGER_BLOB {
         cbData: entropy.len() as u32,
         pbData: entropy.as_mut_ptr(),
     };
-    let mut out_blob = DATA_BLOB {
+    let mut out_blob = CRYPT_INTEGER_BLOB {
         cbData: 0,
         pbData: std::ptr::null_mut(),
     };
 
     let ok = unsafe {
         CryptUnprotectData(
-            &mut in_blob,
+            &in_blob,
             std::ptr::null_mut(),
-            &mut entropy_blob,
+            &entropy_blob,
             std::ptr::null_mut(),
             std::ptr::null_mut(),
             0,
@@ -220,7 +221,7 @@ fn dpapi_unprotect(bytes: &[u8], entropy_label: &str) -> CoreResult<Vec<u8>> {
     let out =
         unsafe { std::slice::from_raw_parts(out_blob.pbData, out_blob.cbData as usize) }.to_vec();
     unsafe {
-        LocalFree(out_blob.pbData as isize);
+        LocalFree(out_blob.pbData as *mut core::ffi::c_void);
     }
     Ok(out)
 }
