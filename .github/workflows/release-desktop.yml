@@ -134,7 +134,14 @@ jobs:
         if: runner.os != 'Windows'
         shell: bash
         run: |
-          find "${BUNDLE_DIR}" -type f -print0 | xargs -0 shasum -a 256 > "${BUNDLE_DIR}/SHA256SUMS.txt"
+          CHECKSUM_FILE="${BUNDLE_DIR}/SHA256SUMS.txt"
+          TMP_CHECKSUM_FILE="$(mktemp)"
+
+          # Avoid self-hashing the checksum file by writing to a temp file first.
+          find "${BUNDLE_DIR}" -type f ! -name 'SHA256SUMS.txt' -print0 |
+            xargs -0 shasum -a 256 > "${TMP_CHECKSUM_FILE}"
+
+          mv "${TMP_CHECKSUM_FILE}" "${CHECKSUM_FILE}"
 
       - name: Generate SHA-256 checksums (windows)
         if: runner.os == 'Windows'
