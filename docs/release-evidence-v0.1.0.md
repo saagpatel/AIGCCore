@@ -7,7 +7,7 @@ Status: Final
 
 - Target version: `0.1.0`
 - Release artifact baseline SHA: `9f6bcb6a91513afe4dc1d397424fe1d49a617229`
-- Latest master governance/hardening SHA: `1f30d2bcda8de71b16634d6f63c582af80b95a6d`
+- Latest master governance/hardening SHA: `85538d2155ef528444b52e6f47493eb25b39e929`
 - Tag: `v0.1.0-week1-stable` (`c77d6c289ccd8f5908c8696748f2cf4b9e8e7952`)
 
 ## Release Workflow Evidence
@@ -39,11 +39,11 @@ Checksum manifest sanity:
 
 ## CI / Security Snapshot (Latest Master)
 
-For SHA `1f30d2bcda8de71b16634d6f63c582af80b95a6d`:
+For SHA `85538d2155ef528444b52e6f47493eb25b39e929`:
 
-- `quality-gates`: success (`https://github.com/saagar210/AIGCCore/actions/runs/22545500268`)
-- `codex-quality-security`: success (`https://github.com/saagar210/AIGCCore/actions/runs/22545500277`)
-- `CodeQL` (default setup): success (`https://github.com/saagar210/AIGCCore/actions/runs/22545500145`)
+- `quality-gates`: success (`https://github.com/saagar210/AIGCCore/actions/runs/22546565404`)
+- `codex-quality-security`: success (`https://github.com/saagar210/AIGCCore/actions/runs/22546565410`)
+- `CodeQL` (default setup): success (`https://github.com/saagar210/AIGCCore/actions/runs/22546565247`)
 - `ui-quality` (latest PR lane): success (`https://github.com/saagar210/AIGCCore/actions/runs/22545349089`)
 
 ## Hardening Fixes Applied During Release Burn-Down
@@ -56,7 +56,7 @@ For SHA `1f30d2bcda8de71b16634d6f63c582af80b95a6d`:
 - PR #28 (`20a8f1b...`): Phase 4/5 runtime and governance closeout merged
 - PR #29 (`db86d52...`): fixed TruffleHog duplicate fail-flag regression on `master`
 - PR #30 (`1f30d2b...`): final closeout of dependency backlog, docs evidence sync, and policy re-tightening verification
-- PR #33 (`pending merge`): Windows release ceremony remediations
+- PR #33 (`85538d2...`, merged): Windows release ceremony remediations
   - add `.ico` icon mapping in Tauri bundle config
   - exclude `SHA256SUMS.txt` self-hash race in Windows checksum step
 

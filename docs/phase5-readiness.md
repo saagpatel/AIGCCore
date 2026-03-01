@@ -53,11 +53,11 @@ Implemented in repository:
   - PR `#29`: `https://github.com/saagar210/AIGCCore/pull/29`
   - PR `#30`: `https://github.com/saagar210/AIGCCore/pull/30`
   - PR `#33`: `https://github.com/saagar210/AIGCCore/pull/33`
-  - latest merge commit: `1f30d2bcda8de71b16634d6f63c582af80b95a6d`
+  - latest merge commit: `85538d2155ef528444b52e6f47493eb25b39e929`
 - CI evidence on latest merge commit:
-  - `quality-gates`: `https://github.com/saagar210/AIGCCore/actions/runs/22545500268` (`success`)
-  - `codex-quality-security`: `https://github.com/saagar210/AIGCCore/actions/runs/22545500277` (`success`)
-  - `CodeQL` (default setup): `https://github.com/saagar210/AIGCCore/actions/runs/22545500145` (`success`)
+  - `quality-gates`: `https://github.com/saagar210/AIGCCore/actions/runs/22546565404` (`success`)
+  - `codex-quality-security`: `https://github.com/saagar210/AIGCCore/actions/runs/22546565410` (`success`)
+  - `CodeQL` (default setup): `https://github.com/saagar210/AIGCCore/actions/runs/22546565247` (`success`)
   - `ui-quality` (latest PR lane): `https://github.com/saagar210/AIGCCore/actions/runs/22545349089` (`success`)
 - Release workflow URL:
   - `https://github.com/saagar210/AIGCCore/actions/runs/22538435713` (`success`)
@@ -69,8 +69,8 @@ Implemented in repository:
 
 ## Remaining Docket Before Phase 6
 
-1. Non-blocking follow-up: complete runtime stack migration planning for `glib` advisory (`https://github.com/saagar210/AIGCCore/issues/31`, target decision date 2026-04-15).
-2. Non-blocking follow-up: add a second write-capable reviewer and CODEOWNERS backup coverage (`https://github.com/saagar210/AIGCCore/issues/32`, target completion date 2026-03-15).
+1. Non-blocking follow-up: execute runtime stack uplift for `glib` advisory plan (`https://github.com/saagar210/AIGCCore/issues/31`, migration plan in `docs/glib-migration-plan.md`, target decision date 2026-04-15).
+2. Non-blocking follow-up: finalize second write-capable reviewer acceptance and coverage (`https://github.com/saagar210/AIGCCore/issues/32`, CODEOWNERS + runbook updated; invite state captured in `docs/reviewer-capacity-status.md`).
 
 ## Additional Closeout Notes
 

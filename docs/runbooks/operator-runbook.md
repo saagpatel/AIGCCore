@@ -143,6 +143,23 @@ If role assignment is not staffed, treat owner as `Unknown` and escalate directl
 - Branch protection or merge-policy override: Repo admin.
 - Stakeholder notification: PM owner.
 
+## Reviewer Escalation Coverage
+
+Primary reviewer capacity:
+
+- `@saagar210` (write/admin)
+
+Backup reviewer capacity:
+
+- `@gemini-code-assist` (write invite created 2026-03-01, invitation id `309160608`, pending acceptance)
+- `@claude` (write invite created 2026-03-01, invitation id `309160557`, pending acceptance)
+
+Escalation sequence for blocked approval windows:
+
+1. Request review from primary owner.
+2. Request review from invited backup reviewer(s).
+3. If no write-capable backup has accepted by release cutoff, escalate to repo admin for staffing action and do not rely on policy relaxation as default operating mode.
+
 ## Drill Reference
 
 - Latest backup-owner execution drill:

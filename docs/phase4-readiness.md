@@ -36,7 +36,7 @@ Status: Complete
 
 ## External Closeout Status (Final)
 
-- Latest merge SHA (`origin/master`): `1f30d2bcda8de71b16634d6f63c582af80b95a6d`
+- Latest merge SHA (`origin/master`): `85538d2155ef528444b52e6f47493eb25b39e929`
 - Release workflow run URL: `https://github.com/saagar210/AIGCCore/actions/runs/22538435713` (`success`)
 - Latest release ceremony run URL: `https://github.com/saagar210/AIGCCore/actions/runs/22546166401` (`success`)
 - Release object URL: `https://github.com/saagar210/AIGCCore/releases/tag/v0.1.0-week1-stable`
@@ -45,9 +45,9 @@ Status: Complete
   - Windows: success
   - macOS: success
 - Latest master CI:
-  - `quality-gates`: `https://github.com/saagar210/AIGCCore/actions/runs/22545500268` (`success`)
-  - `codex-quality-security`: `https://github.com/saagar210/AIGCCore/actions/runs/22545500277` (`success`)
-  - `CodeQL`: `https://github.com/saagar210/AIGCCore/actions/runs/22545500145` (`success`)
+  - `quality-gates`: `https://github.com/saagar210/AIGCCore/actions/runs/22546565404` (`success`)
+  - `codex-quality-security`: `https://github.com/saagar210/AIGCCore/actions/runs/22546565410` (`success`)
+  - `CodeQL`: `https://github.com/saagar210/AIGCCore/actions/runs/22546565247` (`success`)
 - Published artifact checksums: `Published`
   - `de54be075544f52bb89068e75f7012e95c84bca21b06be8a0f748c2642f6b7d7` (`AIGC Core_0.1.0_x64-setup.exe`)
   - `d86963068555fce3fa647dfa00ab5420af344dd9ba54734afe1e267bede730cb` (`AIGC Core_0.1.0_x64_en-US.msi`)

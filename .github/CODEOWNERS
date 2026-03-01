@@ -1,18 +1,18 @@
 # Default ownership
-* @saagar210
+* @saagar210 @gemini-code-assist
 
 # Security-critical runtime and policy paths
-/core/src/audit/ @saagar210
-/core/src/policy/ @saagar210
-/core/src/run/ @saagar210
-/core/src/storage/ @saagar210
-/src-tauri/src/main.rs @saagar210
-/tools/gates/ @saagar210
+/core/src/audit/ @saagar210 @gemini-code-assist
+/core/src/policy/ @saagar210 @gemini-code-assist
+/core/src/run/ @saagar210 @gemini-code-assist
+/core/src/storage/ @saagar210 @gemini-code-assist
+/src-tauri/src/main.rs @saagar210 @gemini-code-assist
+/tools/gates/ @saagar210 @gemini-code-assist
 
 # CI and release controls
-/.github/workflows/ @saagar210
+/.github/workflows/ @saagar210 @gemini-code-assist
 
 # Governance and runbooks
-/docs/adr/ @saagar210
-/docs/runbooks/ @saagar210
-/docs/command-surface.md @saagar210
+/docs/adr/ @saagar210 @gemini-code-assist
+/docs/runbooks/ @saagar210 @gemini-code-assist
+/docs/command-surface.md @saagar210 @gemini-code-assist
