@@ -69,7 +69,7 @@ Implemented in repository:
 
 ## Remaining Docket Before Phase 6
 
-1. Non-blocking follow-up: execute runtime stack uplift for `glib` advisory plan (`https://github.com/saagar210/AIGCCore/issues/31`, migration plan in `docs/glib-migration-plan.md`, target decision date 2026-04-15).
+1. Follow-up remains open: runtime stack uplift for `glib` advisory (`https://github.com/saagar210/AIGCCore/issues/31`), with execution attempt/blocker evidence in `docs/glib-remediation-execution-2026-03-01.md`.
 2. Non-blocking follow-up: finalize second write-capable reviewer acceptance and coverage (`https://github.com/saagar210/AIGCCore/issues/32`, CODEOWNERS + runbook updated; invite state captured in `docs/reviewer-capacity-status.md`).
 
 ## Additional Closeout Notes

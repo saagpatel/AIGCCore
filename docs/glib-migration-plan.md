@@ -9,6 +9,12 @@ Target decision date: 2026-04-15
 
 Produce a tested migration path that removes the current `glib` advisory exposure by moving the Linux runtime dependency chain off `glib 0.18.x`.
 
+## Execution Status
+
+- Execution attempt performed on 2026-03-01.
+- Result: blocked by upstream stack constraints in current Tauri 2.x Linux dependency chain.
+- Evidence: `docs/glib-remediation-execution-2026-03-01.md`.
+
 ## Baseline Evidence
 
 Current dependency chain (captured 2026-03-01):
