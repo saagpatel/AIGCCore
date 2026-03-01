@@ -140,10 +140,17 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          Get-ChildItem -Path $env:BUNDLE_DIR -File -Recurse |
+          $bundleDir = (Resolve-Path $env:BUNDLE_DIR).Path
+          $checksumFile = Join-Path $bundleDir "SHA256SUMS.txt"
+          $tmpChecksumFile = Join-Path $env:RUNNER_TEMP "SHA256SUMS.txt"
+
+          Get-ChildItem -Path $bundleDir -File -Recurse |
+            Where-Object { $_.FullName -ne $checksumFile } |
             Get-FileHash -Algorithm SHA256 |
             ForEach-Object { "$($_.Hash.ToLower())  $($_.Path)" } |
-            Out-File -Encoding utf8 "$env:BUNDLE_DIR/SHA256SUMS.txt"
+            Out-File -Encoding utf8 $tmpChecksumFile
+
+          Move-Item -Path $tmpChecksumFile -Destination $checksumFile -Force
 
       - name: Upload release bundle
         uses: actions/upload-artifact@v4
