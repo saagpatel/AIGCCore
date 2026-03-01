@@ -9,15 +9,15 @@
 # the `language` matrix defined below to confirm you have the correct set of
 # supported CodeQL languages.
 #
-name: "CodeQL Advanced"
+name: "CodeQL Advanced (manual)"
 
 on:
-  push:
-    branches: [ "master" ]
-  pull_request:
-    branches: [ "master" ]
-  schedule:
-    - cron: '26 14 * * 4'
+  # NOTE:
+  # GitHub default CodeQL is currently enabled for this repository.
+  # Running an advanced CodeQL workflow concurrently causes SARIF
+  # processing failures ("advanced configurations ... when default setup is enabled").
+  # Keep this workflow manual unless default setup is explicitly disabled.
+  workflow_dispatch:
 
 jobs:
   analyze:
