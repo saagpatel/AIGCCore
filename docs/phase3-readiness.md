@@ -1,6 +1,6 @@
 # Phase 3 Readiness Report
 
-Date: 2026-02-22
+Date: 2026-03-01
 
 ## Status
 
@@ -24,6 +24,9 @@ Implemented and verified locally:
 
 ## External Evidence Status
 
-- Merge SHA baseline (`origin/master`): `a5ddca1f9887892e39fe62db3e6b978ee2c17b4e`
-- CI URLs on merge SHA: `Unknown`
-- Baseline/release tags: `Unknown`
+- Merge SHA baseline (`origin/master`): `9fe5207aac39d62e2d245780a20fa7d2bef84c70`
+- CI URLs on merge SHA:
+  - `quality-gates`: `https://github.com/saagar210/AIGCCore/actions/runs/22537939429` (`in progress` at document update time)
+  - `codex-quality-security`: `https://github.com/saagar210/AIGCCore/actions/runs/22537939425` (`in progress` at document update time)
+- Baseline/release tags:
+  - `v0.1.0-week1-stable` -> `c77d6c289ccd8f5908c8696748f2cf4b9e8e7952`

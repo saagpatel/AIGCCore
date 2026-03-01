@@ -2,7 +2,9 @@ import { readFileSync } from "node:fs";
 
 const [baselinePath, currentPath, metric, maxRatio] = process.argv.slice(2);
 if (!baselinePath || !currentPath || !metric || !maxRatio) {
-  console.error("usage: node compare-metric.mjs <baseline.json> <current.json> <metric> <max_ratio>");
+  console.error(
+    "usage: node compare-metric.mjs <baseline.json> <current.json> <metric> <max_ratio>",
+  );
   process.exit(2);
 }
 

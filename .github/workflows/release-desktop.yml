@@ -134,30 +134,16 @@ jobs:
         if: runner.os != 'Windows'
         shell: bash
         run: |
-          CHECKSUM_FILE="${BUNDLE_DIR}/SHA256SUMS.txt"
-          TMP_CHECKSUM_FILE="$(mktemp)"
-
-          # Avoid self-hashing the checksum file by writing to a temp file first.
-          find "${BUNDLE_DIR}" -type f ! -name 'SHA256SUMS.txt' -print0 |
-            xargs -0 shasum -a 256 > "${TMP_CHECKSUM_FILE}"
-
-          mv "${TMP_CHECKSUM_FILE}" "${CHECKSUM_FILE}"
+          find "${BUNDLE_DIR}" -type f -print0 | xargs -0 shasum -a 256 > "${BUNDLE_DIR}/SHA256SUMS.txt"
 
       - name: Generate SHA-256 checksums (windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $bundleDir = (Resolve-Path $env:BUNDLE_DIR).Path
-          $checksumFile = Join-Path $bundleDir "SHA256SUMS.txt"
-          $tmpChecksumFile = Join-Path $env:RUNNER_TEMP "SHA256SUMS.txt"
-
-          Get-ChildItem -Path $bundleDir -File -Recurse |
-            Where-Object { $_.FullName -ne $checksumFile } |
+          Get-ChildItem -Path $env:BUNDLE_DIR -File -Recurse |
             Get-FileHash -Algorithm SHA256 |
             ForEach-Object { "$($_.Hash.ToLower())  $($_.Path)" } |
-            Out-File -Encoding utf8 $tmpChecksumFile
-
-          Move-Item -Path $tmpChecksumFile -Destination $checksumFile -Force
+            Out-File -Encoding utf8 "$env:BUNDLE_DIR/SHA256SUMS.txt"
 
       - name: Upload release bundle
         uses: actions/upload-artifact@v4

@@ -11,9 +11,7 @@ describe("sample pack command payload builders", () => {
     const input = buildIncidentCommandInput();
     expect(input.schema_version).toBe("INCIDENTOS_INPUT_V1");
     expect(input.artifact_payloads).toHaveLength(1);
-    expect(input.artifact_payloads[0].artifact_id).toBe(
-      input.incident_artifacts[0].artifact_id,
-    );
+    expect(input.artifact_payloads[0].artifact_id).toBe(input.incident_artifacts[0].artifact_id);
     expect(input.artifact_payloads[0].content_text?.length ?? 0).toBeGreaterThan(100);
   });
 
@@ -21,10 +19,8 @@ describe("sample pack command payload builders", () => {
     const input = buildFinanceCommandInput();
     expect(input.schema_version).toBe("FINANCEOS_INPUT_V1");
     expect(input.artifact_payloads).toHaveLength(1);
-    expect(input.artifact_payloads[0].artifact_id).toBe(
-      input.finance_artifacts[0].artifact_id,
-    );
-    expect(input.artifact_payloads[0].content_text).toContain("\"transactions\"");
+    expect(input.artifact_payloads[0].artifact_id).toBe(input.finance_artifacts[0].artifact_id);
+    expect(input.artifact_payloads[0].content_text).toContain('"transactions"');
   });
 
   it("builds healthcare command input with consent and transcript payloads", () => {

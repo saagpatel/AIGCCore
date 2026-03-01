@@ -274,7 +274,8 @@ fn generate_evidenceos_bundle(input: EvidenceOsRunInput) -> Result<EvidenceOsRun
             json!({
                 "destination":{"scheme":"https","host":"example.invalid","port":443,"path":"/"},
                 "block_reason":"OFFLINE_MODE",
-                "request_hash_sha256": sha256_hex(b"blocked")
+                "request_hash_sha256": sha256_hex(b"blocked"),
+                "evidence_origin":"CONTROL_SIMULATION"
             }),
         ),
     ];
@@ -1762,7 +1763,8 @@ fn append_required_audit_events(
             json!({
                 "destination":{"scheme":"https","host":"example.invalid","port":443,"path":"/"},
                 "block_reason":"OFFLINE_MODE",
-                "request_hash_sha256": sha256_hex(b"blocked")
+                "request_hash_sha256": sha256_hex(b"blocked"),
+                "evidence_origin":"CONTROL_SIMULATION"
             }),
         ),
     ];
@@ -2153,6 +2155,48 @@ mod tests {
                 & 0o777;
             assert_eq!(mode, 0o700);
         }
+        let _ = fs::remove_dir_all(runtime_dir);
+    }
+
+    #[test]
+    fn required_audit_events_mark_control_simulation_origin() {
+        let runtime_dir = std::env::temp_dir().join(format!(
+            "aigc_required_audit_marker_test_{}_{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock should be monotonic")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&runtime_dir).expect("test runtime directory should be created");
+        let audit_path = runtime_dir.join("audit.ndjson");
+        let mut audit = AuditLog::open_or_create(&audit_path).expect("audit log should open");
+
+        append_required_audit_events(&mut audit, "r_test", "v_test")
+            .expect("required events should append");
+
+        let mut found_marker = false;
+        let contents = fs::read_to_string(&audit_path).expect("audit log should be readable");
+        for line in contents.lines() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            let event: serde_json::Value =
+                serde_json::from_str(line).expect("audit event should parse");
+            if event
+                .get("event_type")
+                .and_then(|value| value.as_str())
+                .is_some_and(|value| value == "EGRESS_REQUEST_BLOCKED")
+            {
+                found_marker = event
+                    .get("details")
+                    .and_then(|value| value.get("evidence_origin"))
+                    .and_then(|value| value.as_str())
+                    .is_some_and(|value| value == "CONTROL_SIMULATION");
+            }
+        }
+
+        assert!(found_marker, "expected synthetic egress control marker");
         let _ = fs::remove_dir_all(runtime_dir);
     }
 

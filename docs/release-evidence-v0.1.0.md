@@ -22,14 +22,15 @@ Status: Final
 
 ## Artifact Checksums (from CI Artifacts)
 
-- `de54be075544f52bb89068e75f7012e95c84bca21b06be8a0f748c2642f6b7d7`  `release-windows-latest-0.1.0/nsis/AIGC Core_0.1.0_x64-setup.exe`
-- `d86963068555fce3fa647dfa00ab5420af344dd9ba54734afe1e267bede730cb`  `release-windows-latest-0.1.0/msi/AIGC Core_0.1.0_x64_en-US.msi`
-- `8338b028f52add88c22b2f00495e33760f0f3bf22bdd6df58955ddf9c2d1fad8`  `release-macos-latest-0.1.0/dmg/AIGC Core_0.1.0_aarch64.dmg`
-- `bd70a7cd9f52017fb90884a194d29083b8cae825ced39e421d503e37e60195bf`  `release-ubuntu-22.04-0.1.0/deb/AIGC Core_0.1.0_amd64.deb`
-- `014244aa94d46956812846173249a7ee82e209a23edf8595edc1371e41e899a8`  `release-ubuntu-22.04-0.1.0/rpm/AIGC Core-0.1.0-1.x86_64.rpm`
-- `9d142ab6d3d78cfcc638cd44be62a3053bb61b6104238b79332ea0d8679ffd12`  `release-ubuntu-22.04-0.1.0/appimage/AIGC Core_0.1.0_amd64.AppImage`
+- `de54be075544f52bb89068e75f7012e95c84bca21b06be8a0f748c2642f6b7d7` `release-windows-latest-0.1.0/nsis/AIGC Core_0.1.0_x64-setup.exe`
+- `d86963068555fce3fa647dfa00ab5420af344dd9ba54734afe1e267bede730cb` `release-windows-latest-0.1.0/msi/AIGC Core_0.1.0_x64_en-US.msi`
+- `8338b028f52add88c22b2f00495e33760f0f3bf22bdd6df58955ddf9c2d1fad8` `release-macos-latest-0.1.0/dmg/AIGC Core_0.1.0_aarch64.dmg`
+- `bd70a7cd9f52017fb90884a194d29083b8cae825ced39e421d503e37e60195bf` `release-ubuntu-22.04-0.1.0/deb/AIGC Core_0.1.0_amd64.deb`
+- `014244aa94d46956812846173249a7ee82e209a23edf8595edc1371e41e899a8` `release-ubuntu-22.04-0.1.0/rpm/AIGC Core-0.1.0-1.x86_64.rpm`
+- `9d142ab6d3d78cfcc638cd44be62a3053bb61b6104238b79332ea0d8679ffd12` `release-ubuntu-22.04-0.1.0/appimage/AIGC Core_0.1.0_amd64.AppImage`
 
 Checksum manifest sanity:
+
 - Ubuntu `SHA256SUMS.txt`: no self-hash entries
 - macOS `SHA256SUMS.txt`: no self-hash entries
 - Windows `SHA256SUMS.txt`: no self-hash entries

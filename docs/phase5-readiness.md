@@ -66,4 +66,4 @@ Implemented in repository:
 ## Remaining Docket Before Phase 6/Next Tightening
 
 1. Re-tighten branch approvals to `>= 1` when reviewer capacity is available (tracking issue: `#13`).
-2. Decide whether to keep advanced CodeQL manual workflow or remove it fully after default setup policy is finalized.
+2. Run backup-owner incident drill and capture evidence in release/readiness docs.

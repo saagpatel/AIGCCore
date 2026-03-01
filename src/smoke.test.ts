@@ -5,7 +5,7 @@ describe("ui smoke", () => {
   it("future pack status shape remains stable", () => {
     const status: PackCommandStatus = {
       status: "READY",
-      message: "scaffold"
+      message: "scaffold",
     };
     expect(status.status).toBe("READY");
     expect(status.message).toBe("scaffold");

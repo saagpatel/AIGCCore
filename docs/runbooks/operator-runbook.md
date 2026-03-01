@@ -25,6 +25,9 @@ This runbook covers local operator actions for diagnosing failed pack runs and r
    - `EXPORT_BLOCKED`
    - `EVAL_GATE_RESULT`
    - `BUNDLE_VALIDATION_RESULT`
+   - `EGRESS_REQUEST_BLOCKED` `details.evidence_origin`:
+     - `CONTROL_SIMULATION` => policy-proof synthetic event
+     - absent/other => inspect as real runtime network attempt
 4. Determine failure class:
    - Input payload issue (malformed/missing artifact payload)
    - Policy block (citations/redactions/determinism gate)
@@ -106,13 +109,13 @@ This runbook covers local operator actions for diagnosing failed pack runs and r
 
 ## Escalation Owner Matrix
 
-| Area | Primary Owner | Backup Owner | Escalation Trigger |
-|---|---|---|---|
-| Runtime command failures (`run_*`) | Core runtime owner | QA owner | `FAILED` status on required command path |
-| Ingestion contract failures | Data ingestion owner | Core runtime owner | repeated `BLOCKED` with same `error_code` after input fix |
-| CI/gate pipeline failures | Release owner | Core runtime owner | required CI check red for release branch |
-| Release packaging/signing failures | Release owner | Repo admin | release workflow fails to produce signed artifacts |
-| Security/compliance incidents | Security owner | Repo admin | policy/gate bypass, audit-chain anomaly, secret leak risk |
+| Area                               | Primary Owner        | Backup Owner       | Escalation Trigger                                        |
+| ---------------------------------- | -------------------- | ------------------ | --------------------------------------------------------- |
+| Runtime command failures (`run_*`) | Core runtime owner   | QA owner           | `FAILED` status on required command path                  |
+| Ingestion contract failures        | Data ingestion owner | Core runtime owner | repeated `BLOCKED` with same `error_code` after input fix |
+| CI/gate pipeline failures          | Release owner        | Core runtime owner | required CI check red for release branch                  |
+| Release packaging/signing failures | Release owner        | Repo admin         | release workflow fails to produce signed artifacts        |
+| Security/compliance incidents      | Security owner       | Repo admin         | policy/gate bypass, audit-chain anomaly, secret leak risk |
 
 If role assignment is not staffed, treat owner as `Unknown` and escalate directly to repo admin.
 

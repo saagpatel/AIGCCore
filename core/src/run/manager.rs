@@ -9,7 +9,7 @@ use crate::policy::export_gate::{evaluate_export_gate, ExportBlockReason, Export
 use crate::policy::types::{NetworkMode, PolicyMode, ProofLevel};
 use crate::validator::BundleValidator;
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExportRequest {
@@ -99,22 +99,13 @@ impl RunManager {
         })?;
 
         // Preflight bundle for eval checks only (kept outside final export target).
-        let preflight_nonce = time::OffsetDateTime::now_utc().unix_timestamp_nanos();
-        let preflight_root =
-            std::env::temp_dir().join(format!("{}_preflight_bundle_{}", req.run_id, preflight_nonce));
-        let preflight_zip = std::env::temp_dir()
-            .join(format!("{}_preflight_bundle_{}.zip", req.run_id, preflight_nonce));
-        if preflight_root.exists() {
-            std::fs::remove_dir_all(&preflight_root)?;
-        }
-        if preflight_zip.exists() {
-            std::fs::remove_file(&preflight_zip)?;
-        }
-        EvidenceBundleBuilder::build_dir(&preflight_root, bundle_inputs)?;
-        EvidenceBundleBuilder::build_zip(&preflight_root, &preflight_zip)?;
+        let preflight = PreflightArtifacts::create(&req.run_id)?;
+        EvidenceBundleBuilder::build_dir(&preflight.root, bundle_inputs)?;
+        EvidenceBundleBuilder::build_zip(&preflight.root, &preflight.zip)?;
+        harden_preflight_file_permissions(&preflight.zip)?;
 
         let eval_runner = EvalRunner::new_v3()?;
-        let gate_results = eval_runner.run_all_for_bundle(&preflight_zip, req.policy_mode)?;
+        let gate_results = eval_runner.run_all_for_bundle(&preflight.zip, req.policy_mode)?;
         let mut blocker_fails = Vec::new();
         for g in &gate_results {
             self.audit.append(AuditEvent {
@@ -193,8 +184,6 @@ impl RunManager {
                 event_hash: String::new(),
             })?;
             self.transition(req, RunState::FAILED, "export blocked")?;
-            let _ = std::fs::remove_dir_all(&preflight_root);
-            let _ = std::fs::remove_file(&preflight_zip);
             return Ok(ExportOutcome {
                 status: "BLOCKED".to_string(),
                 bundle_path: None,
@@ -202,10 +191,6 @@ impl RunManager {
                 block_reason: Some(reason),
             });
         }
-
-        // Preflight artifacts are no longer needed after export decision.
-        let _ = std::fs::remove_dir_all(&preflight_root);
-        let _ = std::fs::remove_file(&preflight_zip);
 
         self.transition(req, RunState::EXPORTING, "gates passed")?;
         // 8-10) Final bundle generation
@@ -339,6 +324,68 @@ impl RunManager {
     }
 }
 
+struct PreflightArtifacts {
+    root: PathBuf,
+    zip: PathBuf,
+}
+
+impl PreflightArtifacts {
+    fn create(run_id: &str) -> CoreResult<Self> {
+        let nonce = time::OffsetDateTime::now_utc().unix_timestamp_nanos();
+        let root = std::env::temp_dir().join(format!("{}_preflight_bundle_{}", run_id, nonce));
+        let zip = std::env::temp_dir().join(format!("{}_preflight_bundle_{}.zip", run_id, nonce));
+
+        if root.exists() {
+            std::fs::remove_dir_all(&root)?;
+        }
+        if zip.exists() {
+            std::fs::remove_file(&zip)?;
+        }
+
+        std::fs::create_dir_all(&root)?;
+        harden_preflight_dir_permissions(&root)?;
+
+        Ok(Self { root, zip })
+    }
+
+    fn cleanup(&self) {
+        let _ = std::fs::remove_dir_all(&self.root);
+        let _ = std::fs::remove_file(&self.zip);
+    }
+}
+
+impl Drop for PreflightArtifacts {
+    fn drop(&mut self) {
+        self.cleanup();
+    }
+}
+
+fn harden_preflight_dir_permissions(path: &Path) -> CoreResult<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))?;
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+    }
+    Ok(())
+}
+
+fn harden_preflight_file_permissions(path: &Path) -> CoreResult<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+    }
+    Ok(())
+}
+
 fn valid_transition(from: RunState, to: RunState) -> bool {
     use RunState::*;
     match (from, to) {
@@ -369,12 +416,64 @@ fn now_rfc3339_utc() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{valid_transition, RunState};
+    use super::{
+        harden_preflight_file_permissions, valid_transition, PreflightArtifacts, RunState,
+    };
 
     #[test]
     fn state_machine_blocks_invalid_edges() {
         assert!(valid_transition(RunState::CREATED, RunState::READY));
         assert!(!valid_transition(RunState::CREATED, RunState::EXPORTING));
         assert!(!valid_transition(RunState::COMPLETED, RunState::EVALUATING));
+    }
+
+    #[test]
+    fn preflight_artifacts_cleanup_removes_temp_paths() {
+        let (root, zip) = {
+            let preflight = PreflightArtifacts::create("test_run_cleanup")
+                .expect("preflight artifacts should be created");
+            std::fs::write(&preflight.zip, b"preflight zip")
+                .expect("preflight zip fixture should be written");
+            (preflight.root.clone(), preflight.zip.clone())
+        };
+
+        assert!(!root.exists(), "preflight temp directory should be removed");
+        assert!(!zip.exists(), "preflight temp zip should be removed");
+    }
+
+    #[test]
+    fn preflight_artifacts_permissions_hardened_when_supported() {
+        let preflight =
+            PreflightArtifacts::create("test_run_permissions").expect("preflight create should pass");
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let dir_mode = std::fs::metadata(&preflight.root)
+                .expect("preflight root metadata should be readable")
+                .permissions()
+                .mode()
+                & 0o777;
+            assert_eq!(dir_mode, 0o700);
+        }
+    }
+
+    #[test]
+    fn preflight_zip_permissions_hardened_when_supported() {
+        let preflight =
+            PreflightArtifacts::create("test_run_zip_permissions").expect("preflight create should pass");
+        std::fs::write(&preflight.zip, b"zip bytes").expect("zip fixture should be written");
+        harden_preflight_file_permissions(&preflight.zip).expect("zip permission hardening should pass");
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let file_mode = std::fs::metadata(&preflight.zip)
+                .expect("preflight zip metadata should be readable")
+                .permissions()
+                .mode()
+                & 0o777;
+            assert_eq!(file_mode, 0o600);
+        }
     }
 }

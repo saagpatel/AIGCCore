@@ -95,6 +95,7 @@ fn macos_get_or_create_kek(vault_id: &str) -> CoreResult<[u8; 32]> {
 
 fn file_get_or_create_kek(path: &std::path::Path) -> CoreResult<[u8; 32]> {
     if path.exists() {
+        harden_secret_file_permissions(path)?;
         let bytes = std::fs::read(path)?;
         if bytes.len() == 32 {
             let mut arr = [0u8; 32];
@@ -107,11 +108,41 @@ fn file_get_or_create_kek(path: &std::path::Path) -> CoreResult<[u8; 32]> {
     }
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
+        harden_secret_dir_permissions(parent)?;
     }
     let mut kek = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut kek);
     std::fs::write(path, kek)?;
+    harden_secret_file_permissions(path)?;
     Ok(kek)
+}
+
+fn harden_secret_dir_permissions(path: &std::path::Path) -> CoreResult<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let permissions = std::fs::Permissions::from_mode(0o700);
+        std::fs::set_permissions(path, permissions)?;
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+    }
+    Ok(())
+}
+
+fn harden_secret_file_permissions(path: &std::path::Path) -> CoreResult<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let permissions = std::fs::Permissions::from_mode(0o600);
+        std::fs::set_permissions(path, permissions)?;
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+    }
+    Ok(())
 }
 
 #[cfg(target_os = "windows")]
@@ -297,5 +328,76 @@ fn b64_val(c: u8) -> CoreResult<u8> {
         _ => Err(CoreError::InvalidInput(
             "invalid base64 character".to_string(),
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::file_get_or_create_kek;
+    use tempfile::tempdir;
+
+    #[test]
+    fn file_fallback_creates_kek_with_secure_permissions() {
+        let temp = tempdir().expect("tempdir should be created");
+        let key_path = temp.path().join("vault").join("kek.bin");
+
+        let created = file_get_or_create_kek(&key_path).expect("kek should be created");
+        let loaded = file_get_or_create_kek(&key_path).expect("kek should be loaded");
+        assert_eq!(created, loaded);
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&key_path)
+                .expect("kek file should be readable")
+                .permissions()
+                .mode()
+                & 0o777;
+            assert_eq!(mode, 0o600);
+        }
+    }
+
+    #[test]
+    fn file_fallback_rejects_invalid_kek_length() {
+        let temp = tempdir().expect("tempdir should be created");
+        let key_path = temp.path().join("kek-invalid.bin");
+        std::fs::write(&key_path, [1_u8, 2, 3]).expect("invalid key fixture should be written");
+
+        let result = file_get_or_create_kek(&key_path);
+        assert!(result.is_err());
+        assert!(
+            result
+                .err()
+                .expect("expected invalid length error")
+                .to_string()
+                .contains("invalid fallback KEK length")
+        );
+    }
+
+    #[test]
+    fn file_fallback_hardens_existing_lax_permissions() {
+        let temp = tempdir().expect("tempdir should be created");
+        let key_path = temp.path().join("kek-perms.bin");
+        std::fs::write(&key_path, [9_u8; 32]).expect("valid key fixture should be written");
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&key_path, std::fs::Permissions::from_mode(0o644))
+                .expect("fixture permissions should be set");
+        }
+
+        let _ = file_get_or_create_kek(&key_path).expect("kek load should succeed");
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&key_path)
+                .expect("kek metadata should be readable")
+                .permissions()
+                .mode()
+                & 0o777;
+            assert_eq!(mode, 0o600);
+        }
     }
 }

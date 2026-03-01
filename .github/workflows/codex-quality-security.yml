@@ -48,7 +48,7 @@ jobs:
       - name: TruffleHog secret scan
         uses: trufflesecurity/trufflehog@main
         with:
-          extra_args: --results=verified
+          extra_args: --results=verified --fail
 
   sast:
     runs-on: ubuntu-latest
