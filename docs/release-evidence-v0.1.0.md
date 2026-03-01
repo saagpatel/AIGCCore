@@ -1,50 +1,62 @@
 # Release Evidence Packet: v0.1.0
 
-Date: 2026-02-22
+Date: 2026-03-01
 
 ## Release Identity
 
 - Target version: `0.1.0`
-- Merge SHA baseline: `a5ddca1f9887892e39fe62db3e6b978ee2c17b4e` (`origin/master` at assessment time)
-- Tag: `Unknown` (not created in this local workspace)
+- Release artifact SHA baseline: `9f6bcb6a91513afe4dc1d397424fe1d49a617229`
+- Latest master governance/hardening SHA: `44ac636112a7b57b1638db8516005135d1ce52e6`
+- Tag: `v0.1.0-week1-stable` (`c77d6c289ccd8f5908c8696748f2cf4b9e8e7952`)
 
-## Local Verification Evidence
+## Release Workflow Evidence
 
-| Command | Result | Source |
-|---|---|---|
-| `bash .codex/scripts/run_verify_commands.sh` | PASS | `.codex/scripts/run_verify_commands.sh`, `.codex/verify.commands` |
-| `pnpm gate:all` | PASS | `package.json`, `tools/gates/run-all.mjs` |
-| `pnpm ui:gate:regression` | PASS | `package.json` |
-| `pnpm test:unit:coverage` | PASS | `package.json` |
-| `python3 -m diff_cover.diff_cover_tool coverage/lcov.info --compare-branch=origin/master --fail-under=90` | PASS (98%) | `.github/workflows/quality-gates.yml` |
+- release workflow: `release-desktop`
+- run URL: `https://github.com/saagar210/AIGCCore/actions/runs/22538435713`
+- conclusion: `success`
+- matrix status:
+  - `build_signed_artifacts (ubuntu-22.04)`: success
+  - `build_signed_artifacts (windows-latest)`: success
+  - `build_signed_artifacts (macos-latest)`: success
 
-## Build Artifact Evidence (Local)
+## Artifact Checksum Evidence (CI Artifacts)
 
-- App bundle path: `/Users/d/Projects/MoneyPRJsViaGPT/AIGCCore/target/release/bundle/macos/AIGC Core.app`
-- DMG path: `/Users/d/Projects/MoneyPRJsViaGPT/AIGCCore/target/release/bundle/dmg/AIGC Core_0.1.0_aarch64.dmg`
-- Artifact checksums (local):
-  - `c925f33fb7ee81bbb31e540c9bcebdaf21000f6518d2b9073a4379ac4b378fce`  `target/release/bundle/dmg/AIGC Core_0.1.0_aarch64.dmg`
-  - `be83de1dd778351159be89b3bb2d0e3c202a528c4c42fd34823ab2380866102d`  `target/release/bundle/macos/AIGC Core.app/Contents/MacOS/aigc_core_tauri`
+From run `22538435713` downloaded artifacts:
 
-## CI / Release Workflow Evidence
+- `de54be075544f52bb89068e75f7012e95c84bca21b06be8a0f748c2642f6b7d7`  `release-windows-latest-0.1.0/nsis/AIGC Core_0.1.0_x64-setup.exe`
+- `d86963068555fce3fa647dfa00ab5420af344dd9ba54734afe1e267bede730cb`  `release-windows-latest-0.1.0/msi/AIGC Core_0.1.0_x64_en-US.msi`
+- `8338b028f52add88c22b2f00495e33760f0f3bf22bdd6df58955ddf9c2d1fad8`  `release-macos-latest-0.1.0/dmg/AIGC Core_0.1.0_aarch64.dmg`
+- `bd70a7cd9f52017fb90884a194d29083b8cae825ced39e421d503e37e60195bf`  `release-ubuntu-22.04-0.1.0/deb/AIGC Core_0.1.0_amd64.deb`
+- `014244aa94d46956812846173249a7ee82e209a23edf8595edc1371e41e899a8`  `release-ubuntu-22.04-0.1.0/rpm/AIGC Core-0.1.0-1.x86_64.rpm`
+- `9d142ab6d3d78cfcc638cd44be62a3053bb61b6104238b79332ea0d8679ffd12`  `release-ubuntu-22.04-0.1.0/appimage/AIGC Core_0.1.0_amd64.AppImage`
 
-- latest successful `quality-gates`: `https://github.com/saagar210/AIGCCore/actions/runs/22416608809` (`headSha=fb2720dacec91783d0148833db35da7039f8acd9`)
-- latest successful `ui-quality`: `https://github.com/saagar210/AIGCCore/actions/runs/22080409966` (`headSha=57bfe071845d3c83859af548871edda622ccd227`)
-- latest successful `codex-quality-security`: `https://github.com/saagar210/AIGCCore/actions/runs/22416608773` (`headSha=fb2720dacec91783d0148833db35da7039f8acd9`)
-- `release-desktop` workflow run URL: `Unknown` (`release-desktop.yml` not present on current default branch)
+Checksum manifest sanity:
+- Ubuntu `SHA256SUMS.txt` has no self-hash entry
+- macOS `SHA256SUMS.txt` has no self-hash entry
+- Windows `SHA256SUMS.txt` has no self-hash entry
 
-Notes:
-- On merge-sha baseline `a5ddca1f9887892e39fe62db3e6b978ee2c17b4e`, recorded runs include failures:
-  - `quality-gates`: `https://github.com/saagar210/AIGCCore/actions/runs/22277362811` (failure)
-  - `codex-quality-security`: `https://github.com/saagar210/AIGCCore/actions/runs/22309564942` (failure)
+## CI / Security Snapshot (Latest Master)
+
+For SHA `44ac636112a7b57b1638db8516005135d1ce52e6`:
+
+- `quality-gates`: success (`https://github.com/saagar210/AIGCCore/actions/runs/22542653008`)
+- `codex-quality-security`: success (`https://github.com/saagar210/AIGCCore/actions/runs/22542652981`)
+- `CodeQL`: success (`https://github.com/saagar210/AIGCCore/actions/runs/22542652836`)
+- `CodeQL Advanced`: failure (`https://github.com/saagar210/AIGCCore/actions/runs/22542652998`)
+
+## Hardening Fixes Applied During Release Burn-Down
+
+- PR #20 (`9fe5207...`): fixed Windows icon config for bundling
+- PR #21 (`d3d4836...`): fixed Windows checksum file-lock behavior
+- PR #22 (`9f6bcb6...`): fixed Unix checksum self-hash behavior
+- PR #23 (`44ac636...`): fixed TruffleHog duplicate `--fail` flag in `codex-quality-security`
 
 ## Branch Protection Snapshot
 
-- `required_approving_review_count = 0`
-- required contexts: `quality`, `quality-gates`
+- `required_approving_review_count = 0` (temporary)
+- required contexts: `quality-gates`, `verify`, `ui-gates`
 
 ## Smoke Test Outcomes
 
 - Desktop bundle launch smoke: `Unknown`
-- Basic command invoke smoke (`run_incidentos`/`run_financeos`/`run_healthcareos`): PASS via local command/test suite
-- Regression test summary: PASS (Playwright visual + a11y)
+- Basic pack command behavior: covered via canonical verification in release jobs (`Run canonical verification` step passed on all three OS runners)
