@@ -1,27 +1,26 @@
 # Release Evidence Packet: v0.1.0
 
 Date: 2026-03-01
+Status: Final
 
 ## Release Identity
 
 - Target version: `0.1.0`
-- Release artifact SHA baseline: `9f6bcb6a91513afe4dc1d397424fe1d49a617229`
-- Latest master governance/hardening SHA: `44ac636112a7b57b1638db8516005135d1ce52e6`
+- Release artifact baseline SHA: `9f6bcb6a91513afe4dc1d397424fe1d49a617229`
+- Latest master governance/hardening SHA: `267a088ed7c440cba158d4117e3fc8f467162727`
 - Tag: `v0.1.0-week1-stable` (`c77d6c289ccd8f5908c8696748f2cf4b9e8e7952`)
 
 ## Release Workflow Evidence
 
-- release workflow: `release-desktop`
+- workflow: `release-desktop`
 - run URL: `https://github.com/saagar210/AIGCCore/actions/runs/22538435713`
 - conclusion: `success`
-- matrix status:
+- matrix:
   - `build_signed_artifacts (ubuntu-22.04)`: success
   - `build_signed_artifacts (windows-latest)`: success
   - `build_signed_artifacts (macos-latest)`: success
 
-## Artifact Checksum Evidence (CI Artifacts)
-
-From run `22538435713` downloaded artifacts:
+## Artifact Checksums (from CI Artifacts)
 
 - `de54be075544f52bb89068e75f7012e95c84bca21b06be8a0f748c2642f6b7d7`  `release-windows-latest-0.1.0/nsis/AIGC Core_0.1.0_x64-setup.exe`
 - `d86963068555fce3fa647dfa00ab5420af344dd9ba54734afe1e267bede730cb`  `release-windows-latest-0.1.0/msi/AIGC Core_0.1.0_x64_en-US.msi`
@@ -31,25 +30,26 @@ From run `22538435713` downloaded artifacts:
 - `9d142ab6d3d78cfcc638cd44be62a3053bb61b6104238b79332ea0d8679ffd12`  `release-ubuntu-22.04-0.1.0/appimage/AIGC Core_0.1.0_amd64.AppImage`
 
 Checksum manifest sanity:
-- Ubuntu `SHA256SUMS.txt` has no self-hash entry
-- macOS `SHA256SUMS.txt` has no self-hash entry
-- Windows `SHA256SUMS.txt` has no self-hash entry
+- Ubuntu `SHA256SUMS.txt`: no self-hash entries
+- macOS `SHA256SUMS.txt`: no self-hash entries
+- Windows `SHA256SUMS.txt`: no self-hash entries
 
 ## CI / Security Snapshot (Latest Master)
 
-For SHA `44ac636112a7b57b1638db8516005135d1ce52e6`:
+For SHA `267a088ed7c440cba158d4117e3fc8f467162727`:
 
-- `quality-gates`: success (`https://github.com/saagar210/AIGCCore/actions/runs/22542653008`)
-- `codex-quality-security`: success (`https://github.com/saagar210/AIGCCore/actions/runs/22542652981`)
-- `CodeQL`: success (`https://github.com/saagar210/AIGCCore/actions/runs/22542652836`)
-- `CodeQL Advanced`: failure (`https://github.com/saagar210/AIGCCore/actions/runs/22542652998`)
+- `quality-gates`: success (`https://github.com/saagar210/AIGCCore/actions/runs/22542840958`)
+- `codex-quality-security`: success (`https://github.com/saagar210/AIGCCore/actions/runs/22542840969`)
+- `CodeQL` (default setup): success (`https://github.com/saagar210/AIGCCore/actions/runs/22542840811`)
+- `ui-quality` (latest PR lane): success (`https://github.com/saagar210/AIGCCore/actions/runs/22542836817`)
 
 ## Hardening Fixes Applied During Release Burn-Down
 
 - PR #20 (`9fe5207...`): fixed Windows icon config for bundling
 - PR #21 (`d3d4836...`): fixed Windows checksum file-lock behavior
 - PR #22 (`9f6bcb6...`): fixed Unix checksum self-hash behavior
-- PR #23 (`44ac636...`): fixed TruffleHog duplicate `--fail` flag in `codex-quality-security`
+- PR #23 (`44ac636...`): fixed TruffleHog duplicate `--fail` in security workflow
+- PR #25 (`267a088...`): switched CodeQL Advanced workflow to manual-only to avoid default-setup conflict
 
 ## Branch Protection Snapshot
 
@@ -59,4 +59,4 @@ For SHA `44ac636112a7b57b1638db8516005135d1ce52e6`:
 ## Smoke Test Outcomes
 
 - Desktop bundle launch smoke: `Unknown`
-- Basic pack command behavior: covered via canonical verification in release jobs (`Run canonical verification` step passed on all three OS runners)
+- Canonical command invoke smoke (`run_*` pack paths): covered by release job `Run canonical verification` on all three runners
