@@ -73,7 +73,11 @@ impl RunManager {
             actor: Actor::User,
             details: serde_json::json!({
                 "requested_by": req.requested_by,
-                "export_targets": [bundle_zip.to_string_lossy().to_string()],
+                "export_targets": [bundle_zip
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("evidence_bundle.zip")
+                    .to_string()],
                 "policy_mode": format!("{:?}", req.policy_mode)
             }),
             prev_event_hash: String::new(),
@@ -95,9 +99,11 @@ impl RunManager {
         })?;
 
         // Preflight bundle for eval checks only (kept outside final export target).
-        let preflight_root = std::env::temp_dir().join(format!("{}_preflight_bundle", req.run_id));
-        let preflight_zip =
-            std::env::temp_dir().join(format!("{}_preflight_bundle.zip", req.run_id));
+        let preflight_nonce = time::OffsetDateTime::now_utc().unix_timestamp_nanos();
+        let preflight_root =
+            std::env::temp_dir().join(format!("{}_preflight_bundle_{}", req.run_id, preflight_nonce));
+        let preflight_zip = std::env::temp_dir()
+            .join(format!("{}_preflight_bundle_{}.zip", req.run_id, preflight_nonce));
         if preflight_root.exists() {
             std::fs::remove_dir_all(&preflight_root)?;
         }
@@ -213,8 +219,10 @@ impl RunManager {
             prev_event_hash: String::new(),
             event_hash: String::new(),
         })?;
-        EvidenceBundleBuilder::build_dir(bundle_dir, bundle_inputs)?;
-        let bundle_sha = EvidenceBundleBuilder::build_zip(bundle_dir, bundle_zip)?;
+        let mut final_bundle_inputs = bundle_inputs.clone();
+        final_bundle_inputs.audit_log_ndjson = self.audit.read_all_ndjson()?;
+        EvidenceBundleBuilder::build_dir(bundle_dir, &final_bundle_inputs)?;
+        let _initial_bundle_sha = EvidenceBundleBuilder::build_zip(bundle_dir, bundle_zip)?;
         self.audit.append(AuditEvent {
             ts_utc: now_rfc3339_utc(),
             event_type: "BUNDLE_GENERATION_COMPLETED".to_string(),
@@ -272,6 +280,12 @@ impl RunManager {
                 block_reason: Some(ExportBlockReason::BUNDLE_VALIDATION_FAILED),
             });
         }
+
+        // Refresh the bundle once after validation events are appended so bundled audit_log.ndjson
+        // includes final export lifecycle evidence.
+        final_bundle_inputs.audit_log_ndjson = self.audit.read_all_ndjson()?;
+        EvidenceBundleBuilder::build_dir(bundle_dir, &final_bundle_inputs)?;
+        let bundle_sha = EvidenceBundleBuilder::build_zip(bundle_dir, bundle_zip)?;
 
         // 15) EXPORT_COMPLETED
         let rel = bundle_zip.to_string_lossy().to_string();
@@ -343,9 +357,14 @@ fn valid_transition(from: RunState, to: RunState) -> bool {
 }
 
 fn now_rfc3339_utc() -> String {
+    if let Ok(fixed) = std::env::var("AIGC_AUDIT_FIXED_TS_UTC") {
+        if !fixed.trim().is_empty() {
+            return fixed;
+        }
+    }
     time::OffsetDateTime::now_utc()
         .format(&time::format_description::well_known::Rfc3339)
-        .unwrap()
+        .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_string())
 }
 
 #[cfg(test)]

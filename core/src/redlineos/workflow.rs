@@ -1,4 +1,4 @@
-use super::model::{RedlineOsInputV1, RiskAssessment, ContractArtifactRef};
+use super::model::{RedlineOsInputV1, RiskAssessment};
 use super::extraction;
 use super::anchors;
 use super::risk_analysis;
@@ -127,6 +127,7 @@ pub struct RedlineWorkflowOutput {
 #[cfg(test)]
 mod integration_tests {
     use super::*;
+    use crate::redlineos::model::ContractArtifactRef;
 
     /// Helper: Create minimal valid PDF with sample contract
     fn create_sample_pdf() -> Vec<u8> {

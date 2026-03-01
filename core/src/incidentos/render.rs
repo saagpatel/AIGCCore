@@ -1,5 +1,5 @@
 use super::model::IncidentOsOutputManifestV1;
-use super::timeline::{IncidentTimeline, TimelineEvent};
+use super::timeline::IncidentTimeline;
 use super::redaction::{RedactionEngine, RedactionProfile};
 use crate::error::{CoreError, CoreResult};
 use serde_json::json;

@@ -1,6 +1,6 @@
-use super::parser::{FinancialStatement, Transaction};
+use super::parser::FinancialStatement;
 use serde::{Deserialize, Serialize};
-use crate::error::{CoreError, CoreResult};
+use crate::error::CoreResult;
 
 /// Exception detected in financial statement
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -191,6 +191,7 @@ fn get_category_patterns() -> std::collections::HashMap<&'static str, Vec<&'stat
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::financeos::parser::Transaction;
 
     fn sample_statement() -> FinancialStatement {
         FinancialStatement {

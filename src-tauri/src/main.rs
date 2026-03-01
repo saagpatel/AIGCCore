@@ -281,7 +281,7 @@ fn generate_evidenceos_bundle(input: EvidenceOsRunInput) -> Result<EvidenceOsRun
     for (event_type, actor, details) in events {
         audit
             .append(AuditEvent {
-                ts_utc: "2026-02-10T00:00:00Z".to_string(),
+                ts_utc: now_rfc3339_utc(),
                 event_type: event_type.to_string(),
                 run_id: run_id.clone(),
                 vault_id: vault_id.clone(),
@@ -1300,13 +1300,27 @@ fn run_healthcareos_impl(input: HealthcareCommandInput) -> Result<PackCommandSta
 
     let transcript_sha = ingested_transcript.sha256.clone();
     let consent_sha = ingested_consent.sha256.clone();
-    let manifest_inputs_fingerprint = sha256_hex(
-        format!(
-            "{}:{}|{}:{}",
-            transcript_artifact_id, transcript_sha, consent_artifact_id, consent_sha
-        )
-        .as_bytes(),
-    );
+    let input_artifacts = vec![
+        InputArtifactDescriptor {
+            artifact_id: transcript_artifact.artifact_id.clone(),
+            sha256: transcript_sha.clone(),
+            bytes: ingested_transcript.bytes.len() as u64,
+            mime_type: "application/json".to_string(),
+            content_type: "application/json".to_string(),
+            classification: "PHI".to_string(),
+            tags: vec!["HEALTHCARE".to_string(), "TRANSCRIPT".to_string()],
+        },
+        InputArtifactDescriptor {
+            artifact_id: consent_artifact.artifact_id.clone(),
+            sha256: consent_sha.clone(),
+            bytes: ingested_consent.bytes.len() as u64,
+            mime_type: "application/json".to_string(),
+            content_type: "application/json".to_string(),
+            classification: "PHI".to_string(),
+            tags: vec!["HEALTHCARE".to_string(), "CONSENT".to_string()],
+        },
+    ];
+    let manifest_inputs_fingerprint = manifest_inputs_fingerprint_from_descriptors(&input_artifacts);
     let run_id = format!("r_{}", &manifest_inputs_fingerprint[..32]);
     let vault_id = "v_healthcare_0001".to_string();
     let runtime_dir = make_runtime_dir().map_err(|e| {
@@ -1426,26 +1440,6 @@ fn run_healthcareos_impl(input: HealthcareCommandInput) -> Result<PackCommandSta
         "generated_at_ms": 0,
         "artifacts": []
     });
-    let input_artifacts = vec![
-        InputArtifactDescriptor {
-            artifact_id: transcript_artifact.artifact_id.clone(),
-            sha256: transcript_sha,
-            bytes: ingested_transcript.bytes.len() as u64,
-            mime_type: "application/json".to_string(),
-            content_type: "application/json".to_string(),
-            classification: "PHI".to_string(),
-            tags: vec!["HEALTHCARE".to_string(), "TRANSCRIPT".to_string()],
-        },
-        InputArtifactDescriptor {
-            artifact_id: consent_artifact.artifact_id.clone(),
-            sha256: consent_sha,
-            bytes: ingested_consent.bytes.len() as u64,
-            mime_type: "application/json".to_string(),
-            content_type: "application/json".to_string(),
-            classification: "PHI".to_string(),
-            tags: vec!["HEALTHCARE".to_string(), "CONSENT".to_string()],
-        },
-    ];
     let bundle_inputs = build_pack_bundle_inputs(
         "healthcareos",
         "1.0.0",
@@ -1495,7 +1489,22 @@ fn make_runtime_dir() -> Result<std::path::PathBuf, String> {
         .as_millis();
     let path = std::env::temp_dir().join(format!("aigc_evidenceos_{}", ts));
     std::fs::create_dir_all(&path).map_err(|e| e.to_string())?;
+    harden_runtime_dir_permissions(&path)?;
     Ok(path)
+}
+
+fn harden_runtime_dir_permissions(path: &std::path::Path) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let permissions = std::fs::Permissions::from_mode(0o700);
+        std::fs::set_permissions(path, permissions).map_err(|e| e.to_string())?;
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+    }
+    Ok(())
 }
 
 fn csv_to_vec(raw: &str) -> Vec<String> {
@@ -1528,6 +1537,15 @@ fn extract_claim_markers(markdown: &str) -> Vec<String> {
     out.sort();
     out.dedup();
     out
+}
+
+fn manifest_inputs_fingerprint_from_descriptors(input_artifacts: &[InputArtifactDescriptor]) -> String {
+    let mut fp_parts: Vec<String> = input_artifacts
+        .iter()
+        .map(|a| format!("{}:{}", a.artifact_id, a.sha256))
+        .collect();
+    fp_parts.sort();
+    sha256_hex(fp_parts.join("|").as_bytes())
 }
 
 fn find_artifact_payload<'a>(
@@ -1751,7 +1769,7 @@ fn append_required_audit_events(
     for (event_type, actor, details) in events {
         audit
             .append(AuditEvent {
-                ts_utc: "2026-02-10T00:00:00Z".to_string(),
+                ts_utc: now_rfc3339_utc(),
                 event_type: event_type.to_string(),
                 run_id: run_id.to_string(),
                 vault_id: vault_id.to_string(),
@@ -1778,7 +1796,7 @@ fn append_ingestion_audit_event(
     };
     audit
         .append(AuditEvent {
-            ts_utc: "2026-02-10T00:00:00Z".to_string(),
+            ts_utc: now_rfc3339_utc(),
             event_type: "ARTIFACT_INGESTION_VALIDATED".to_string(),
             run_id: run_id.to_string(),
             vault_id: vault_id.to_string(),
@@ -1878,12 +1896,7 @@ fn build_pack_bundle_inputs(
         })
         .collect();
 
-    let mut fp_parts: Vec<String> = input_artifacts
-        .iter()
-        .map(|a| format!("{}:{}", a.artifact_id, a.sha256))
-        .collect();
-    fp_parts.sort();
-    let manifest_inputs_fingerprint = sha256_hex(fp_parts.join("|").as_bytes());
+    let manifest_inputs_fingerprint = manifest_inputs_fingerprint_from_descriptors(input_artifacts);
     let model_pinning_level = classify_pinning_level(None, "local_adapter", "1.0.0");
 
     Ok(EvidenceBundleInputs {
@@ -2011,6 +2024,12 @@ fn run_export(
         .map_err(|e| format!("Export failed: {}", e))
 }
 
+fn now_rfc3339_utc() -> String {
+    time::OffsetDateTime::now_utc()
+        .format(&time::format_description::well_known::Rfc3339)
+        .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_string())
+}
+
 fn status_from_outcome(
     success_message: String,
     outcome: ExportOutcome,
@@ -2058,6 +2077,7 @@ mod tests {
     use aigc_core::redlineos::model::ContractArtifactRef;
     use base64::prelude::BASE64_STANDARD;
     use base64::Engine;
+    use std::fs;
 
     fn incident_workflow_input() -> IncidentOsInputV1 {
         IncidentOsInputV1 {
@@ -2089,6 +2109,51 @@ mod tests {
             jurisdiction_hint: Some("US-CA".to_string()),
             review_profile: "default".to_string(),
         }
+    }
+
+    #[test]
+    fn healthcare_fingerprint_is_stable_across_input_order() {
+        let forward = vec![
+            InputArtifactDescriptor {
+                artifact_id: "tx_001".to_string(),
+                sha256: "a".repeat(64),
+                bytes: 10,
+                mime_type: "application/json".to_string(),
+                content_type: "application/json".to_string(),
+                classification: "PHI".to_string(),
+                tags: vec!["HEALTHCARE".to_string()],
+            },
+            InputArtifactDescriptor {
+                artifact_id: "consent_001".to_string(),
+                sha256: "b".repeat(64),
+                bytes: 11,
+                mime_type: "application/json".to_string(),
+                content_type: "application/json".to_string(),
+                classification: "PHI".to_string(),
+                tags: vec!["HEALTHCARE".to_string()],
+            },
+        ];
+        let reverse = vec![forward[1].clone(), forward[0].clone()];
+        assert_eq!(
+            manifest_inputs_fingerprint_from_descriptors(&forward),
+            manifest_inputs_fingerprint_from_descriptors(&reverse)
+        );
+    }
+
+    #[test]
+    fn runtime_dir_permissions_hardened_when_supported() {
+        let runtime_dir = make_runtime_dir().expect("runtime directory should be created");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(&runtime_dir)
+                .expect("runtime directory metadata should be readable")
+                .permissions()
+                .mode()
+                & 0o777;
+            assert_eq!(mode, 0o700);
+        }
+        let _ = fs::remove_dir_all(runtime_dir);
     }
 
     #[test]

@@ -1,12 +1,16 @@
 {
   "productName": "AIGC Core",
-  "version": "0.0.0",
-  "identifier": "com.example.aigccore",
+  "version": "0.1.0",
+  "identifier": "com.aigc.core",
   "build": {
     "beforeDevCommand": "pnpm dev:ui",
     "beforeBuildCommand": "pnpm build:ui",
     "devUrl": "http://127.0.0.1:1420",
     "frontendDist": "../dist"
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all"
   },
   "app": {
     "security": {
@@ -14,4 +18,3 @@
     }
   }
 }
-

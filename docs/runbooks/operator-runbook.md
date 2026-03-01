@@ -103,3 +103,39 @@ This runbook covers local operator actions for diagnosing failed pack runs and r
   - `pnpm ui:gate:regression`
 - CI workflow URLs and failing step names.
 - Any produced `bundle.zip` + `audit.ndjson` for failed run reproduction.
+
+## Escalation Owner Matrix
+
+| Area | Primary Owner | Backup Owner | Escalation Trigger |
+|---|---|---|---|
+| Runtime command failures (`run_*`) | Core runtime owner | QA owner | `FAILED` status on required command path |
+| Ingestion contract failures | Data ingestion owner | Core runtime owner | repeated `BLOCKED` with same `error_code` after input fix |
+| CI/gate pipeline failures | Release owner | Core runtime owner | required CI check red for release branch |
+| Release packaging/signing failures | Release owner | Repo admin | release workflow fails to produce signed artifacts |
+| Security/compliance incidents | Security owner | Repo admin | policy/gate bypass, audit-chain anomaly, secret leak risk |
+
+If role assignment is not staffed, treat owner as `Unknown` and escalate directly to repo admin.
+
+## Release Incident Triage Workflow
+
+1. Halt release promotion and freeze new merges to release branch.
+2. Capture failing SHA, failing workflow URL, and failing command output.
+3. Classify incident:
+   - command/runtime failure
+   - gate policy failure
+   - packaging/signing failure
+4. Execute minimal safe rollback:
+   - revert to latest known-good tag
+   - re-run canonical verify + `pnpm gate:all`
+5. Publish incident note with:
+   - impact
+   - mitigation
+   - owner
+   - ETA to restore release lane
+
+## Rollback Ownership Mapping
+
+- Code rollback decision: Core runtime owner.
+- Release artifact rollback execution: Release owner.
+- Branch protection or merge-policy override: Repo admin.
+- Stakeholder notification: PM owner.

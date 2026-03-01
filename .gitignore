@@ -17,3 +17,7 @@ src-tauri/target/
 .idea/
 .vscode/
 
+# UI quality artifacts
+playwright-report/
+test-results/
+.lighthouseci/

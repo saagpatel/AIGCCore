@@ -1,5 +1,6 @@
-# Source: AGENTS.md, package.json
+# Source: AGENTS.md
 pnpm lint
+pnpm ui:gate:static
 pnpm test
 cargo test --workspace
-pnpm gate:all
+pnpm build

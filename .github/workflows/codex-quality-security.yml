@@ -9,21 +9,9 @@ on:
 
 jobs:
   verify:
-    name: codex_verify
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install Linux desktop dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            pkg-config \
-            libglib2.0-dev \
-            libgtk-3-dev \
-            libwebkit2gtk-4.1-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            patchelf
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -52,7 +40,6 @@ jobs:
         run: bash ./.codex/scripts/run_verify_commands.sh
 
   secrets:
-    name: codex_secrets
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -61,10 +48,9 @@ jobs:
       - name: TruffleHog secret scan
         uses: trufflesecurity/trufflehog@main
         with:
-          extra_args: --results=verified,unknown
+          extra_args: --results=verified --fail
 
   sast:
-    name: codex_sast
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -74,7 +60,6 @@ jobs:
           config: p/default
 
   dependency_and_misconfig:
-    name: codex_dependency_and_misconfig
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -89,7 +74,6 @@ jobs:
           ignore-unfixed: true
 
   scorecard:
-    name: codex_scorecard
     if: github.event_name == 'schedule'
     permissions:
       security-events: write

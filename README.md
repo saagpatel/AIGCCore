@@ -98,3 +98,45 @@ If you are implementing or reviewing the system, start here:
 
 ---
 **Status:** Spec packet finalized for Codex implementation.
+
+## Development Modes
+
+### Normal dev (faster warm starts, larger disk footprint)
+- Start app: `pnpm dev`
+- Behavior:
+  - Uses standard local cache/build locations.
+  - Rust artifacts grow under `target/`.
+  - Vite cache grows under `node_modules/.vite`.
+
+### Lean dev (lower disk growth, slower cold starts)
+- Start app: `pnpm lean:dev`
+- Behavior:
+  - Starts Tauri dev normally, but with temporary cache locations.
+  - Uses a temporary `CARGO_TARGET_DIR` for Rust build artifacts.
+  - Uses a temporary Vite cache directory.
+  - Cleans heavy project build artifacts automatically on exit.
+
+## Cleanup Commands
+
+### Targeted cleanup (heavy build artifacts only)
+- Command: `pnpm clean:heavy`
+- Removes:
+  - `dist/`
+  - `target/`
+  - `src-tauri/target/`
+  - `.vite/`
+  - `node_modules/.vite/`
+
+### Full local cleanup (all reproducible local caches/deps)
+- Command: `pnpm clean:full-local`
+- Removes everything from targeted cleanup, plus:
+  - `node_modules/`
+  - root `*.tsbuildinfo`
+
+## Disk vs Speed Tradeoff
+- `pnpm dev`:
+  - Faster after first compile.
+  - Uses more disk over time (especially Rust `target/`).
+- `pnpm lean:dev`:
+  - Keeps repository disk usage low after each session.
+  - Rebuilds more often, so startup can be slower.

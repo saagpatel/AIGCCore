@@ -97,11 +97,10 @@ impl RedactionEngine {
         ).unwrap_or_else(|_| Regex::new("^$").unwrap());
 
         // Process emails
-        let mut offset = 0;
         for caps in email_re.captures_iter(text) {
             if let Some(m) = caps.get(0) {
-                let start = m.start() + offset;
-                let end = m.end() + offset;
+                let start = m.start();
+                let end = m.end();
                 let original = m.as_str().to_string();
                 records.push(RedactionRecord {
                     span_start: start,
@@ -116,8 +115,8 @@ impl RedactionEngine {
         // Process phones
         for caps in phone_re.captures_iter(text) {
             if let Some(m) = caps.get(0) {
-                let start = m.start() + offset;
-                let end = m.end() + offset;
+                let start = m.start();
+                let end = m.end();
                 let original = m.as_str().to_string();
                 records.push(RedactionRecord {
                     span_start: start,
@@ -132,8 +131,8 @@ impl RedactionEngine {
         // Process SSNs
         for caps in ssn_re.captures_iter(text) {
             if let Some(m) = caps.get(0) {
-                let start = m.start() + offset;
-                let end = m.end() + offset;
+                let start = m.start();
+                let end = m.end();
                 let original = m.as_str().to_string();
                 records.push(RedactionRecord {
                     span_start: start,
@@ -147,7 +146,6 @@ impl RedactionEngine {
 
         // Apply replacements in reverse order to avoid offset issues
         for record in records.iter().rev() {
-            let redacted_len = format!("[REDACTED: {}]", record.reason).len();
             let replacement = format!("[REDACTED: {}]", record.reason);
 
             if record.span_start < result.len() && record.span_end <= result.len() {
@@ -166,16 +164,6 @@ impl RedactionEngine {
         // IP address pattern
         let ip_re = Regex::new(
             r"\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b"
-        ).unwrap_or_else(|_| Regex::new("^$").unwrap());
-
-        // File path pattern (Unix and Windows)
-        let path_re = Regex::new(
-            r"(?:[/\\][\w\-._]+)+(?:[/\\][\w\-._]*)?|[a-zA-Z]:[/\\][\w\-._/\\]*"
-        ).unwrap_or_else(|_| Regex::new("^$").unwrap());
-
-        // Hostname pattern
-        let hostname_re = Regex::new(
-            r"\b[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\)*"
         ).unwrap_or_else(|_| Regex::new("^$").unwrap());
 
         // Process IPs
@@ -204,7 +192,7 @@ impl RedactionEngine {
 
     /// Redact command outputs
     fn redact_command_outputs(&self, text: &str) -> (String, Vec<RedactionRecord>) {
-        let mut result = text.to_string();
+        let result = text.to_string();
         let mut records = Vec::new();
 
         // Detect command output patterns
@@ -250,8 +238,7 @@ mod tests {
         let text = "Call 555-123-4567 for help";
         let (redacted, records) = engine.redact(text);
 
-        assert!(redacted.contains("[REDACTED:") || text.contains("555-123-4567"));
-        assert!(records.len() >= 0); // Phone regex may or may not match
+        assert!(redacted.contains("[REDACTED:") || records.is_empty());
     }
 
     #[test]

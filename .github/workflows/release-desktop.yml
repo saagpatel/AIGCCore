@@ -1,0 +1,153 @@
+name: release-desktop
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: "Release version (for example 0.1.0)"
+        required: true
+        type: string
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build_signed_artifacts:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Install Linux desktop dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            pkg-config \
+            libglib2.0-dev \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.29.2
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Resolve expected release version
+        shell: bash
+        env:
+          GH_EVENT_NAME: ${{ github.event_name }}
+          INPUT_RELEASE_VERSION: ${{ inputs.release_version }}
+        run: |
+          if [[ "$GH_EVENT_NAME" == "workflow_dispatch" ]]; then
+            EXPECTED_VERSION="$INPUT_RELEASE_VERSION"
+          else
+            EXPECTED_VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          echo "EXPECTED_VERSION=$EXPECTED_VERSION" >> "$GITHUB_ENV"
+
+      - name: Validate release metadata versions
+        shell: bash
+        run: |
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          TAURI_VERSION="$(node -e "console.log(require('./src-tauri/tauri.conf.json').version)")"
+          CORE_VERSION="$(grep -E '^version = ' core/Cargo.toml | head -n1 | cut -d'\"' -f2)"
+          TAURI_CRATE_VERSION="$(grep -E '^version = ' src-tauri/Cargo.toml | head -n1 | cut -d'\"' -f2)"
+          IDENTIFIER="$(node -e "console.log(require('./src-tauri/tauri.conf.json').identifier)")"
+
+          if [[ "$IDENTIFIER" == "com.example.aigccore" ]]; then
+            echo "Tauri identifier is still placeholder."
+            exit 1
+          fi
+
+          for VERSION in "$PACKAGE_VERSION" "$TAURI_VERSION" "$CORE_VERSION" "$TAURI_CRATE_VERSION"; do
+            if [[ "$VERSION" != "$EXPECTED_VERSION" ]]; then
+              echo "Version mismatch: expected $EXPECTED_VERSION but found $VERSION"
+              exit 1
+            fi
+          done
+
+      - name: Verify signing prerequisites
+        shell: bash
+        run: |
+          if [[ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" || -z "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}" ]]; then
+            echo "Missing TAURI signing secrets. Refusing to build unsigned release artifacts."
+            exit 1
+          fi
+
+      - name: Run canonical verification
+        run: bash .codex/scripts/run_verify_commands.sh
+
+      - name: Build signed desktop artifacts
+        run: pnpm build
+
+      - name: Resolve bundle directory (unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          if [[ -d "target/release/bundle" ]]; then
+            echo "BUNDLE_DIR=target/release/bundle" >> "$GITHUB_ENV"
+          elif [[ -d "src-tauri/target/release/bundle" ]]; then
+            echo "BUNDLE_DIR=src-tauri/target/release/bundle" >> "$GITHUB_ENV"
+          else
+            echo "Could not locate Tauri bundle directory."
+            exit 1
+          fi
+
+      - name: Resolve bundle directory (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (Test-Path "target/release/bundle") {
+            "BUNDLE_DIR=target/release/bundle" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          } elseif (Test-Path "src-tauri/target/release/bundle") {
+            "BUNDLE_DIR=src-tauri/target/release/bundle" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          } else {
+            Write-Error "Could not locate Tauri bundle directory."
+            exit 1
+          }
+
+      - name: Generate SHA-256 checksums (unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          find "${BUNDLE_DIR}" -type f -print0 | xargs -0 shasum -a 256 > "${BUNDLE_DIR}/SHA256SUMS.txt"
+
+      - name: Generate SHA-256 checksums (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Get-ChildItem -Path $env:BUNDLE_DIR -File -Recurse |
+            Get-FileHash -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLower())  $($_.Path)" } |
+            Out-File -Encoding utf8 "$env:BUNDLE_DIR/SHA256SUMS.txt"
+
+      - name: Upload release bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.os }}-${{ env.EXPECTED_VERSION }}
+          path: ${{ env.BUNDLE_DIR }}
+          if-no-files-found: error

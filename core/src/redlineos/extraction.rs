@@ -1,5 +1,5 @@
 use crate::error::{CoreError, CoreResult};
-use crate::redlineos::model::{ExtractedContract, PageLayout, TextBlock};
+use crate::redlineos::model::{ExtractedContract, PageLayout};
 use sha2::{Sha256, Digest};
 
 /// Extract text and metadata from contract PDF

@@ -146,20 +146,24 @@
             "type": "string"
           },
           "bundle_path": {
-            "type": ["string", "null"]
+            "type": ["string", "null"],
+            "description": "Absolute path to exported bundle zip when status is SUCCESS."
           },
           "bundle_sha256": {
-            "type": ["string", "null"]
+            "type": ["string", "null"],
+            "description": "SHA-256 of exported bundle zip when status is SUCCESS."
           },
           "error_code": {
             "type": ["string", "null"],
             "description": "Machine-readable runtime code (for example ARTIFACT_SHA256_MISMATCH, ARTIFACT_PAYLOAD_TOO_LARGE, REDLINE_ARTIFACT_NOT_PDF)."
           },
           "run_id": {
-            "type": ["string", "null"]
+            "type": ["string", "null"],
+            "description": "Deterministic run identifier when runtime execution initialized."
           },
           "audit_path": {
-            "type": ["string", "null"]
+            "type": ["string", "null"],
+            "description": "Runtime audit file path. Bundled audit log includes final validation lifecycle events."
           }
         },
         "examples": [
@@ -177,6 +181,16 @@
             "status": "BLOCKED",
             "message": "Artifact payload for contract_001 is not a valid PDF-like payload",
             "error_code": "REDLINE_ARTIFACT_NOT_PDF"
+          },
+          {
+            "status": "BLOCKED",
+            "message": "Duplicate artifact payload entries for artifact_id=incident_001",
+            "error_code": "ARTIFACT_PAYLOAD_DUPLICATE"
+          },
+          {
+            "status": "BLOCKED",
+            "message": "Declared sha256 for artifact_id=incident_001 is not valid hex",
+            "error_code": "ARTIFACT_SHA256_INVALID"
           }
         ]
       },

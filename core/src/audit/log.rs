@@ -54,4 +54,8 @@ impl AuditLog {
         self.last_hash = event.event_hash.clone();
         Ok(event)
     }
+
+    pub fn read_all_ndjson(&self) -> CoreResult<String> {
+        Ok(fs::read_to_string(&self.path)?)
+    }
 }

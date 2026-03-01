@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use crate::error::{CoreError, CoreResult};
-use std::collections::BTreeMap;
 
 /// Raw incident event from log file
 #[derive(Debug, Clone, Serialize, Deserialize)]

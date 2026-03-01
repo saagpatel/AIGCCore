@@ -16,6 +16,7 @@ use aigc_core::policy::types::{InputExportProfile, NetworkMode, PolicyMode, Proo
 use aigc_core::run::manager::{ExportRequest, RunManager};
 use aigc_core::validator::BundleValidator;
 use serde_json::json;
+use std::io::Read;
 use std::path::Path;
 
 fn extract_claim_markers(markdown: &str) -> Vec<String> {
@@ -263,6 +264,7 @@ fn export_bundle(
     bundle_zip: &Path,
     audit: AuditLog,
 ) -> Result<String, Box<dyn std::error::Error>> {
+    std::env::set_var("AIGC_AUDIT_FIXED_TS_UTC", "2026-01-01T00:00:00Z");
     let req = ExportRequest {
         run_id: run_id.to_string(),
         vault_id: vault_id.to_string(),
@@ -284,6 +286,15 @@ fn export_bundle(
     let summary = validator.validate_zip(bundle_zip, PolicyMode::STRICT)?;
     assert_eq!(summary.overall, "PASS");
     Ok(bundle_sha)
+}
+
+fn read_zip_entry_text(zip_path: &Path, entry_name: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let file = std::fs::File::open(zip_path)?;
+    let mut archive = zip::ZipArchive::new(file)?;
+    let mut entry = archive.by_name(entry_name)?;
+    let mut content = String::new();
+    entry.read_to_string(&mut content)?;
+    Ok(content)
 }
 
 #[test]
@@ -673,4 +684,92 @@ fn healthcareos_revoked_consent_fails() {
         .to_string()
         .to_lowercase();
     assert!(err.contains("revoked") || err.contains("consent"));
+}
+
+#[test]
+fn exported_bundle_audit_log_contains_final_validation_events() {
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let log_content =
+        std::fs::read_to_string(repo_root.join("core/corpus/incidents/sample_incident.ndjson")).unwrap();
+    let input = IncidentOsInputV1 {
+        schema_version: "INCIDENTOS_INPUT_V1".to_string(),
+        incident_artifacts: vec![IncidentArtifactRef {
+            artifact_id: "incident_001".to_string(),
+            sha256: "demo".to_string(),
+            source_type: "syslog".to_string(),
+        }],
+        timeline_start_hint: None,
+        timeline_end_hint: None,
+        customer_redaction_profile: "STRICT".to_string(),
+    };
+    let workflow = execute_incidentos_workflow(input, &log_content).unwrap();
+    let artifact_id = "incident_001";
+    let input_sha = sha256_hex(log_content.as_bytes());
+    let run_id =
+        format!("r_{}", &sha256_hex(format!("{}:{}", artifact_id, input_sha).as_bytes())[..32]);
+    let vault_id = "v_incident_audit_freshness";
+    let customer_path = "exports/incidentos/deliverables/customer_packet.md".to_string();
+    let internal_path = "exports/incidentos/deliverables/internal_packet.md".to_string();
+    let deliverables = vec![
+        (
+            customer_path.clone(),
+            workflow.customer_packet.as_bytes().to_vec(),
+            "text/markdown".to_string(),
+        ),
+        (
+            internal_path.clone(),
+            workflow.internal_packet.as_bytes().to_vec(),
+            "text/markdown".to_string(),
+        ),
+        (
+            "exports/incidentos/deliverables/timeline.csv".to_string(),
+            workflow.timeline_csv.as_bytes().to_vec(),
+            "text/csv".to_string(),
+        ),
+    ];
+
+    let mut claims = Vec::new();
+    for (output_path, content) in [
+        (customer_path.as_str(), workflow.customer_packet.as_str()),
+        (internal_path.as_str(), workflow.internal_packet.as_str()),
+    ] {
+        for claim_id in extract_claim_markers(content) {
+            claims.push(json!({
+                "claim_id": claim_id,
+                "output_path": output_path,
+                "citations": [{
+                    "citation_index": 0,
+                    "artifact_id": artifact_id,
+                    "locator_type": "TEXT_LINE_RANGE_V1",
+                    "locator": {"start_line": 1, "end_line": 1, "text_sha256": input_sha}
+                }]
+            }));
+        }
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let audit_path = temp.path().join("audit.ndjson");
+    let bundle_root = temp.path().join("bundle_root");
+    let bundle_zip = temp.path().join("bundle.zip");
+    let mut audit = AuditLog::open_or_create(&audit_path).unwrap();
+    append_required_events(&mut audit, &run_id, vault_id).unwrap();
+    let inputs = make_bundle_inputs(
+        "incidentos",
+        &run_id,
+        vault_id,
+        artifact_id,
+        log_content.as_bytes(),
+        "application/x-ndjson",
+        vec!["INCIDENT".to_string()],
+        deliverables,
+        json!({"schema_version":"TEMPLATES_USED_V1","pack_id":"incidentos","pack_version":"1.0.0","run_id":run_id.clone(),"templates":[{"template_id":"incidentos_v1","template_version":"1.0.0","output_paths":["exports/incidentos/deliverables/customer_packet.md","exports/incidentos/deliverables/internal_packet.md","exports/incidentos/deliverables/timeline.csv"],"render_engine":{"name":"core_template_renderer","version":"1.0.0"}}]}),
+        json!({"schema_version":"LOCATOR_SCHEMA_V1","pack_id":"incidentos","pack_version":"1.0.0","run_id":run_id.clone(),"generated_at_ms":0,"claims":claims}),
+        json!({"schema_version":"REDACTION_SCHEMA_V1","pack_id":"incidentos","pack_version":"1.0.0","run_id":run_id.clone(),"generated_at_ms":0,"artifacts":[]}),
+        &audit_path,
+    )
+    .unwrap();
+    export_bundle(&run_id, vault_id, &inputs, &bundle_root, &bundle_zip, audit).unwrap();
+    let audit_log_ndjson = read_zip_entry_text(&bundle_zip, "audit_log.ndjson").unwrap();
+    assert!(audit_log_ndjson.contains("\"event_type\":\"EXPORT_REQUESTED\""));
+    assert!(audit_log_ndjson.contains("\"event_type\":\"BUNDLE_VALIDATION_RESULT\""));
 }

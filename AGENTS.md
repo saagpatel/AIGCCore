@@ -37,7 +37,7 @@ Source: `.codex/verify.commands` (derived from `AGENTS.md` and `package.json`)
 - typecheck: `N/A (no standalone typecheck command defined in AGENTS/CI)`
 - unit-test: `pnpm test`; `cargo test --workspace`
 - integration-test: `pnpm gate:all`
-- build: `N/A (desktop packaging build is non-blocking for codex verify gates)`
+- build: `pnpm build`
 
 ### Definition of Done
 - All commands in `.codex/verify.commands` pass via `.codex/scripts/run_verify_commands.sh`.
@@ -56,10 +56,9 @@ Source: `.codex/verify.commands` (derived from `AGENTS.md` and `package.json`)
 2) Fixer applies accepted findings in severity order: `P0 -> P1 -> P2 -> P3`.
 3) Required state coverage per changed UI surface: loading, empty, error, success, disabled, focus-visible.
 4) Required pre-done gates:
-   - `pnpm lint`
-   - `pnpm test`
-   - `pnpm gate:all`
-   - `pnpm build`
+   - `pnpm ui:gate:static`
+   - `pnpm ui:gate:regression`
+   - Lighthouse CI workflow (`.github/workflows/lighthouse.yml`)
 5) Done-state is blocked if any required UI gate is `fail` or `not-run`.
 
 ## Definition of Done: Tests + Docs (Blocking)
