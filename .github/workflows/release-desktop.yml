@@ -74,8 +74,8 @@ jobs:
         run: |
           PACKAGE_VERSION="$(node -p "require('./package.json').version")"
           TAURI_VERSION="$(node -e "console.log(require('./src-tauri/tauri.conf.json').version)")"
-          CORE_VERSION="$(grep -E '^version = ' core/Cargo.toml | head -n1 | cut -d'\"' -f2)"
-          TAURI_CRATE_VERSION="$(grep -E '^version = ' src-tauri/Cargo.toml | head -n1 | cut -d'\"' -f2)"
+          CORE_VERSION="$(grep -E '^version = ' core/Cargo.toml | head -n1 | cut -d'"' -f2)"
+          TAURI_CRATE_VERSION="$(grep -E '^version = ' src-tauri/Cargo.toml | head -n1 | cut -d'"' -f2)"
           IDENTIFIER="$(node -e "console.log(require('./src-tauri/tauri.conf.json').identifier)")"
 
           if [[ "$IDENTIFIER" == "com.example.aigccore" ]]; then
