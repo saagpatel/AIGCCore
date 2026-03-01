@@ -147,3 +147,5 @@ If role assignment is not staffed, treat owner as `Unknown` and escalate directl
 
 - Latest backup-owner execution drill:
   - `docs/runbooks/backup-owner-drill-2026-03-01.md`
+- Latest operator handoff drill:
+  - `docs/runbooks/operator-handoff-drill-2026-03-01.md`

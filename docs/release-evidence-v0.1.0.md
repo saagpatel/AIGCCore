@@ -7,7 +7,7 @@ Status: Final
 
 - Target version: `0.1.0`
 - Release artifact baseline SHA: `9f6bcb6a91513afe4dc1d397424fe1d49a617229`
-- Latest master governance/hardening SHA: `db86d52a60cc69e21410610d4e06ee950c407c83`
+- Latest master governance/hardening SHA: `1f30d2bcda8de71b16634d6f63c582af80b95a6d`
 - Tag: `v0.1.0-week1-stable` (`c77d6c289ccd8f5908c8696748f2cf4b9e8e7952`)
 
 ## Release Workflow Evidence
@@ -19,6 +19,8 @@ Status: Final
   - `build_signed_artifacts (ubuntu-22.04)`: success
   - `build_signed_artifacts (windows-latest)`: success
   - `build_signed_artifacts (macos-latest)`: success
+- latest ceremony rerun URL: `https://github.com/saagar210/AIGCCore/actions/runs/22546166401` (`success`)
+- published release URL: `https://github.com/saagar210/AIGCCore/releases/tag/v0.1.0-week1-stable`
 
 ## Artifact Checksums (from CI Artifacts)
 
@@ -37,12 +39,12 @@ Checksum manifest sanity:
 
 ## CI / Security Snapshot (Latest Master)
 
-For SHA `db86d52a60cc69e21410610d4e06ee950c407c83`:
+For SHA `1f30d2bcda8de71b16634d6f63c582af80b95a6d`:
 
-- `quality-gates`: success (`https://github.com/saagar210/AIGCCore/actions/runs/22544983562`)
-- `codex-quality-security`: success (`https://github.com/saagar210/AIGCCore/actions/runs/22544983574`)
-- `CodeQL` (default setup): success (`https://github.com/saagar210/AIGCCore/actions/runs/22544983415`)
-- `ui-quality` (latest PR lane): success (`https://github.com/saagar210/AIGCCore/actions/runs/22544810922`)
+- `quality-gates`: success (`https://github.com/saagar210/AIGCCore/actions/runs/22545500268`)
+- `codex-quality-security`: success (`https://github.com/saagar210/AIGCCore/actions/runs/22545500277`)
+- `CodeQL` (default setup): success (`https://github.com/saagar210/AIGCCore/actions/runs/22545500145`)
+- `ui-quality` (latest PR lane): success (`https://github.com/saagar210/AIGCCore/actions/runs/22545349089`)
 
 ## Hardening Fixes Applied During Release Burn-Down
 
@@ -53,6 +55,10 @@ For SHA `db86d52a60cc69e21410610d4e06ee950c407c83`:
 - PR #25 (`267a088...`): switched CodeQL Advanced workflow to manual-only to avoid default-setup conflict
 - PR #28 (`20a8f1b...`): Phase 4/5 runtime and governance closeout merged
 - PR #29 (`db86d52...`): fixed TruffleHog duplicate fail-flag regression on `master`
+- PR #30 (`1f30d2b...`): final closeout of dependency backlog, docs evidence sync, and policy re-tightening verification
+- PR #33 (`pending merge`): Windows release ceremony remediations
+  - add `.ico` icon mapping in Tauri bundle config
+  - exclude `SHA256SUMS.txt` self-hash race in Windows checksum step
 
 ## Branch Protection Snapshot
 

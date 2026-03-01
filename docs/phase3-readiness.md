@@ -24,9 +24,10 @@ Implemented and verified locally:
 
 ## External Evidence Status
 
-- Merge SHA baseline (`origin/master`): `9fe5207aac39d62e2d245780a20fa7d2bef84c70`
-- CI URLs on merge SHA:
-  - `quality-gates`: `https://github.com/saagar210/AIGCCore/actions/runs/22537939429` (`in progress` at document update time)
-  - `codex-quality-security`: `https://github.com/saagar210/AIGCCore/actions/runs/22537939425` (`in progress` at document update time)
+- Latest merge SHA (`origin/master`): `1f30d2bcda8de71b16634d6f63c582af80b95a6d`
+- CI URLs on latest merge SHA:
+  - `quality-gates`: `https://github.com/saagar210/AIGCCore/actions/runs/22545500268` (`success`)
+  - `codex-quality-security`: `https://github.com/saagar210/AIGCCore/actions/runs/22545500277` (`success`)
+  - `CodeQL`: `https://github.com/saagar210/AIGCCore/actions/runs/22545500145` (`success`)
 - Baseline/release tags:
   - `v0.1.0-week1-stable` -> `c77d6c289ccd8f5908c8696748f2cf4b9e8e7952`

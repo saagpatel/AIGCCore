@@ -21,11 +21,11 @@ Phase closeout security audit identified five material risks:
 4. Add repo-level ownership and disclosure controls:
    - `.github/CODEOWNERS`
    - `SECURITY.md`
-5. Keep temporary `required_approving_review_count = 0` as policy debt tracked in readiness docs until staffing allows re-tightening.
+5. Re-tighten branch protection to `required_approving_review_count = 1` and track reviewer-capacity sustainability as explicit follow-up work.
 
 ## Consequences
 
 1. Reduced local disclosure risk for runtime secret material and transient preflight outputs.
 2. Improved audit trace interpretation by operators and reviewers.
 3. Clearer accountability for critical paths and security reporting.
-4. Remaining governance debt is explicit and time-bound rather than implicit.
+4. Remaining governance debt is explicit and time-bound rather than implicit (reviewer sustainability tracked in issue `#32`).

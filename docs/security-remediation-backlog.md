@@ -5,17 +5,17 @@ Source: security audit findings + hardening pass
 
 ## Priority Sequence
 
-| Priority | Item                                                                    | Severity    | Owner                            | Status                    |
-| -------- | ----------------------------------------------------------------------- | ----------- | -------------------------------- | ------------------------- |
-| P0       | Harden fallback KEK file/directory permissions                          | High        | Core runtime owner               | Done                      |
-| P0       | Harden preflight temp artifacts + guaranteed cleanup                    | Medium-High | Core runtime owner               | Done                      |
-| P0       | Distinguish synthetic egress proof events in audit stream               | Medium      | Core runtime owner               | Done                      |
-| P1       | Codify ownership and disclosure process (`CODEOWNERS`, `SECURITY.md`)   | Medium      | Repo admin / security owner      | Done                      |
-| P1       | Re-tighten branch approvals to `>=1` with named reviewer rotation       | High        | Repo admin / engineering manager | Done                      |
-| P1       | Decide CodeQL operating model (default setup only vs advanced workflow) | Medium      | Security owner / repo admin      | Done                      |
-| P1       | Close npm dependency vulnerability backlog                              | High        | Security owner / release owner   | Done                      |
-| P2       | Resolve `glib` advisory via upstream stack migration plan               | Medium      | Runtime owner                    | Accepted risk (dismissed) |
-| P2       | Add backup security owner staffing in runbook + security policy         | Medium      | PM owner / repo admin            | Done                      |
+| Priority | Item                                                                    | Severity    | Owner                            | Status              |
+| -------- | ----------------------------------------------------------------------- | ----------- | -------------------------------- | ------------------- |
+| P0       | Harden fallback KEK file/directory permissions                          | High        | Core runtime owner               | Done                |
+| P0       | Harden preflight temp artifacts + guaranteed cleanup                    | Medium-High | Core runtime owner               | Done                |
+| P0       | Distinguish synthetic egress proof events in audit stream               | Medium      | Core runtime owner               | Done                |
+| P1       | Codify ownership and disclosure process (`CODEOWNERS`, `SECURITY.md`)   | Medium      | Repo admin / security owner      | Done                |
+| P1       | Re-tighten branch approvals to `>=1` with named reviewer rotation       | High        | Repo admin / engineering manager | Done                |
+| P1       | Decide CodeQL operating model (default setup only vs advanced workflow) | Medium      | Security owner / repo admin      | Done                |
+| P1       | Close npm dependency vulnerability backlog                              | High        | Security owner / release owner   | Done                |
+| P2       | Resolve `glib` advisory via upstream stack migration plan               | Medium      | Runtime owner                    | Planned (Issue #31) |
+| P2       | Add backup security owner staffing in runbook + security policy         | Medium      | PM owner / repo admin            | Done                |
 
 ## Remediation Details
 
@@ -95,4 +95,14 @@ Source: security audit findings + hardening pass
   - `tmp` `0.2.4`
 - Rust advisory (`glib`, GHSA-wrw7-89jp-8q8g):
   - direct upgrade to `glib >= 0.20.0` is blocked by current `tauri`/`gtk` dependency constraints (`gtk = ^0.18`)
-  - status managed as accepted risk until upstream stack supports secure major upgrade
+  - remediation planning tracked at `https://github.com/saagar210/AIGCCore/issues/31`
+  - target decision date: 2026-04-15
+
+## Reviewer Sustainability Follow-up
+
+- repository currently has one write/admin collaborator; this is tracked as sustainability gap:
+  - `https://github.com/saagar210/AIGCCore/issues/32`
+- target completion date: 2026-03-15
+- close criteria:
+  - add second write-capable reviewer
+  - update `.github/CODEOWNERS` backup ownership mapping

@@ -25,3 +25,11 @@ Phase closeout was blocked when branch protection required approving reviews, bu
    - owner: Engineering manager (or repo admin)
    - target date: 2026-03-31
    - action: restore `required_approving_review_count >= 1`
+
+## Closure Update (2026-03-01)
+
+1. The temporary approval relaxation has been closed.
+2. Active `master` policy now enforces:
+   - `required_approving_review_count = 1`
+   - required contexts: `quality-gates`, `verify`, `ui-gates`
+3. Reviewer sustainability remains tracked separately in issue `#32`.
