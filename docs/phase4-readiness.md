@@ -36,7 +36,7 @@ Status: Complete
 
 ## External Closeout Status (Final)
 
-- Latest merge SHA (`origin/master`): `267a088ed7c440cba158d4117e3fc8f467162727`
+- Latest merge SHA (`origin/master`): `db86d52a60cc69e21410610d4e06ee950c407c83`
 - Release workflow run URL: `https://github.com/saagar210/AIGCCore/actions/runs/22538435713` (`success`)
 - Release matrix status:
   - Ubuntu: success

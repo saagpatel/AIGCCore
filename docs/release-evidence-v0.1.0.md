@@ -7,7 +7,7 @@ Status: Final
 
 - Target version: `0.1.0`
 - Release artifact baseline SHA: `9f6bcb6a91513afe4dc1d397424fe1d49a617229`
-- Latest master governance/hardening SHA: `267a088ed7c440cba158d4117e3fc8f467162727`
+- Latest master governance/hardening SHA: `db86d52a60cc69e21410610d4e06ee950c407c83`
 - Tag: `v0.1.0-week1-stable` (`c77d6c289ccd8f5908c8696748f2cf4b9e8e7952`)
 
 ## Release Workflow Evidence
@@ -37,12 +37,12 @@ Checksum manifest sanity:
 
 ## CI / Security Snapshot (Latest Master)
 
-For SHA `267a088ed7c440cba158d4117e3fc8f467162727`:
+For SHA `db86d52a60cc69e21410610d4e06ee950c407c83`:
 
-- `quality-gates`: success (`https://github.com/saagar210/AIGCCore/actions/runs/22542840958`)
-- `codex-quality-security`: success (`https://github.com/saagar210/AIGCCore/actions/runs/22542840969`)
-- `CodeQL` (default setup): success (`https://github.com/saagar210/AIGCCore/actions/runs/22542840811`)
-- `ui-quality` (latest PR lane): success (`https://github.com/saagar210/AIGCCore/actions/runs/22542836817`)
+- `quality-gates`: success (`https://github.com/saagar210/AIGCCore/actions/runs/22544983562`)
+- `codex-quality-security`: success (`https://github.com/saagar210/AIGCCore/actions/runs/22544983574`)
+- `CodeQL` (default setup): success (`https://github.com/saagar210/AIGCCore/actions/runs/22544983415`)
+- `ui-quality` (latest PR lane): success (`https://github.com/saagar210/AIGCCore/actions/runs/22544810922`)
 
 ## Hardening Fixes Applied During Release Burn-Down
 
@@ -51,13 +51,15 @@ For SHA `267a088ed7c440cba158d4117e3fc8f467162727`:
 - PR #22 (`9f6bcb6...`): fixed Unix checksum self-hash behavior
 - PR #23 (`44ac636...`): fixed TruffleHog duplicate `--fail` in security workflow
 - PR #25 (`267a088...`): switched CodeQL Advanced workflow to manual-only to avoid default-setup conflict
+- PR #28 (`20a8f1b...`): Phase 4/5 runtime and governance closeout merged
+- PR #29 (`db86d52...`): fixed TruffleHog duplicate fail-flag regression on `master`
 
 ## Branch Protection Snapshot
 
-- `required_approving_review_count = 0` (temporary)
+- `required_approving_review_count = 1` (re-tightened on 2026-03-01)
 - required contexts: `quality-gates`, `verify`, `ui-gates`
 
 ## Smoke Test Outcomes
 
-- Desktop bundle launch smoke: `Unknown`
+- Desktop bundle launch smoke: `PASS` (local runtime launch smoke on built binary; process started and was cleanly terminated after health interval)
 - Canonical command invoke smoke (`run_*` pack paths): covered by release job `Run canonical verification` on all three runners

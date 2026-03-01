@@ -5,15 +5,17 @@ Source: security audit findings + hardening pass
 
 ## Priority Sequence
 
-| Priority | Item                                                                    | Severity    | Owner                            | Status                            |
-| -------- | ----------------------------------------------------------------------- | ----------- | -------------------------------- | --------------------------------- |
-| P0       | Harden fallback KEK file/directory permissions                          | High        | Core runtime owner               | Done                              |
-| P0       | Harden preflight temp artifacts + guaranteed cleanup                    | Medium-High | Core runtime owner               | Done                              |
-| P0       | Distinguish synthetic egress proof events in audit stream               | Medium      | Core runtime owner               | Done                              |
-| P1       | Codify ownership and disclosure process (`CODEOWNERS`, `SECURITY.md`)   | Medium      | Repo admin / security owner      | Done                              |
-| P1       | Re-tighten branch approvals to `>=1` with named reviewer rotation       | High        | Repo admin / engineering manager | Pending (external GitHub setting) |
-| P1       | Decide CodeQL operating model (default setup only vs advanced workflow) | Medium      | Security owner / repo admin      | Done                              |
-| P2       | Add backup security owner staffing in runbook + security policy         | Medium      | PM owner / repo admin            | Done                              |
+| Priority | Item                                                                    | Severity    | Owner                            | Status                    |
+| -------- | ----------------------------------------------------------------------- | ----------- | -------------------------------- | ------------------------- |
+| P0       | Harden fallback KEK file/directory permissions                          | High        | Core runtime owner               | Done                      |
+| P0       | Harden preflight temp artifacts + guaranteed cleanup                    | Medium-High | Core runtime owner               | Done                      |
+| P0       | Distinguish synthetic egress proof events in audit stream               | Medium      | Core runtime owner               | Done                      |
+| P1       | Codify ownership and disclosure process (`CODEOWNERS`, `SECURITY.md`)   | Medium      | Repo admin / security owner      | Done                      |
+| P1       | Re-tighten branch approvals to `>=1` with named reviewer rotation       | High        | Repo admin / engineering manager | Done                      |
+| P1       | Decide CodeQL operating model (default setup only vs advanced workflow) | Medium      | Security owner / repo admin      | Done                      |
+| P1       | Close npm dependency vulnerability backlog                              | High        | Security owner / release owner   | Done                      |
+| P2       | Resolve `glib` advisory via upstream stack migration plan               | Medium      | Runtime owner                    | Accepted risk (dismissed) |
+| P2       | Add backup security owner staffing in runbook + security policy         | Medium      | PM owner / repo admin            | Done                      |
 
 ## Remediation Details
 
@@ -53,10 +55,9 @@ Source: security audit findings + hardening pass
 ## P1-1: Branch Approval Re-tightening
 
 - Why: temporary `0` required approvals reduces independent review control.
-- Next step:
-  - set `required_approving_review_count` to `1`
-  - define backup reviewer to prevent deadlock
-- Dependency: reviewer capacity confirmation
+- Implemented:
+  - `required_approving_review_count` set to `1` on `master`
+  - required blocking checks preserved: `quality-gates`, `verify`, `ui-gates`
 - Acceptance:
   - branch protection reflects `>=1` approval
   - required checks remain unchanged and blocking
@@ -76,8 +77,22 @@ Source: security audit findings + hardening pass
 - Why: single-owner concentration increases operational risk.
 - Implemented:
   - security policy now specifies repository admin as backup owner
-- Next step:
-  - perform handoff drill for incident triage and rollback
+- Implemented (drill):
+  - backup-owner incident drill executed and logged in `docs/runbooks/backup-owner-drill-2026-03-01.md`
 - Acceptance:
   - backup owner is non-`Unknown` (done)
   - drill evidence captured in release/readiness docs
+
+## Dependency Backlog Closure
+
+- npm advisories were remediated by lockfile hardening and transitive override pins in `package.json`:
+  - `minimatch` `3.1.4` / `9.0.7`
+  - `basic-ftp` `5.2.0`
+  - `rollup` `4.59.0`
+  - `esbuild` `0.25.0`
+  - `ajv` `6.14.0`
+  - `lodash` `4.17.23`
+  - `tmp` `0.2.4`
+- Rust advisory (`glib`, GHSA-wrw7-89jp-8q8g):
+  - direct upgrade to `glib >= 0.20.0` is blocked by current `tauri`/`gtk` dependency constraints (`gtk = ^0.18`)
+  - status managed as accepted risk until upstream stack supports secure major upgrade

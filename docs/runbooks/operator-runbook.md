@@ -142,3 +142,8 @@ If role assignment is not staffed, treat owner as `Unknown` and escalate directl
 - Release artifact rollback execution: Release owner.
 - Branch protection or merge-policy override: Repo admin.
 - Stakeholder notification: PM owner.
+
+## Drill Reference
+
+- Latest backup-owner execution drill:
+  - `docs/runbooks/backup-owner-drill-2026-03-01.md`
