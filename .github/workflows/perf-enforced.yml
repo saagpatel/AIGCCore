@@ -5,6 +5,8 @@ on:
     types: [opened, synchronize, reopened, edited]
     branches: [main, master]
 
+permissions: read-all
+
 jobs:
   perf-bundle:
     if: ${{ vars.PERF_PROFILE == 'production' }}

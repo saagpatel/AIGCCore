@@ -7,22 +7,24 @@ on:
   schedule:
     - cron: "0 13 * * 1"
 
+permissions: read-all
+
 jobs:
   verify:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
         with:
           version: 10.29.2
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22
           cache: pnpm
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
       - name: Install dependencies
         run: |
           if [ -f package.json ]; then
@@ -42,29 +44,29 @@ jobs:
   secrets:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           fetch-depth: 0
       - name: TruffleHog secret scan
-        uses: trufflesecurity/trufflehog@main
+        uses: trufflesecurity/trufflehog@0fa069c12f0c7baf431041cd1e564a9c5058846c
         with:
           extra_args: --results=verified
 
   sast:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
       - name: Semgrep
-        uses: returntocorp/semgrep-action@v1
+        uses: returntocorp/semgrep-action@713efdd345f3035192eaa63f56867b88e63e4e5d
         with:
           config: p/default
 
   dependency_and_misconfig:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
       - name: Trivy FS scan
-        uses: aquasecurity/trivy-action@v0.35.0
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
         with:
           scan-type: fs
           scan-ref: .
@@ -83,14 +85,14 @@ jobs:
       actions: read
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
       - name: OpenSSF Scorecard
-        uses: ossf/scorecard-action@v2.3.1
+        uses: ossf/scorecard-action@e93faf2ab2f3663b51bc6e62d42b8520f2eff874
         with:
           publish_results: false
           results_file: scorecard-results.sarif
           results_format: sarif
       - name: Upload scorecard SARIF
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@78ed0c7291d93e40c51b085850dc669a4c3ab73b
         with:
           sarif_file: scorecard-results.sarif
