@@ -5,7 +5,8 @@ on:
     types: [opened, synchronize, reopened]
     branches: [main, master]
 
-permissions: read-all
+permissions:
+  contents: read
 
 jobs:
   perf-bundle:
