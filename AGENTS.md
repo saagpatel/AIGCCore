@@ -90,3 +90,58 @@ Source: `.codex/verify.commands` (derived from `AGENTS.md` and `package.json`)
 - Architecture-impacting changes must include an ADR in `/docs/adr/`.
 - Required checks are blocking when `fail` or `not-run`: lint, typecheck, tests, coverage, diff coverage, docs check.
 - Reviewer -> fixer -> reviewer loop is required before merge.
+
+<!-- portfolio-context:start -->
+# Portfolio Context
+
+## What This Project Is
+
+AIGCCore is a local-first governance and audit backbone for privacy-first desktop AI applications. It provides offline-by-default enforcement, deterministic artifact generation, evidence bundle exports, and tamper-evident hash-chained audit trails for specialized desktop packs.
+
+## Current State
+
+The repo is active infrastructure work. The Rust core is the source of truth for governance logic, audit canonicalization, hash chaining, determinism enforcement, and bundle assembly. Current local changes are PR-template metadata, so context recovery should not stage unrelated files.
+
+## Stack
+
+| Layer | Technology |
+|-------|------------|
+| Desktop shell | Tauri 2 |
+| Core logic | Rust (aes-gcm, sha2, serde) |
+| UI | React + TypeScript |
+| Build | Vite |
+| Storage | SQLite + blob artifact store |
+| Cryptography | AES-256-GCM, ChaCha20-Poly1305, SHA-256 |
+| Audit chaining | Custom hash-chain canonicalization (Rust) |
+
+## How To Run
+
+```bash
+# Development mode
+pnpm dev
+
+# Low-disk development mode
+pnpm lean:dev
+
+# Run tests
+pnpm test
+
+# Production build
+pnpm tauri build
+
+# Clean heavy build artifacts
+pnpm clean:heavy
+```
+
+## Known Risks
+
+- Offline-by-default is a core safety contract; any online capability must be explicitly gated and allowlisted.
+- Audit event canonicalization and hash chaining must remain deterministic.
+- Evidence Bundle v1 exports should not be considered valid unless the validator checklist passes.
+- Do not let the React frontend bypass the Tauri command surface to modify audit state directly.
+
+## Next Recommended Move
+
+Resolve the PR-template drift separately, then keep future work focused on deterministic bundle validation, audit-chain integrity, and offline enforcement.
+
+<!-- portfolio-context:end -->
