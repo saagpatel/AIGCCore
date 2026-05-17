@@ -9,7 +9,7 @@ Older tags may receive best-effort fixes only.
 
 Do not open public issues for suspected vulnerabilities.
 
-Report privately by emailing: `saagar210@gmail.com`
+Report privately through this repository's GitHub security advisory flow when enabled, or contact the repository owner through their GitHub profile.
 
 Include:
 
