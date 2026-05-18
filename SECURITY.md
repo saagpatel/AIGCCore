@@ -2,14 +2,14 @@
 
 ## Supported Versions
 
-The `master` branch and latest tagged release are actively supported.
+The `main` branch and latest tagged release are actively supported.
 Older tags may receive best-effort fixes only.
 
 ## Reporting a Vulnerability
 
 Do not open public issues for suspected vulnerabilities.
 
-Report privately through this repository's GitHub security advisory flow when enabled, or contact the repository owner through their GitHub profile.
+Use this repository's private vulnerability reporting flow to report suspected vulnerabilities. On GitHub, open the repository's **Security** tab and choose **Report a vulnerability**.
 
 Include:
 
@@ -34,6 +34,6 @@ Include:
 
 ## Security Ownership
 
-- Primary owner: `@saagar210`
+- Primary owner: `@saagpatel`
 - Backup owner: repository admin
 - Escalation fallback: repository admin
