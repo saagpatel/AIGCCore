@@ -9,7 +9,9 @@ Older tags may receive best-effort fixes only.
 
 Do not open public issues for suspected vulnerabilities.
 
-Use this repository's private vulnerability reporting flow to report suspected vulnerabilities. On GitHub, open the repository's **Security** tab and choose **Report a vulnerability**.
+Use this repository's private vulnerability reporting flow to report suspected vulnerabilities:
+
+- GitHub private report form: https://github.com/saagpatel/AIGCCore/security/advisories/new
 
 Include:
 
