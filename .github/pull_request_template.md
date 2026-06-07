@@ -1,12 +1,12 @@
 <!-- codex-os-managed -->
 ## What
-- 
+-
 
 ## Why
-- 
+-
 
 ## How
-- 
+-
 
 ## Testing
 - Commands run:
@@ -20,13 +20,13 @@
 - DB query delta:
 
 ## Risk / Notes
-- 
+-
 
 ## Screenshots (UI only)
-- 
+-
 
 ## Lockfile rationale (if lockfile changed)
-- 
+-
 
 ## Baseline governance (if .perf-baselines changed)
 - `perf-baseline-update` label applied:
