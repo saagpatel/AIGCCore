@@ -5,6 +5,9 @@ on:
     types: [opened, synchronize, reopened]
     branches: [main, master]
 
+permissions:
+  contents: read
+
 jobs:
   perf-bundle:
     runs-on: ubuntu-latest
