@@ -71,7 +71,7 @@ fn macos_get_or_create_kek(vault_id: &str) -> CoreResult<[u8; 32]> {
 
     // Create and persist new KEK in Keychain.
     let mut kek = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut kek);
+    rand::rng().fill_bytes(&mut kek);
     let encoded = base64_encode(&kek);
     let out = Command::new("security")
         .args([
@@ -111,7 +111,7 @@ fn file_get_or_create_kek(path: &std::path::Path) -> CoreResult<[u8; 32]> {
         harden_secret_dir_permissions(parent)?;
     }
     let mut kek = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut kek);
+    rand::rng().fill_bytes(&mut kek);
     std::fs::write(path, kek)?;
     harden_secret_file_permissions(path)?;
     Ok(kek)
@@ -164,7 +164,7 @@ fn windows_get_or_create_kek_dpapi(vault_id: &str, path: &std::path::Path) -> Co
         std::fs::create_dir_all(parent)?;
     }
     let mut kek = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut kek);
+    rand::rng().fill_bytes(&mut kek);
     let enc = dpapi_protect(&kek, vault_id)?;
     std::fs::write(path, enc)?;
     Ok(kek)
