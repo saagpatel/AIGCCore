@@ -20,7 +20,7 @@ pub struct EncryptedBlob {
 
 pub fn generate_dek_32() -> [u8; 32] {
     let mut out = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut out);
+    rand::rng().fill_bytes(&mut out);
     out
 }
 
@@ -34,7 +34,7 @@ pub fn encrypt_bytes(
             let cipher = XChaCha20Poly1305::new_from_slice(dek)
                 .map_err(|e| CoreError::InvalidInput(format!("invalid key: {}", e)))?;
             let mut nonce = [0u8; 24];
-            rand::thread_rng().fill_bytes(&mut nonce);
+            rand::rng().fill_bytes(&mut nonce);
             let ct = cipher
                 .encrypt(XNonce::from_slice(&nonce), plaintext)
                 .map_err(|e| CoreError::PolicyBlocked(format!("encryption failed: {}", e)))?;
@@ -48,7 +48,7 @@ pub fn encrypt_bytes(
             let cipher = Aes256Gcm::new_from_slice(dek)
                 .map_err(|e| CoreError::InvalidInput(format!("invalid key: {}", e)))?;
             let mut nonce = [0u8; 12];
-            rand::thread_rng().fill_bytes(&mut nonce);
+            rand::rng().fill_bytes(&mut nonce);
             let ct = cipher
                 .encrypt(AesNonce::from_slice(&nonce), plaintext)
                 .map_err(|e| CoreError::PolicyBlocked(format!("encryption failed: {}", e)))?;
