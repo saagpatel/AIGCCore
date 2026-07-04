@@ -128,4 +128,12 @@ mod tests {
         let hash2 = sha256_hex(data);
         assert_eq!(hash1, hash2);
     }
+
+    #[test]
+    fn test_sha256_hex_matches_known_vector() {
+        assert_eq!(
+            sha256_hex(b"abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+    }
 }

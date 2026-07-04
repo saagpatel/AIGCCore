@@ -162,4 +162,42 @@ mod tests {
 
         assert_eq!(anchors1[0].anchor_id, anchors2[0].anchor_id);
     }
+
+    #[test]
+    fn test_sha256_hex_matches_known_vector() {
+        assert_eq!(
+            sha256_hex(b"abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+    }
+
+    #[test]
+    fn test_anchor_id_uses_canonical_sha256_prefix() {
+        let clause = SegmentedClause {
+            clause_id: "c1_C0".to_string(),
+            clause_number: None,
+            title: None,
+            text: "Test clause text".to_string(),
+            start_page: 0,
+            start_char_offset: 0,
+            end_char_offset: 16,
+            confidence: 0.9,
+        };
+
+        let anchors = generate_anchors(&[clause], "c1").unwrap();
+
+        assert_eq!(anchors[0].anchor_id, "REDLINE_c1_bb94b4ff_0");
+        assert_eq!(
+            anchors[0].text_hash,
+            "bb94b4ffb11901e8ebf51dbf5cec68abf6b355fc4d2ae64e4ffed0d80808a919"
+        );
+    }
+
+    #[test]
+    fn test_stable_clause_anchor_normalizes_whitespace() {
+        assert_eq!(
+            stable_clause_anchor(" Spaced   clause\ntext "),
+            "clause_90d06d3830ba1f5b"
+        );
+    }
 }
