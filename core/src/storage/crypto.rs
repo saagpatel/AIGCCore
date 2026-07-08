@@ -1,7 +1,7 @@
 use crate::error::{CoreError, CoreResult};
 use aes_gcm::{aead::Aead, Aes256Gcm, KeyInit, Nonce as AesNonce};
 use chacha20poly1305::{XChaCha20Poly1305, XNonce};
-use rand::RngCore;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 #[allow(non_camel_case_types)]

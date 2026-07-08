@@ -1,5 +1,5 @@
 use crate::error::{CoreError, CoreResult};
-use rand::RngCore;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 #[cfg(target_os = "macos")]
 use std::process::Command;
