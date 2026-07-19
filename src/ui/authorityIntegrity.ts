@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { authorityIntegrityInvokeRequest } from "./authorityIntegrityContract";
 
 export type AuthorityIntegrityProbeResult = {
   adapter_id: string;
@@ -14,7 +15,6 @@ export type AuthorityIntegrityProbeResult = {
 export function probeAuthorityIntegrityAdapter(
   endpoint: string,
 ): Promise<AuthorityIntegrityProbeResult> {
-  return invoke<AuthorityIntegrityProbeResult>("authority_integrity_probe_adapter", {
-    input: { endpoint },
-  });
+  const request = authorityIntegrityInvokeRequest(endpoint);
+  return invoke<AuthorityIntegrityProbeResult>(request.command, request.body);
 }

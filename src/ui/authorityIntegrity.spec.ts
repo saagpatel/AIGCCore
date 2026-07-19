@@ -5,6 +5,7 @@ const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 
 import { probeAuthorityIntegrityAdapter } from "./authorityIntegrity";
+import { authorityIntegrityInvokeRequest } from "./authorityIntegrityContract";
 
 describe("authority integrity adapter hook", () => {
   beforeEach(() => {
@@ -23,6 +24,13 @@ describe("authority integrity adapter hook", () => {
     });
     expect(invoke).toHaveBeenCalledWith("authority_integrity_probe_adapter", {
       input: { endpoint: "http://127.0.0.1:4000" },
+    });
+  });
+
+  it("exports a dependency-free frontend request contract", () => {
+    expect(authorityIntegrityInvokeRequest("http://127.0.0.1:4000")).toEqual({
+      command: "authority_integrity_probe_adapter",
+      body: { input: { endpoint: "http://127.0.0.1:4000" } },
     });
   });
 

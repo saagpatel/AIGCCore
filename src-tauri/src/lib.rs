@@ -2669,6 +2669,8 @@ mod authority_integrity_tests {
             fs::read_to_string(&attempts).expect("read attempt log"),
             format!("{endpoint}\n")
         );
+        println!("MHAI_LP007_POSITIVE_ATTEMPT_SENSOR=PASS");
+        println!("MHAI_LP007_FULL_PATH=PASS");
         std::env::remove_var("AIGC_AUTHORITY_INTEGRITY_ATTEMPT_LOG");
         fs::remove_dir_all(root).expect("remove temp root");
     }
@@ -2692,6 +2694,7 @@ mod authority_integrity_tests {
 
         assert!(error.to_string().contains("adapter endpoint rejected"));
         assert!(!attempts.exists());
+        println!("MHAI_LP007_NON_LOOPBACK_REJECTED_BEFORE_ATTEMPT=PASS");
         std::env::remove_var("AIGC_AUTHORITY_INTEGRITY_ATTEMPT_LOG");
         fs::remove_dir_all(root).expect("remove temp root");
     }
@@ -2715,6 +2718,7 @@ mod authority_integrity_tests {
 
         assert!(error.to_string().contains("invalid adapter endpoint URL"));
         assert!(!attempts.exists());
+        println!("MHAI_LP007_MALFORMED_REJECTED_BEFORE_ATTEMPT=PASS");
         std::env::remove_var("AIGC_AUTHORITY_INTEGRITY_ATTEMPT_LOG");
         fs::remove_dir_all(root).expect("remove temp root");
     }
