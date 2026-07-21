@@ -2,7 +2,7 @@ use aigc_core::audit::event::{finalize_event, Actor, AuditEvent, ZERO_HASH_64};
 use aigc_core::determinism::run_id::sha256_hex;
 use aigc_core::evidence_bundle::authority::{
     EvidenceAuthorityManifest, EvidenceAvailability, EvidenceClaimContext, EvidenceClaimDecision,
-    CLAIM_LIVE_EXECUTION, CLAIM_LOCAL_CONTROLLED_EXECUTION,
+    EvidenceExecutionClass, EvidenceOrigin, CLAIM_LIVE_EXECUTION, CLAIM_LOCAL_CONTROLLED_EXECUTION,
 };
 use serde_json::json;
 
@@ -185,6 +185,38 @@ fn audit_mismatch_and_simulation_overclaim_fail_validation() {
     assert!(contradictory
         .validate_internal("case-a", runtime_audit)
         .is_err());
+}
+
+#[test]
+fn unsupported_origins_cannot_authorize_live_or_production_claims() {
+    let runtime_audit =
+        "{\"event_type\":\"EGRESS_REQUEST_BLOCKED\",\"details\":{\"evidence_origin\":\"RUNTIME_OBSERVATION\"}}\n";
+    for origin in [
+        EvidenceOrigin::RuntimeObservation,
+        EvidenceOrigin::Fixture,
+        EvidenceOrigin::Replay,
+    ] {
+        let mut candidate = authority();
+        candidate.evidence_origin = origin;
+        candidate.observed_execution_class = EvidenceExecutionClass::Live;
+        candidate.production_equivalent = true;
+        candidate.downstream_claims.may_satisfy = vec![CLAIM_LIVE_EXECUTION.to_string()];
+        candidate.bind_audit_log(runtime_audit);
+
+        assert!(
+            candidate
+                .validate_internal("case-a", runtime_audit)
+                .is_err(),
+            "{origin:?} must be rejected until it has an explicit authority contract"
+        );
+        let mut claim_context = context();
+        claim_context.expected_audit_log_sha256 = candidate.source.audit_log_sha256.clone();
+        assert_eq!(
+            candidate.evaluate_claim(CLAIM_LIVE_EXECUTION, &claim_context),
+            EvidenceClaimDecision::Unknown,
+            "{origin:?} must remain non-authorizing"
+        );
+    }
 }
 
 #[test]

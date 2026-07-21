@@ -316,66 +316,70 @@ impl EvidenceAuthorityManifest {
             return Err("a downstream claim cannot be both permitted and prohibited".to_string());
         }
 
-        if self.evidence_origin == EvidenceOrigin::ControlSimulation {
-            if self.production_equivalent {
-                return Err("control simulation cannot be production-equivalent".to_string());
-            }
-            if self.observed_execution_class == EvidenceExecutionClass::Live {
-                return Err("control simulation cannot declare live observed execution".to_string());
-            }
-            for claim in REQUIRED_SIMULATION_PROHIBITIONS {
-                if !self
-                    .downstream_claims
-                    .must_not_satisfy
-                    .iter()
-                    .any(|candidate| candidate == claim)
-                {
-                    return Err(format!(
-                        "control simulation must prohibit downstream claim {claim}"
-                    ));
-                }
-            }
-            require_exact_values(
-                "control-simulation permitted claims",
-                &self.downstream_claims.may_satisfy,
-                &CONTROLLED_SIMULATION_CLAIMS,
-            )?;
-            require_exact_values(
-                "control-simulation prohibited claims",
-                &self.downstream_claims.must_not_satisfy,
-                &REQUIRED_SIMULATION_PROHIBITIONS,
-            )?;
-            require_exact_values(
-                "control-simulation allowed effects",
-                &self.allowed_effects,
-                &CONTROLLED_SIMULATION_EFFECTS,
-            )?;
-            require_exact_values(
-                "control-simulation observed effects",
-                &self.observed_effects,
-                &CONTROLLED_SIMULATION_EFFECTS,
-            )?;
-            require_exact_tool_ids(&self.tools, &CONTROLLED_SIMULATION_TOOLS)?;
-            if self
-                .tools
-                .iter()
-                .any(|tool| tool.observed_used && tool.external_mutation_allowed)
-            {
-                return Err(
-                    "control simulation cannot observe an external-mutation-authorized tool"
-                        .to_string(),
-                );
-            }
-            require_tool_state(&self.tools, "LOCAL_EVIDENCE_BUNDLE_EXPORT", true, true)?;
-            require_tool_state(&self.tools, "MODEL_INFERENCE", false, false)?;
-            require_tool_state(
-                &self.tools,
-                "EXTERNAL_PUBLICATION_OR_DEPLOYMENT",
-                false,
-                false,
-            )?;
-            validate_control_simulation_audit(audit_log_ndjson)?;
+        if self.evidence_origin != EvidenceOrigin::ControlSimulation {
+            return Err(format!(
+                "evidence origin {:?} has no authorizing manifest contract",
+                self.evidence_origin
+            ));
         }
+        if self.production_equivalent {
+            return Err("control simulation cannot be production-equivalent".to_string());
+        }
+        if self.observed_execution_class == EvidenceExecutionClass::Live {
+            return Err("control simulation cannot declare live observed execution".to_string());
+        }
+        for claim in REQUIRED_SIMULATION_PROHIBITIONS {
+            if !self
+                .downstream_claims
+                .must_not_satisfy
+                .iter()
+                .any(|candidate| candidate == claim)
+            {
+                return Err(format!(
+                    "control simulation must prohibit downstream claim {claim}"
+                ));
+            }
+        }
+        require_exact_values(
+            "control-simulation permitted claims",
+            &self.downstream_claims.may_satisfy,
+            &CONTROLLED_SIMULATION_CLAIMS,
+        )?;
+        require_exact_values(
+            "control-simulation prohibited claims",
+            &self.downstream_claims.must_not_satisfy,
+            &REQUIRED_SIMULATION_PROHIBITIONS,
+        )?;
+        require_exact_values(
+            "control-simulation allowed effects",
+            &self.allowed_effects,
+            &CONTROLLED_SIMULATION_EFFECTS,
+        )?;
+        require_exact_values(
+            "control-simulation observed effects",
+            &self.observed_effects,
+            &CONTROLLED_SIMULATION_EFFECTS,
+        )?;
+        require_exact_tool_ids(&self.tools, &CONTROLLED_SIMULATION_TOOLS)?;
+        if self
+            .tools
+            .iter()
+            .any(|tool| tool.observed_used && tool.external_mutation_allowed)
+        {
+            return Err(
+                "control simulation cannot observe an external-mutation-authorized tool"
+                    .to_string(),
+            );
+        }
+        require_tool_state(&self.tools, "LOCAL_EVIDENCE_BUNDLE_EXPORT", true, true)?;
+        require_tool_state(&self.tools, "MODEL_INFERENCE", false, false)?;
+        require_tool_state(
+            &self.tools,
+            "EXTERNAL_PUBLICATION_OR_DEPLOYMENT",
+            false,
+            false,
+        )?;
+        validate_control_simulation_audit(audit_log_ndjson)?;
         Ok(())
     }
 
@@ -499,52 +503,53 @@ impl EvidenceAuthorityManifest {
         {
             return Err("downstream claim policy is ambiguous".to_string());
         }
-        if self.evidence_origin == EvidenceOrigin::ControlSimulation {
-            if self.production_equivalent
-                || self.observed_execution_class == EvidenceExecutionClass::Live
-            {
-                return Err("control simulation overclaims execution authority".to_string());
-            }
-            for claim in REQUIRED_SIMULATION_PROHIBITIONS {
-                if !self
-                    .downstream_claims
-                    .must_not_satisfy
-                    .iter()
-                    .any(|candidate| candidate == claim)
-                {
-                    return Err("control simulation omits a required claim prohibition".to_string());
-                }
-            }
-            require_exact_values(
-                "control-simulation permitted claims",
-                &self.downstream_claims.may_satisfy,
-                &CONTROLLED_SIMULATION_CLAIMS,
-            )?;
-            require_exact_values(
-                "control-simulation prohibited claims",
-                &self.downstream_claims.must_not_satisfy,
-                &REQUIRED_SIMULATION_PROHIBITIONS,
-            )?;
-            require_exact_values(
-                "control-simulation allowed effects",
-                &self.allowed_effects,
-                &CONTROLLED_SIMULATION_EFFECTS,
-            )?;
-            require_exact_values(
-                "control-simulation observed effects",
-                &self.observed_effects,
-                &CONTROLLED_SIMULATION_EFFECTS,
-            )?;
-            require_exact_tool_ids(&self.tools, &CONTROLLED_SIMULATION_TOOLS)?;
-            require_tool_state(&self.tools, "LOCAL_EVIDENCE_BUNDLE_EXPORT", true, true)?;
-            require_tool_state(&self.tools, "MODEL_INFERENCE", false, false)?;
-            require_tool_state(
-                &self.tools,
-                "EXTERNAL_PUBLICATION_OR_DEPLOYMENT",
-                false,
-                false,
-            )?;
+        if self.evidence_origin != EvidenceOrigin::ControlSimulation {
+            return Err("evidence origin has no authorizing manifest contract".to_string());
         }
+        if self.production_equivalent
+            || self.observed_execution_class == EvidenceExecutionClass::Live
+        {
+            return Err("control simulation overclaims execution authority".to_string());
+        }
+        for claim in REQUIRED_SIMULATION_PROHIBITIONS {
+            if !self
+                .downstream_claims
+                .must_not_satisfy
+                .iter()
+                .any(|candidate| candidate == claim)
+            {
+                return Err("control simulation omits a required claim prohibition".to_string());
+            }
+        }
+        require_exact_values(
+            "control-simulation permitted claims",
+            &self.downstream_claims.may_satisfy,
+            &CONTROLLED_SIMULATION_CLAIMS,
+        )?;
+        require_exact_values(
+            "control-simulation prohibited claims",
+            &self.downstream_claims.must_not_satisfy,
+            &REQUIRED_SIMULATION_PROHIBITIONS,
+        )?;
+        require_exact_values(
+            "control-simulation allowed effects",
+            &self.allowed_effects,
+            &CONTROLLED_SIMULATION_EFFECTS,
+        )?;
+        require_exact_values(
+            "control-simulation observed effects",
+            &self.observed_effects,
+            &CONTROLLED_SIMULATION_EFFECTS,
+        )?;
+        require_exact_tool_ids(&self.tools, &CONTROLLED_SIMULATION_TOOLS)?;
+        require_tool_state(&self.tools, "LOCAL_EVIDENCE_BUNDLE_EXPORT", true, true)?;
+        require_tool_state(&self.tools, "MODEL_INFERENCE", false, false)?;
+        require_tool_state(
+            &self.tools,
+            "EXTERNAL_PUBLICATION_OR_DEPLOYMENT",
+            false,
+            false,
+        )?;
         Ok(())
     }
 }

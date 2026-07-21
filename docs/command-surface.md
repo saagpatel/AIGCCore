@@ -16,6 +16,8 @@ This project does not expose an external HTTP API. The primary runtime interface
   production authority, external mutation, deployability, or real-user success.
 - Evidence authority is case-local, hash-bound to source/executable/arguments/environment/audit
   inputs, and expiring. Missing, stale, malformed, or mismatched authority is non-authorizing.
+- `RUNTIME_OBSERVATION`, `FIXTURE`, and `REPLAY` authority manifests are reserved and
+  non-authorizing until their explicit manifest and audit-evidence contracts are implemented.
 
 ## Command: `run_redlineos`
 

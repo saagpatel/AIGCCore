@@ -32,6 +32,9 @@ authority, external mutation, or current runtime capability.
    runtime-observed event can pass that gate.
 8. Tauri command results surface the authority contract so operator-visible success cannot hide
    the controlled/simulated boundary.
+9. `RUNTIME_OBSERVATION`, `FIXTURE`, and `REPLAY` remain reserved evidence origins. Until each has
+   an explicit manifest and audit-evidence contract, the authority validator rejects it and claim
+   evaluation returns `UNKNOWN`; an origin label alone never authorizes live or production claims.
 
 ## Consequences
 
