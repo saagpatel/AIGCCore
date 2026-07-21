@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { EvidenceAuthorityNotice } from "./EvidenceAuthorityNotice";
 import type { PackCommandStatus, RedlineCommandInput, RedlineOSInput } from "./types";
 import { SAMPLE_REDLINE_CONTRACT_BASE64 } from "./samplePayloads";
 
@@ -125,6 +126,7 @@ export function RedlineOSPanel({ running, result, error, onRun }: Props) {
           {result.audit_path && <p>Audit path: {result.audit_path}</p>}
           {result.bundle_path && <p>Bundle path: {result.bundle_path}</p>}
           {result.bundle_sha256 && <p>Bundle SHA-256: {result.bundle_sha256}</p>}
+          <EvidenceAuthorityNotice authority={result.evidence_authority} />
         </div>
       )}
     </section>

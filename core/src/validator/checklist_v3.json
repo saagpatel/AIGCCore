@@ -26,13 +26,8 @@
       "description": "Exports layout contains deliverables and attachments; templates_used.json must exist for each pack export.",
       "validate": {
         "exports": {
-          "must_have_dirs": [
-            "deliverables",
-            "attachments"
-          ],
-          "attachments_must_exist": [
-            "templates_used.json"
-          ],
+          "must_have_dirs": ["deliverables", "attachments"],
+          "attachments_must_exist": ["templates_used.json"],
           "attachments_must_validate": {
             "templates_used.json": "TEMPLATES_USED_V1"
           }
@@ -85,6 +80,21 @@
       }
     },
     {
+      "check_id": "CHK.EVIDENCE.AUTHORITY_CONTRACT",
+      "severity": "BLOCKER",
+      "description": "Run manifest v2 contains an internally coherent, case-local, source-bound, expiring evidence authority contract whose audit digest matches the bundled audit log.",
+      "validate": {
+        "json_path": "run_manifest.json:evidence_authority",
+        "schema_version": "EVIDENCE_AUTHORITY_V1",
+        "run_id_matches_case_id": true,
+        "audit_log_sha256_matches": true,
+        "source_bindings_are_sha256": true,
+        "freshness_interval_valid": true,
+        "state_scope": "CASE_LOCAL",
+        "simulation_production_equivalent": false
+      }
+    },
+    {
       "check_id": "CHK.NETWORK.SNAPSHOT_PRESENT",
       "severity": "BLOCKER",
       "description": "Network snapshot includes mode, proof level, allowlist, UI blocking flag, and adapter endpoint validations.",
@@ -106,9 +116,7 @@
       "validate": {
         "conditional": {
           "if_policy": "STRICT",
-          "must_exist_glob": [
-            "exports/**/attachments/citations_map.json"
-          ],
+          "must_exist_glob": ["exports/**/attachments/citations_map.json"],
           "citations_schema": "LOCATOR_SCHEMA_V1",
           "artifact_refs_in_hashes_csv": true,
           "requires_claim_markers": "<!-- CLAIM:C#### -->",
@@ -123,9 +131,7 @@
       "validate": {
         "conditional": {
           "if_policy_requires_redaction": true,
-          "must_exist_glob": [
-            "exports/**/attachments/redactions_map.json"
-          ],
+          "must_exist_glob": ["exports/**/attachments/redactions_map.json"],
           "redactions_schema": "REDACTION_SCHEMA_V1",
           "required_redactions_definition": "Per Phase_2_5_Lock_Addendum_v2.5-lock-4 §6.3"
         }
@@ -138,19 +144,9 @@
       "validate": {
         "json_path": "inputs_snapshot/model_snapshot.json",
         "allowed_pinning_levels_by_policy": {
-          "STRICT": [
-            "CRYPTO_PINNED",
-            "VERSION_PINNED"
-          ],
-          "BALANCED": [
-            "VERSION_PINNED",
-            "CRYPTO_PINNED"
-          ],
-          "DRAFT_ONLY": [
-            "NAME_ONLY",
-            "VERSION_PINNED",
-            "CRYPTO_PINNED"
-          ]
+          "STRICT": ["CRYPTO_PINNED", "VERSION_PINNED"],
+          "BALANCED": ["VERSION_PINNED", "CRYPTO_PINNED"],
+          "DRAFT_ONLY": ["NAME_ONLY", "VERSION_PINNED", "CRYPTO_PINNED"]
         }
       }
     },
@@ -160,10 +156,7 @@
       "description": "Eval report exists, references a registry version, and gate IDs are valid.",
       "validate": {
         "json_path": "eval_report.json",
-        "required_fields": [
-          "overall_status",
-          "gates"
-        ],
+        "required_fields": ["overall_status", "gates"],
         "gate_ids_must_exist_in_registry": true
       }
     },
@@ -184,4 +177,3 @@
     }
   ]
 }
-

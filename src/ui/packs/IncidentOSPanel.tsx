@@ -1,4 +1,5 @@
 import type { PackCommandStatus } from "./types";
+import { EvidenceAuthorityNotice } from "./EvidenceAuthorityNotice";
 
 type Props = {
   running: boolean;
@@ -54,6 +55,7 @@ export function IncidentOSPanel({
           {result.audit_path && <p>Audit path: {result.audit_path}</p>}
           {result.bundle_path && <p>Bundle path: {result.bundle_path}</p>}
           {result.bundle_sha256 && <p>Bundle SHA-256: {result.bundle_sha256}</p>}
+          <EvidenceAuthorityNotice authority={result.evidence_authority} />
         </div>
       )}
     </section>

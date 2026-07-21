@@ -14,12 +14,14 @@ impl EvidenceBundleBuilder {
 
         // Required files (Annex A §A.3 / A.4)
         write_json(bundle_root.join("BUNDLE_INFO.json"), &inputs.bundle_info)?;
-        write_json(bundle_root.join("run_manifest.json"), &inputs.run_manifest)?;
+        let normalized_audit_log = normalize_newlines(&inputs.audit_log_ndjson);
+        let mut run_manifest = inputs.run_manifest.clone();
+        run_manifest
+            .evidence_authority
+            .bind_audit_log(&normalized_audit_log);
+        write_json(bundle_root.join("run_manifest.json"), &run_manifest)?;
 
-        write_text(
-            bundle_root.join("audit_log.ndjson"),
-            normalize_newlines(&inputs.audit_log_ndjson),
-        )?;
+        write_text(bundle_root.join("audit_log.ndjson"), normalized_audit_log)?;
         write_json(bundle_root.join("eval_report.json"), &inputs.eval_report)?;
         write_text(
             bundle_root.join("artifact_hashes.csv"),

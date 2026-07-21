@@ -1,6 +1,7 @@
 pub mod checklist;
 
 use crate::error::{CoreError, CoreResult};
+use crate::evidence_bundle::schemas::{BundleInfo, RunManifest};
 use crate::policy::types::PolicyMode;
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
@@ -120,6 +121,9 @@ impl BundleValidator {
 
         // CHK.AUDIT.REQUIRED_KEYS_AND_CHAIN
         checks_out.push(check_audit_chain(&mut zip));
+
+        // CHK.EVIDENCE.AUTHORITY_CONTRACT
+        checks_out.push(check_evidence_authority_contract(&mut zip));
 
         // CHK.ARTIFACT_HASHES.VERIFY
         checks_out.push(check_artifact_hashes(&mut zip, &paths));
@@ -247,6 +251,58 @@ fn read_zip_entry_json<R: Read + Seek>(
 ) -> CoreResult<serde_json::Value> {
     let bytes = read_zip_entry_bytes(zip, path)?;
     Ok(serde_json::from_slice(&bytes)?)
+}
+
+fn check_evidence_authority_contract<R: Read + Seek>(
+    zip: &mut ZipArchive<R>,
+) -> CheckResult {
+    let fail = |message: String| CheckResult {
+        check_id: "CHK.EVIDENCE.AUTHORITY_CONTRACT".to_string(),
+        severity: "BLOCKER".to_string(),
+        result: "FAIL".to_string(),
+        message,
+    };
+
+    let bundle_info: BundleInfo = match read_zip_entry_json(zip, "BUNDLE_INFO.json")
+        .and_then(|value| Ok(serde_json::from_value(value)?))
+    {
+        Ok(value) => value,
+        Err(error) => return fail(format!("failed to read BUNDLE_INFO.json: {error}")),
+    };
+    if bundle_info.schema_versions.run_manifest != "RUN_MANIFEST_V2" {
+        return fail(
+            "run manifest schema must be RUN_MANIFEST_V2 for evidence authority".to_string(),
+        );
+    }
+    let run_manifest: RunManifest = match read_zip_entry_json(zip, "run_manifest.json")
+        .and_then(|value| Ok(serde_json::from_value(value)?))
+    {
+        Ok(value) => value,
+        Err(error) => return fail(format!("failed to read run_manifest.json: {error}")),
+    };
+    if bundle_info.run_id != run_manifest.run_id {
+        return fail("BUNDLE_INFO run_id does not match run_manifest run_id".to_string());
+    }
+    let audit_log = match read_zip_entry_bytes(zip, "audit_log.ndjson")
+        .and_then(|bytes| String::from_utf8(bytes).map_err(|error| CoreError::InvalidInput(error.to_string())))
+    {
+        Ok(value) => value,
+        Err(error) => return fail(format!("failed to read audit_log.ndjson: {error}")),
+    };
+    if let Err(error) = run_manifest
+        .evidence_authority
+        .validate_internal(&run_manifest.run_id, &audit_log)
+    {
+        return fail(error);
+    }
+    CheckResult {
+        check_id: "CHK.EVIDENCE.AUTHORITY_CONTRACT".to_string(),
+        severity: "BLOCKER".to_string(),
+        result: "PASS".to_string(),
+        message:
+            "evidence authority is hash-bound, internally coherent, and carries a valid freshness interval"
+                .to_string(),
+    }
 }
 
 fn check_json_required_fields<R: Read + Seek>(

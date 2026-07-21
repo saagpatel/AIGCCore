@@ -5,11 +5,7 @@
       "gate_id": "BUNDLE_FORMAT.REQUIRED_FILES_V1",
       "category": "BUNDLE_FORMAT",
       "severity": "BLOCKER",
-      "applies_to_policies": [
-        "STRICT",
-        "BALANCED",
-        "DRAFT_ONLY"
-      ],
+      "applies_to_policies": ["STRICT", "BALANCED", "DRAFT_ONLY"],
       "pass_criteria": {
         "requires_files": [
           "BUNDLE_INFO.json",
@@ -28,23 +24,15 @@
           "attachments_dir_present": true,
           "templates_used_present": true
         },
-        "optional_dirs": [
-          "inputs_snapshot/artifacts/"
-        ]
+        "optional_dirs": ["inputs_snapshot/artifacts/"]
       },
-      "evidence_required": [
-        "<bundle_root>"
-      ]
+      "evidence_required": ["<bundle_root>"]
     },
     {
       "gate_id": "AUDIT_HASH_CHAIN.VERIFY_V1",
       "category": "AUDIT",
       "severity": "BLOCKER",
-      "applies_to_policies": [
-        "STRICT",
-        "BALANCED",
-        "DRAFT_ONLY"
-      ],
+      "applies_to_policies": ["STRICT", "BALANCED", "DRAFT_ONLY"],
       "pass_criteria": {
         "hash_algorithm": "SHA-256",
         "required_event_keys": [
@@ -61,24 +49,30 @@
         "ndjson_chain_valid": true,
         "canonicalization_doc": "Phase_2_5_Lock_Addendum_v2.5-lock-4.md"
       },
-      "evidence_required": [
-        "audit_log.ndjson"
-      ]
+      "evidence_required": ["audit_log.ndjson"]
+    },
+    {
+      "gate_id": "EVIDENCE_AUTHORITY.CONTRACT_V1",
+      "category": "EVIDENCE_AUTHORITY",
+      "severity": "BLOCKER",
+      "applies_to_policies": ["STRICT", "BALANCED", "DRAFT_ONLY"],
+      "pass_criteria": {
+        "run_manifest_schema": "RUN_MANIFEST_V2",
+        "authority_schema": "EVIDENCE_AUTHORITY_V1",
+        "case_local_state": true,
+        "source_and_audit_hash_bound": true,
+        "freshness_interval_valid": true,
+        "simulation_cannot_authorize_live_claims": true
+      },
+      "evidence_required": ["run_manifest.json", "audit_log.ndjson"]
     },
     {
       "gate_id": "OFFLINE_ENFORCEMENT.MODE_PROOF_V1",
       "category": "OFFLINE_ENFORCEMENT",
       "severity": "BLOCKER",
-      "applies_to_policies": [
-        "STRICT",
-        "BALANCED",
-        "DRAFT_ONLY"
-      ],
+      "applies_to_policies": ["STRICT", "BALANCED", "DRAFT_ONLY"],
       "pass_criteria": {
-        "requires_files": [
-          "inputs_snapshot/network_snapshot.json",
-          "audit_log.ndjson"
-        ],
+        "requires_files": ["inputs_snapshot/network_snapshot.json", "audit_log.ndjson"],
         "network_snapshot": {
           "network_mode_present": true,
           "proof_level_present": true,
@@ -87,50 +81,30 @@
           "ui_remote_fetch_disabled_must_be_true": true,
           "adapter_endpoints_may_be_empty": true
         },
-        "audit_events_required": [
-          "NETWORK_MODE_SET",
-          "ALLOWLIST_UPDATED"
-        ]
+        "audit_events_required": ["NETWORK_MODE_SET", "ALLOWLIST_UPDATED"]
       },
-      "evidence_required": [
-        "inputs_snapshot/network_snapshot.json",
-        "audit_log.ndjson"
-      ]
+      "evidence_required": ["inputs_snapshot/network_snapshot.json", "audit_log.ndjson"]
     },
     {
       "gate_id": "OFFLINE_ENFORCEMENT.ALLOWLIST_MATCH_V1",
       "category": "OFFLINE_ENFORCEMENT",
       "severity": "BLOCKER",
-      "applies_to_policies": [
-        "STRICT",
-        "BALANCED"
-      ],
+      "applies_to_policies": ["STRICT", "BALANCED"],
       "pass_criteria": {
-        "audit_events_required": [
-          "ALLOWLIST_UPDATED"
-        ],
+        "audit_events_required": ["ALLOWLIST_UPDATED"],
         "egress_events": {
           "blocked_events_recorded": true,
           "allowed_events_reference_rule_id": true,
-          "blocked_reasons_allowed": [
-            "OFFLINE_MODE",
-            "NOT_ALLOWLISTED",
-            "UI_DIRECT_EGRESS_BLOCKED"
-          ]
+          "blocked_reasons_allowed": ["OFFLINE_MODE", "NOT_ALLOWLISTED", "UI_DIRECT_EGRESS_BLOCKED"]
         }
       },
-      "evidence_required": [
-        "inputs_snapshot/network_snapshot.json",
-        "audit_log.ndjson"
-      ]
+      "evidence_required": ["inputs_snapshot/network_snapshot.json", "audit_log.ndjson"]
     },
     {
       "gate_id": "CITATIONS.STRICT_ENFORCED_V1",
       "category": "CITATIONS",
       "severity": "BLOCKER",
-      "applies_to_policies": [
-        "STRICT"
-      ],
+      "applies_to_policies": ["STRICT"],
       "pass_criteria": {
         "citations_map_present": true,
         "citations_path_glob": "exports/**/attachments/citations_map.json",
@@ -152,10 +126,7 @@
       "gate_id": "REDACTION.REQUIRED_APPLIED_V1",
       "category": "REDACTION",
       "severity": "BLOCKER",
-      "applies_to_policies": [
-        "STRICT",
-        "BALANCED"
-      ],
+      "applies_to_policies": ["STRICT", "BALANCED"],
       "pass_criteria": {
         "if_policy_requires_redaction": {
           "redactions_map_present": true,
@@ -177,62 +148,34 @@
       "gate_id": "MODEL_PINNING.MIN_LEVEL_V1",
       "category": "MODEL_PINNING",
       "severity": "BLOCKER",
-      "applies_to_policies": [
-        "STRICT",
-        "BALANCED"
-      ],
+      "applies_to_policies": ["STRICT", "BALANCED"],
       "pass_criteria": {
         "allowed_pinning_levels_by_policy": {
-          "STRICT": [
-            "CRYPTO_PINNED",
-            "VERSION_PINNED"
-          ],
-          "BALANCED": [
-            "VERSION_PINNED",
-            "CRYPTO_PINNED"
-          ],
-          "DRAFT_ONLY": [
-            "NAME_ONLY",
-            "VERSION_PINNED",
-            "CRYPTO_PINNED"
-          ]
+          "STRICT": ["CRYPTO_PINNED", "VERSION_PINNED"],
+          "BALANCED": ["VERSION_PINNED", "CRYPTO_PINNED"],
+          "DRAFT_ONLY": ["NAME_ONLY", "VERSION_PINNED", "CRYPTO_PINNED"]
         }
       },
-      "evidence_required": [
-        "inputs_snapshot/model_snapshot.json"
-      ]
+      "evidence_required": ["inputs_snapshot/model_snapshot.json"]
     },
     {
       "gate_id": "VAULT_CRYPTO.ENCRYPTION_AT_REST_V1",
       "category": "VAULT_CRYPTO",
       "severity": "BLOCKER",
-      "applies_to_policies": [
-        "STRICT",
-        "BALANCED",
-        "DRAFT_ONLY"
-      ],
+      "applies_to_policies": ["STRICT", "BALANCED", "DRAFT_ONLY"],
       "pass_criteria": {
         "policy_snapshot_requires": {
           "encryption_at_rest": true
         },
-        "vault_crypto_algorithms_allowed": [
-          "XCHACHA20_POLY1305",
-          "AES_256_GCM"
-        ]
+        "vault_crypto_algorithms_allowed": ["XCHACHA20_POLY1305", "AES_256_GCM"]
       },
-      "evidence_required": [
-        "inputs_snapshot/policy_snapshot.json",
-        "audit_log.ndjson"
-      ]
+      "evidence_required": ["inputs_snapshot/policy_snapshot.json", "audit_log.ndjson"]
     },
     {
       "gate_id": "DETERMINISM.ZIP_PACKAGING_V1",
       "category": "DETERMINISM",
       "severity": "BLOCKER",
-      "applies_to_policies": [
-        "STRICT",
-        "BALANCED"
-      ],
+      "applies_to_policies": ["STRICT", "BALANCED"],
       "pass_criteria": {
         "when_determinism_enabled": {
           "zip_sort_order": "LEX_PATH",
@@ -242,19 +185,13 @@
           "zip_compression_level": 9
         }
       },
-      "evidence_required": [
-        "<bundle_zip_bytes>",
-        "run_manifest.json"
-      ]
+      "evidence_required": ["<bundle_zip_bytes>", "run_manifest.json"]
     },
     {
       "gate_id": "DETERMINISM.PDF_CAPABLE_V1",
       "category": "DETERMINISM",
       "severity": "MAJOR",
-      "applies_to_policies": [
-        "STRICT",
-        "BALANCED"
-      ],
+      "applies_to_policies": ["STRICT", "BALANCED"],
       "pass_criteria": {
         "when_pdf_determinism_enabled": {
           "pdf_metadata_fixed": true,
@@ -264,20 +201,13 @@
           "if_all_pdfs_pdf_determinism_disabled": "NOT_APPLICABLE"
         }
       },
-      "evidence_required": [
-        "exports/**/deliverables/*.pdf",
-        "run_manifest.json"
-      ]
+      "evidence_required": ["exports/**/deliverables/*.pdf", "run_manifest.json"]
     },
     {
       "gate_id": "EVIDENCEOS.OUTPUTS_PRESENT_V1",
       "category": "EVIDENCEOS",
       "severity": "BLOCKER",
-      "applies_to_policies": [
-        "STRICT",
-        "BALANCED",
-        "DRAFT_ONLY"
-      ],
+      "applies_to_policies": ["STRICT", "BALANCED", "DRAFT_ONLY"],
       "pass_criteria": {
         "required_deliverables": [
           "exports/evidenceos/deliverables/evidence_index.csv",
@@ -299,18 +229,12 @@
       "gate_id": "EVIDENCEOS.MAPPING_REVIEW_PRESENT_V1",
       "category": "EVIDENCEOS",
       "severity": "BLOCKER",
-      "applies_to_policies": [
-        "STRICT",
-        "BALANCED",
-        "DRAFT_ONLY"
-      ],
+      "applies_to_policies": ["STRICT", "BALANCED", "DRAFT_ONLY"],
       "pass_criteria": {
         "required_mapping_review_file": "exports/evidenceos/deliverables/evidence_mapping_review.json",
         "required_schema": "EVIDENCE_MAPPING_REVIEW_V1"
       },
-      "evidence_required": [
-        "exports/evidenceos/deliverables/evidence_mapping_review.json"
-      ]
+      "evidence_required": ["exports/evidenceos/deliverables/evidence_mapping_review.json"]
     }
   ],
   "generated_at_ms": 0

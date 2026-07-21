@@ -6,6 +6,7 @@ use aigc_core::audit::log::AuditLog;
 use aigc_core::determinism::json_canonical;
 use aigc_core::determinism::run_id::sha256_hex;
 use aigc_core::evidence_bundle::artifact_hashes::{render_artifact_hashes_csv, ArtifactHashRow};
+use aigc_core::evidence_bundle::authority::EvidenceAuthorityManifest;
 use aigc_core::evidence_bundle::schemas::*;
 use aigc_core::evidenceos::control_library::{controls_for_capabilities, ControlDefinition};
 use aigc_core::evidenceos::model::{CitationInput, EvidenceItem, NarrativeClaimInput};
@@ -49,6 +50,7 @@ struct PackCommandStatus {
     error_code: Option<String>,
     run_id: Option<String>,
     audit_path: Option<String>,
+    evidence_authority: Option<EvidenceAuthorityManifest>,
 }
 
 #[derive(Debug, Serialize)]
@@ -64,9 +66,10 @@ struct EvidenceOsRunResult {
     bundle_path: String,
     bundle_sha256: String,
     missing_control_ids: Vec<String>,
+    evidence_authority: EvidenceAuthorityManifest,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct EvidenceOsRunInput {
     enabled_capabilities: Vec<String>,
     artifact_title: String,
@@ -76,7 +79,7 @@ struct EvidenceOsRunInput {
     claim_text: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct ArtifactPayloadInput {
     artifact_id: String,
     #[serde(default)]
@@ -85,7 +88,7 @@ struct ArtifactPayloadInput {
     content_base64: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct RedlineCommandInput {
     #[serde(flatten)]
     workflow_input: RedlineOsInputV1,
@@ -93,7 +96,7 @@ struct RedlineCommandInput {
     artifact_payloads: Vec<ArtifactPayloadInput>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct IncidentCommandInput {
     #[serde(flatten)]
     workflow_input: IncidentOsInputV1,
@@ -101,7 +104,7 @@ struct IncidentCommandInput {
     artifact_payloads: Vec<ArtifactPayloadInput>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct FinanceCommandInput {
     #[serde(flatten)]
     workflow_input: FinanceOsInputV1,
@@ -109,7 +112,7 @@ struct FinanceCommandInput {
     artifact_payloads: Vec<ArtifactPayloadInput>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct HealthcareCommandInput {
     #[serde(flatten)]
     workflow_input: HealthcareOsInputV1,
@@ -202,6 +205,7 @@ fn pack_status_from_error(error: PackCommandError) -> PackCommandStatus {
         error_code: Some(error.error_code.to_string()),
         run_id: error.run_id,
         audit_path: error.audit_path,
+        evidence_authority: None,
     }
 }
 
@@ -221,6 +225,7 @@ fn list_control_library(enabled_capabilities: Option<Vec<String>>) -> Vec<Contro
 
 #[tauri::command]
 fn generate_evidenceos_bundle(input: EvidenceOsRunInput) -> Result<EvidenceOsRunResult, String> {
+    let invocation_arguments_sha256 = command_arguments_sha256(&input)?;
     let runtime_dir = make_runtime_dir()?;
     let bundle_root = runtime_dir.join("bundle_root");
     let bundle_zip = runtime_dir.join("evidence_bundle_evidenceos_v1.zip");
@@ -302,7 +307,8 @@ fn generate_evidenceos_bundle(input: EvidenceOsRunInput) -> Result<EvidenceOsRun
         input.enabled_capabilities.clone()
     };
     let claim_text = if input.claim_text.trim().is_empty() {
-        "The EvidenceOS run remained offline with blocked network egress attempts.".to_string()
+        "The controlled policy simulation exercised the offline block path; it did not observe live network traffic."
+            .to_string()
     } else {
         input.claim_text.clone()
     };
@@ -413,10 +419,16 @@ fn generate_evidenceos_bundle(input: EvidenceOsRunInput) -> Result<EvidenceOsRun
         })
         .collect();
 
+    let evidence_authority = controlled_simulation_authority(
+        &run_id,
+        "generate_evidenceos_bundle",
+        &invocation_arguments_sha256,
+    )?;
     let bundle_inputs = EvidenceBundleInputs {
         run_manifest: RunManifest {
             run_id: run_id.clone(),
             vault_id: vault_id.clone(),
+            evidence_authority: evidence_authority.clone(),
             determinism: DeterminismManifest {
                 enabled: true,
                 manifest_inputs_fingerprint,
@@ -437,7 +449,7 @@ fn generate_evidenceos_bundle(input: EvidenceOsRunInput) -> Result<EvidenceOsRun
         bundle_info: BundleInfo {
             bundle_version: "1.0.0".to_string(),
             schema_versions: SchemaVersions {
-                run_manifest: "RUN_MANIFEST_V1".to_string(),
+                run_manifest: "RUN_MANIFEST_V2".to_string(),
                 eval_report: "EVAL_REPORT_V1".to_string(),
                 citations_map: "LOCATOR_SCHEMA_V1".to_string(),
                 redactions_map: "REDACTION_SCHEMA_V1".to_string(),
@@ -531,12 +543,14 @@ fn generate_evidenceos_bundle(input: EvidenceOsRunInput) -> Result<EvidenceOsRun
             outcome.status, outcome.block_reason
         ));
     }
+    let evidence_authority = read_bound_evidence_authority(&bundle_root)?;
 
     Ok(EvidenceOsRunResult {
         status: outcome.status,
         bundle_path: outcome.bundle_path.unwrap_or_default(),
         bundle_sha256: outcome.bundle_sha256.unwrap_or_default(),
         missing_control_ids: generated.missing_control_ids,
+        evidence_authority,
     })
 }
 
@@ -546,6 +560,9 @@ fn run_redlineos(input: RedlineCommandInput) -> PackCommandStatus {
 }
 
 fn run_redlineos_impl(input: RedlineCommandInput) -> Result<PackCommandStatus, PackCommandError> {
+    let invocation_arguments_sha256 = command_arguments_sha256(&input).map_err(|error| {
+        PackCommandError::failed("EVIDENCE_AUTHORITY_BUILD_FAILED", error)
+    })?;
     let workflow_input = input.workflow_input;
     let _state = RedlineWorkflowState::ingest(workflow_input.clone()).map_err(|e| {
         PackCommandError::blocked("REDLINEOS_INPUT_INVALID", format!("Invalid RedlineOS input: {e}"))
@@ -708,6 +725,7 @@ fn run_redlineos_impl(input: RedlineCommandInput) -> Result<PackCommandStatus, P
         citations_map_json,
         redactions_map_json,
         true,
+        &invocation_arguments_sha256,
     )
     .map_err(|e| {
         PackCommandError::failed_with_meta(
@@ -727,6 +745,18 @@ fn run_redlineos_impl(input: RedlineCommandInput) -> Result<PackCommandStatus, P
                     &audit_path,
                 )
             })?;
+    let evidence_authority = if outcome.status == "COMPLETED" {
+        Some(read_bound_evidence_authority(&bundle_root).map_err(|error| {
+            PackCommandError::failed_with_meta(
+                "EVIDENCE_AUTHORITY_READBACK_FAILED",
+                error,
+                &run_id,
+                &audit_path,
+            )
+        })?)
+    } else {
+        None
+    };
     Ok(status_from_outcome(
         format!(
             "RedlineOS bundle exported with {} HIGH-risk clauses and {:.0}% extraction confidence.",
@@ -736,6 +766,7 @@ fn run_redlineos_impl(input: RedlineCommandInput) -> Result<PackCommandStatus, P
         outcome,
         &run_id,
         &audit_path,
+        evidence_authority.as_ref(),
     ))
 }
 
@@ -745,6 +776,9 @@ fn run_incidentos(input: IncidentCommandInput) -> PackCommandStatus {
 }
 
 fn run_incidentos_impl(input: IncidentCommandInput) -> Result<PackCommandStatus, PackCommandError> {
+    let invocation_arguments_sha256 = command_arguments_sha256(&input).map_err(|error| {
+        PackCommandError::failed("EVIDENCE_AUTHORITY_BUILD_FAILED", error)
+    })?;
     let workflow_input = input.workflow_input;
     let _state = IncidentWorkflowState::ingest(workflow_input.clone()).map_err(|e| {
         PackCommandError::blocked("INCIDENTOS_INPUT_INVALID", format!("Invalid IncidentOS input: {e}"))
@@ -950,6 +984,7 @@ fn run_incidentos_impl(input: IncidentCommandInput) -> Result<PackCommandStatus,
         citations_map_json,
         redactions_map_json,
         false,
+        &invocation_arguments_sha256,
     )
     .map_err(|e| {
         PackCommandError::failed_with_meta(
@@ -969,6 +1004,18 @@ fn run_incidentos_impl(input: IncidentCommandInput) -> Result<PackCommandStatus,
                     &audit_path,
                 )
             })?;
+    let evidence_authority = if outcome.status == "COMPLETED" {
+        Some(read_bound_evidence_authority(&bundle_root).map_err(|error| {
+            PackCommandError::failed_with_meta(
+                "EVIDENCE_AUTHORITY_READBACK_FAILED",
+                error,
+                &run_id,
+                &audit_path,
+            )
+        })?)
+    } else {
+        None
+    };
     Ok(status_from_outcome(
         format!(
             "IncidentOS bundle exported with {} events and {} HIGH-severity events.",
@@ -977,6 +1024,7 @@ fn run_incidentos_impl(input: IncidentCommandInput) -> Result<PackCommandStatus,
         outcome,
         &run_id,
         &audit_path,
+        evidence_authority.as_ref(),
     ))
 }
 
@@ -986,6 +1034,9 @@ fn run_financeos(input: FinanceCommandInput) -> PackCommandStatus {
 }
 
 fn run_financeos_impl(input: FinanceCommandInput) -> Result<PackCommandStatus, PackCommandError> {
+    let invocation_arguments_sha256 = command_arguments_sha256(&input).map_err(|error| {
+        PackCommandError::failed("EVIDENCE_AUTHORITY_BUILD_FAILED", error)
+    })?;
     let workflow_input = input.workflow_input;
     let _state = FinanceWorkflowState::ingest(workflow_input.clone()).map_err(|e| {
         PackCommandError::blocked("FINANCEOS_INPUT_INVALID", format!("Invalid FinanceOS input: {e}"))
@@ -1190,6 +1241,7 @@ fn run_financeos_impl(input: FinanceCommandInput) -> Result<PackCommandStatus, P
         citations_map_json,
         redactions_map_json,
         false,
+        &invocation_arguments_sha256,
     )
     .map_err(|e| {
         PackCommandError::failed_with_meta(
@@ -1209,6 +1261,18 @@ fn run_financeos_impl(input: FinanceCommandInput) -> Result<PackCommandStatus, P
                     &audit_path,
                 )
             })?;
+    let evidence_authority = if outcome.status == "COMPLETED" {
+        Some(read_bound_evidence_authority(&bundle_root).map_err(|error| {
+            PackCommandError::failed_with_meta(
+                "EVIDENCE_AUTHORITY_READBACK_FAILED",
+                error,
+                &run_id,
+                &audit_path,
+            )
+        })?)
+    } else {
+        None
+    };
     Ok(status_from_outcome(
         format!(
             "FinanceOS bundle exported with {} transactions and {} detected exceptions.",
@@ -1217,6 +1281,7 @@ fn run_financeos_impl(input: FinanceCommandInput) -> Result<PackCommandStatus, P
         outcome,
         &run_id,
         &audit_path,
+        evidence_authority.as_ref(),
     ))
 }
 
@@ -1226,6 +1291,9 @@ fn run_healthcareos(input: HealthcareCommandInput) -> PackCommandStatus {
 }
 
 fn run_healthcareos_impl(input: HealthcareCommandInput) -> Result<PackCommandStatus, PackCommandError> {
+    let invocation_arguments_sha256 = command_arguments_sha256(&input).map_err(|error| {
+        PackCommandError::failed("EVIDENCE_AUTHORITY_BUILD_FAILED", error)
+    })?;
     let workflow_input = input.workflow_input;
     let _state = HealthcareWorkflowState::ingest(workflow_input.clone()).map_err(|e| {
         PackCommandError::blocked(
@@ -1453,6 +1521,7 @@ fn run_healthcareos_impl(input: HealthcareCommandInput) -> Result<PackCommandSta
         citations_map_json,
         redactions_map_json,
         false,
+        &invocation_arguments_sha256,
     )
     .map_err(|e| {
         PackCommandError::failed_with_meta(
@@ -1472,6 +1541,18 @@ fn run_healthcareos_impl(input: HealthcareCommandInput) -> Result<PackCommandSta
                     &audit_path,
                 )
             })?;
+    let evidence_authority = if outcome.status == "COMPLETED" {
+        Some(read_bound_evidence_authority(&bundle_root).map_err(|error| {
+            PackCommandError::failed_with_meta(
+                "EVIDENCE_AUTHORITY_READBACK_FAILED",
+                error,
+                &run_id,
+                &audit_path,
+            )
+        })?)
+    } else {
+        None
+    };
     Ok(status_from_outcome(
         format!(
             "HealthcareOS bundle exported with consent status {}.",
@@ -1480,6 +1561,7 @@ fn run_healthcareos_impl(input: HealthcareCommandInput) -> Result<PackCommandSta
         outcome,
         &run_id,
         &audit_path,
+        evidence_authority.as_ref(),
     ))
 }
 
@@ -1829,6 +1911,7 @@ fn build_pack_bundle_inputs(
     citations_map_json: serde_json::Value,
     redactions_map_json: serde_json::Value,
     pdf_determinism_enabled: bool,
+    invocation_arguments_sha256: &str,
 ) -> Result<EvidenceBundleInputs, String> {
     let templates_rel = format!("exports/{}/attachments/templates_used.json", pack_id);
     let citations_rel = format!("exports/{}/attachments/citations_map.json", pack_id);
@@ -1900,11 +1983,14 @@ fn build_pack_bundle_inputs(
 
     let manifest_inputs_fingerprint = manifest_inputs_fingerprint_from_descriptors(input_artifacts);
     let model_pinning_level = classify_pinning_level(None, "local_adapter", "1.0.0");
+    let evidence_authority =
+        controlled_simulation_authority(run_id, &format!("run_{pack_id}"), invocation_arguments_sha256)?;
 
     Ok(EvidenceBundleInputs {
         run_manifest: RunManifest {
             run_id: run_id.to_string(),
             vault_id: vault_id.to_string(),
+            evidence_authority,
             determinism: DeterminismManifest {
                 enabled: true,
                 manifest_inputs_fingerprint,
@@ -1928,7 +2014,7 @@ fn build_pack_bundle_inputs(
         bundle_info: BundleInfo {
             bundle_version: "1.0.0".to_string(),
             schema_versions: SchemaVersions {
-                run_manifest: "RUN_MANIFEST_V1".to_string(),
+                run_manifest: "RUN_MANIFEST_V2".to_string(),
                 eval_report: "EVAL_REPORT_V1".to_string(),
                 citations_map: "LOCATOR_SCHEMA_V1".to_string(),
                 redactions_map: "REDACTION_SCHEMA_V1".to_string(),
@@ -2026,6 +2112,57 @@ fn run_export(
         .map_err(|e| format!("Export failed: {}", e))
 }
 
+fn command_arguments_sha256<T: Serialize>(input: &T) -> Result<String, String> {
+    let bytes = json_canonical::to_canonical_bytes(input).map_err(|error| error.to_string())?;
+    Ok(sha256_hex(&bytes))
+}
+
+fn controlled_simulation_authority(
+    run_id: &str,
+    entrypoint: &str,
+    arguments_sha256: &str,
+) -> Result<EvidenceAuthorityManifest, String> {
+    let executable_path =
+        std::env::current_exe().map_err(|error| format!("current executable unavailable: {error}"))?;
+    let executable_bytes = std::fs::read(&executable_path)
+        .map_err(|error| format!("current executable unreadable: {error}"))?;
+    let environment = json!({
+        "network_mode": "OFFLINE",
+        "proof_level": "OFFLINE_STRICT",
+        "credential_availability": "NOT_REQUESTED",
+        "external_mutation_tools": [],
+        "model_execution": "NOT_USED"
+    });
+    let environment_bytes =
+        json_canonical::to_canonical_bytes(&environment).map_err(|error| error.to_string())?;
+    let generated_at = time::OffsetDateTime::now_utc();
+    let valid_until = generated_at + time::Duration::hours(24);
+    let format = &time::format_description::well_known::Rfc3339;
+
+    Ok(EvidenceAuthorityManifest::controlled_simulation(
+        run_id,
+        format!("aigccore-tauri:{entrypoint}"),
+        option_env!("AIGC_SOURCE_REVISION")
+            .unwrap_or(concat!("aigccore-package-", env!("CARGO_PKG_VERSION"))),
+        executable_path.display().to_string(),
+        sha256_hex(&executable_bytes),
+        arguments_sha256,
+        sha256_hex(&environment_bytes),
+        generated_at.format(format).map_err(|error| error.to_string())?,
+        valid_until.format(format).map_err(|error| error.to_string())?,
+    ))
+}
+
+fn read_bound_evidence_authority(
+    bundle_root: &std::path::Path,
+) -> Result<EvidenceAuthorityManifest, String> {
+    let bytes = std::fs::read(bundle_root.join("run_manifest.json"))
+        .map_err(|error| format!("bound run manifest unavailable: {error}"))?;
+    let manifest: RunManifest = serde_json::from_slice(&bytes)
+        .map_err(|error| format!("bound run manifest invalid: {error}"))?;
+    Ok(manifest.evidence_authority)
+}
+
 fn now_rfc3339_utc() -> String {
     time::OffsetDateTime::now_utc()
         .format(&time::format_description::well_known::Rfc3339)
@@ -2037,6 +2174,7 @@ fn status_from_outcome(
     outcome: ExportOutcome,
     run_id: &str,
     audit_path: &std::path::Path,
+    evidence_authority: Option<&EvidenceAuthorityManifest>,
 ) -> PackCommandStatus {
     let audit_path_str = audit_path.display().to_string();
     match outcome.status.as_str() {
@@ -2048,6 +2186,7 @@ fn status_from_outcome(
             error_code: None,
             run_id: Some(run_id.to_string()),
             audit_path: Some(audit_path_str),
+            evidence_authority: evidence_authority.cloned(),
         },
         "BLOCKED" => PackCommandStatus {
             status: "BLOCKED".to_string(),
@@ -2057,6 +2196,7 @@ fn status_from_outcome(
             error_code: Some("EXPORT_BLOCKED".to_string()),
             run_id: Some(run_id.to_string()),
             audit_path: Some(audit_path_str),
+            evidence_authority: evidence_authority.cloned(),
         },
         _ => PackCommandStatus {
             status: "FAILED".to_string(),
@@ -2066,6 +2206,7 @@ fn status_from_outcome(
             error_code: Some("EXPORT_FAILED".to_string()),
             run_id: Some(run_id.to_string()),
             audit_path: Some(audit_path_str),
+            evidence_authority: evidence_authority.cloned(),
         },
     }
 }
@@ -2073,6 +2214,10 @@ fn status_from_outcome(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aigc_core::evidence_bundle::authority::{
+        EvidenceClaimContext, EvidenceClaimDecision, CLAIM_LIVE_EXECUTION,
+        CLAIM_LOCAL_CONTROLLED_EXECUTION,
+    };
     use aigc_core::financeos::model::FinanceArtifactRef;
     use aigc_core::healthcareos::model::HealthcareArtifactRef;
     use aigc_core::incidentos::model::IncidentArtifactRef;
@@ -2198,6 +2343,48 @@ mod tests {
 
         assert!(found_marker, "expected synthetic egress control marker");
         let _ = fs::remove_dir_all(runtime_dir);
+    }
+
+    #[test]
+    fn evidenceos_command_returns_bound_non_live_authority() {
+        let result = generate_evidenceos_bundle(EvidenceOsRunInput {
+            enabled_capabilities: vec!["Traceability".to_string()],
+            artifact_title: "Controlled authority fixture".to_string(),
+            artifact_body: "Bounded local evidence".to_string(),
+            artifact_tags_csv: "TEST".to_string(),
+            control_families_csv: "Traceability".to_string(),
+            claim_text: "The controlled bundle path was exercised.".to_string(),
+        })
+        .expect("controlled EvidenceOS export should complete");
+
+        let authority = &result.evidence_authority;
+        let context = EvidenceClaimContext {
+            as_of_utc: authority.generated_at_utc.clone(),
+            expected_case_id: authority.case_id.clone(),
+            expected_source_revision: authority.source.source_revision.clone(),
+            expected_executable_sha256: authority.source.executable_sha256.clone(),
+            expected_arguments_sha256: authority.source.arguments_sha256.clone(),
+            expected_environment_sha256: authority.source.environment_sha256.clone(),
+            expected_audit_log_sha256: authority.source.audit_log_sha256.clone(),
+            required_tool_id: Some("LOCAL_EVIDENCE_BUNDLE_EXPORT".to_string()),
+            credentials_required: false,
+        };
+        assert_eq!(
+            authority.evaluate_claim(CLAIM_LOCAL_CONTROLLED_EXECUTION, &context),
+            EvidenceClaimDecision::Authorized
+        );
+        assert_eq!(
+            authority.evaluate_claim(CLAIM_LIVE_EXECUTION, &context),
+            EvidenceClaimDecision::Denied
+        );
+        assert!(!authority.production_equivalent);
+        assert!(!authority.source.audit_log_sha256.is_empty());
+
+        let bundle_path = std::path::PathBuf::from(&result.bundle_path);
+        let bundle_root = bundle_path
+            .parent()
+            .expect("bundle should have a runtime parent");
+        let _ = fs::remove_dir_all(bundle_root);
     }
 
     #[test]

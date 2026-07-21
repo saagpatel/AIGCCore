@@ -4,6 +4,7 @@ use aigc_core::audit::log::AuditLog;
 use aigc_core::determinism::json_canonical;
 use aigc_core::determinism::run_id::sha256_hex;
 use aigc_core::evidence_bundle::artifact_hashes::{render_artifact_hashes_csv, ArtifactHashRow};
+use aigc_core::evidence_bundle::authority::EvidenceAuthorityManifest;
 use aigc_core::evidence_bundle::schemas::*;
 use aigc_core::financeos::model::{FinanceArtifactRef, FinanceOsInputV1};
 use aigc_core::financeos::workflow::execute_financeos_workflow;
@@ -18,6 +19,20 @@ use aigc_core::validator::BundleValidator;
 use serde_json::json;
 use std::io::Read;
 use std::path::Path;
+
+fn test_authority(run_id: &str) -> EvidenceAuthorityManifest {
+    EvidenceAuthorityManifest::controlled_simulation(
+        run_id,
+        "aigccore-test:future_pack_exports",
+        "test-revision",
+        "test-executable",
+        sha256_hex(b"test-executable"),
+        sha256_hex(b"test-arguments"),
+        sha256_hex(b"test-environment"),
+        "2026-01-01T00:00:00Z",
+        "2026-01-02T00:00:00Z",
+    )
+}
 
 fn extract_claim_markers(markdown: &str) -> Vec<String> {
     let mut out = Vec::new();
@@ -63,7 +78,7 @@ fn append_required_events(
         (
             "EGRESS_REQUEST_BLOCKED",
             Actor::System,
-            json!({"destination":{"scheme":"https","host":"example.invalid","port":443,"path":"/"},"block_reason":"OFFLINE_MODE","request_hash_sha256":sha256_hex(b"blocked")}),
+            json!({"destination":{"scheme":"https","host":"example.invalid","port":443,"path":"/"},"block_reason":"OFFLINE_MODE","request_hash_sha256":sha256_hex(b"blocked"),"evidence_origin":"CONTROL_SIMULATION"}),
         ),
     ];
     for (event_type, actor, details) in events {
@@ -164,6 +179,7 @@ fn make_bundle_inputs(
         run_manifest: RunManifest {
             run_id: run_id.to_string(),
             vault_id: vault_id.to_string(),
+            evidence_authority: test_authority(run_id),
             determinism: DeterminismManifest {
                 enabled: true,
                 manifest_inputs_fingerprint,
@@ -184,7 +200,7 @@ fn make_bundle_inputs(
         bundle_info: BundleInfo {
             bundle_version: "1.0.0".to_string(),
             schema_versions: SchemaVersions {
-                run_manifest: "RUN_MANIFEST_V1".to_string(),
+                run_manifest: "RUN_MANIFEST_V2".to_string(),
                 eval_report: "EVAL_REPORT_V1".to_string(),
                 citations_map: "LOCATOR_SCHEMA_V1".to_string(),
                 redactions_map: "REDACTION_SCHEMA_V1".to_string(),

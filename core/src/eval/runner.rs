@@ -78,6 +78,9 @@ fn map_validator_to_gates(
             "AUDIT_HASH_CHAIN.VERIFY_V1" => {
                 summary.result_for_check("CHK.AUDIT.REQUIRED_KEYS_AND_CHAIN")
             }
+            "EVIDENCE_AUTHORITY.CONTRACT_V1" => {
+                summary.result_for_check("CHK.EVIDENCE.AUTHORITY_CONTRACT")
+            }
             "OFFLINE_ENFORCEMENT.MODE_PROOF_V1" => {
                 summary.result_for_check("CHK.NETWORK.SNAPSHOT_PRESENT")
             }
@@ -208,7 +211,9 @@ fn is_evidenceos_pack<R: Read + std::io::Seek>(zip: &mut ZipArchive<R>) -> bool 
 
 fn evaluate_offline_allowlist_from_ndjson(ndjson: &str) -> (String, String) {
     let mut seen_allowlist_updated = false;
-    let mut blocked_count: usize = 0;
+    let mut simulated_blocked_count: usize = 0;
+    let mut runtime_blocked_count: usize = 0;
+    let mut ambiguous_origin_count: usize = 0;
     let mut blocked_invalid_reasons: Vec<String> = Vec::new();
     let mut allowed_missing_rule_count: usize = 0;
     let allowed_block_reasons = [
@@ -238,7 +243,14 @@ fn evaluate_offline_allowlist_from_ndjson(ndjson: &str) -> (String, String) {
         match event_type {
             "ALLOWLIST_UPDATED" => seen_allowlist_updated = true,
             "EGRESS_REQUEST_BLOCKED" => {
-                blocked_count += 1;
+                match v
+                    .pointer("/details/evidence_origin")
+                    .and_then(|x| x.as_str())
+                {
+                    Some("CONTROL_SIMULATION") => simulated_blocked_count += 1,
+                    Some("RUNTIME_OBSERVATION") => runtime_blocked_count += 1,
+                    _ => ambiguous_origin_count += 1,
+                }
                 let reason = v
                     .pointer("/details/block_reason")
                     .and_then(|x| x.as_str())
@@ -266,10 +278,18 @@ fn evaluate_offline_allowlist_from_ndjson(ndjson: &str) -> (String, String) {
             "missing ALLOWLIST_UPDATED event".to_string(),
         );
     }
-    if blocked_count == 0 {
+    if simulated_blocked_count + runtime_blocked_count + ambiguous_origin_count == 0 {
         return (
             "FAIL".to_string(),
             "no EGRESS_REQUEST_BLOCKED events recorded".to_string(),
+        );
+    }
+    if ambiguous_origin_count > 0 {
+        return (
+            "FAIL".to_string(),
+            format!(
+                "{ambiguous_origin_count} blocked egress events have missing or ambiguous evidence_origin"
+            ),
         );
     }
     if !blocked_invalid_reasons.is_empty() {
@@ -293,7 +313,19 @@ fn evaluate_offline_allowlist_from_ndjson(ndjson: &str) -> (String, String) {
         );
     }
 
-    ("PASS".to_string(), "ok".to_string())
+    if runtime_blocked_count == 0 {
+        return (
+            "NOT_APPLICABLE".to_string(),
+            format!(
+                "{simulated_blocked_count} CONTROL_SIMULATION event(s) prove the policy path only; no live egress observation occurred"
+            ),
+        );
+    }
+
+    (
+        "PASS".to_string(),
+        format!("{runtime_blocked_count} runtime-observed blocked egress event(s) verified"),
+    )
 }
 
 #[cfg(test)]
@@ -301,12 +333,31 @@ mod tests {
     use super::evaluate_offline_allowlist_from_ndjson;
 
     #[test]
-    fn allowlist_gate_passes_when_blocked_and_allowlist_events_present() {
+    fn allowlist_gate_passes_when_runtime_blocked_and_allowlist_events_present() {
         let ndjson = r#"{"ts_utc":"2026-01-01T00:00:00Z","event_type":"ALLOWLIST_UPDATED","run_id":"r1","vault_id":"v1","actor":"system","details":{"allowlist_hash_sha256":"abc","allowlist_count":0},"prev_event_hash":"0000000000000000000000000000000000000000000000000000000000000000","event_hash":"1111111111111111111111111111111111111111111111111111111111111111"}
-{"ts_utc":"2026-01-01T00:00:01Z","event_type":"EGRESS_REQUEST_BLOCKED","run_id":"r1","vault_id":"v1","actor":"system","details":{"destination":{},"block_reason":"OFFLINE_MODE","request_hash_sha256":"abc"},"prev_event_hash":"1111111111111111111111111111111111111111111111111111111111111111","event_hash":"2222222222222222222222222222222222222222222222222222222222222222"}"#;
+{"ts_utc":"2026-01-01T00:00:01Z","event_type":"EGRESS_REQUEST_BLOCKED","run_id":"r1","vault_id":"v1","actor":"system","details":{"destination":{},"block_reason":"OFFLINE_MODE","request_hash_sha256":"abc","evidence_origin":"RUNTIME_OBSERVATION"},"prev_event_hash":"1111111111111111111111111111111111111111111111111111111111111111","event_hash":"2222222222222222222222222222222222222222222222222222222222222222"}"#;
         let (result, msg) = evaluate_offline_allowlist_from_ndjson(ndjson);
         assert_eq!(result, "PASS");
-        assert_eq!(msg, "ok");
+        assert!(msg.contains("runtime-observed"));
+    }
+
+    #[test]
+    fn allowlist_gate_does_not_treat_control_simulation_as_live_observation() {
+        let ndjson = r#"{"event_type":"ALLOWLIST_UPDATED","details":{}}
+{"event_type":"EGRESS_REQUEST_BLOCKED","details":{"block_reason":"OFFLINE_MODE","evidence_origin":"CONTROL_SIMULATION"}}"#;
+        let (result, msg) = evaluate_offline_allowlist_from_ndjson(ndjson);
+        assert_eq!(result, "NOT_APPLICABLE");
+        assert!(msg.contains("policy path only"));
+        assert!(msg.contains("no live egress observation"));
+    }
+
+    #[test]
+    fn allowlist_gate_fails_closed_on_missing_origin() {
+        let ndjson = r#"{"event_type":"ALLOWLIST_UPDATED","details":{}}
+{"event_type":"EGRESS_REQUEST_BLOCKED","details":{"block_reason":"OFFLINE_MODE"}}"#;
+        let (result, msg) = evaluate_offline_allowlist_from_ndjson(ndjson);
+        assert_eq!(result, "FAIL");
+        assert!(msg.contains("missing or ambiguous evidence_origin"));
     }
 
     #[test]
