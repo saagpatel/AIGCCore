@@ -330,6 +330,131 @@ fn assert_receipt_rejected(receipt: &ExecutionReceiptV1, reason_fragment: &str) 
 }
 
 #[test]
+fn export_identity_requires_three_valid_lowercase_digests_and_nonzero_bytes() {
+    let digest_mutations: Vec<fn(&mut ExecutionReceiptV1)> = vec![
+        |receipt| receipt.export_review.candidate_sha256.clear(),
+        |receipt| receipt.export_review.reviewed_sha256.clear(),
+        |receipt| receipt.export_review.exported_sha256.clear(),
+    ];
+    for mutate in digest_mutations {
+        let mut receipt = passing_receipt();
+        mutate(&mut receipt);
+        assert_receipt_rejected(&receipt, "digest-bound");
+    }
+
+    let mut receipt = passing_receipt();
+    let equal_but_invalid = "z".repeat(64);
+    receipt.export_review.candidate_sha256 = equal_but_invalid.clone();
+    receipt.export_review.reviewed_sha256 = equal_but_invalid.clone();
+    receipt.export_review.exported_sha256 = equal_but_invalid;
+    assert_receipt_rejected(&receipt, "digest-bound");
+
+    let mut receipt = passing_receipt();
+    let uppercase = "A".repeat(64);
+    receipt.export_review.candidate_sha256 = uppercase.clone();
+    receipt.export_review.reviewed_sha256 = uppercase.clone();
+    receipt.export_review.exported_sha256 = uppercase;
+    assert_receipt_rejected(&receipt, "digest-bound");
+
+    let mut receipt = passing_receipt();
+    receipt.export_review.bytes = 0;
+    assert_receipt_rejected(&receipt, "digest-bound");
+}
+
+#[test]
+fn fixture_identity_requires_a_valid_lowercase_sha256() {
+    for invalid in [String::new(), "not-a-digest".to_string(), "D".repeat(64)] {
+        let mut receipt = passing_receipt();
+        receipt.subject_identity.fixture_sha256 = invalid;
+        assert_receipt_rejected(&receipt, "fixture identity");
+    }
+}
+
+#[test]
+fn schema_required_subject_and_backend_binding_fields_cannot_be_empty() {
+    let identity_mutations: Vec<(&str, fn(&mut ExecutionReceiptV1))> = vec![
+        ("input_tree_sha256", |receipt| {
+            receipt.subject_identity.input_tree_sha256.clear()
+        }),
+        ("argv", |receipt| receipt.subject_identity.argv.clear()),
+        ("enforcement_profile_sha256", |receipt| {
+            receipt.backend_identity.enforcement_profile_sha256.clear()
+        }),
+        ("controller_executable_sha256", |receipt| {
+            receipt
+                .backend_identity
+                .controller_executable_sha256
+                .clear()
+        }),
+    ];
+    for (field, mutate) in identity_mutations {
+        let mut receipt = passing_receipt();
+        mutate(&mut receipt);
+        let validation = validate_execution_receipt(&receipt);
+        assert_eq!(
+            validation.result,
+            ExecutionTerminalResultV1::Error,
+            "empty {field} unexpectedly passed"
+        );
+    }
+}
+
+#[test]
+fn every_schema_required_run_fixture_and_backend_identity_is_nonempty() {
+    let identity_mutations: Vec<(&str, fn(&mut ExecutionReceiptV1))> = vec![
+        ("run_id", |receipt| receipt.run_id.clear()),
+        ("fixture_id", |receipt| {
+            receipt.subject_identity.fixture_id.clear()
+        }),
+        ("backend_id", |receipt| {
+            receipt.backend_identity.backend_id.clear()
+        }),
+        ("engine_endpoint", |receipt| {
+            receipt.backend_identity.engine_endpoint.clear()
+        }),
+        ("daemon_id", |receipt| {
+            receipt.backend_identity.daemon_id.clear()
+        }),
+        ("architecture", |receipt| {
+            receipt.backend_identity.architecture.clear()
+        }),
+        ("engine_version", |receipt| {
+            receipt.backend_identity.engine_version.clear()
+        }),
+        ("runtime_version", |receipt| {
+            receipt.backend_identity.runtime_version.clear()
+        }),
+        ("kernel_version", |receipt| {
+            receipt.backend_identity.kernel_version.clear()
+        }),
+        ("image_id", |receipt| {
+            receipt.backend_identity.image_id.clear()
+        }),
+        ("controller_build", |receipt| {
+            receipt.backend_identity.controller_build.clear()
+        }),
+    ];
+    for (field, mutate) in identity_mutations {
+        let mut receipt = passing_receipt();
+        mutate(&mut receipt);
+        let validation = validate_execution_receipt(&receipt);
+        assert_eq!(
+            validation.result,
+            ExecutionTerminalResultV1::Error,
+            "empty {field} unexpectedly passed"
+        );
+        assert!(
+            validation
+                .reasons
+                .iter()
+                .any(|reason| reason.contains("identities must be non-empty")),
+            "empty {field} did not produce the identity reason: {:?}",
+            validation.reasons
+        );
+    }
+}
+
+#[test]
 fn effective_seccomp_mount_environment_and_init_readback_are_bound() {
     let mut receipt = passing_receipt();
     receipt.effective_policy.enforcement_profile_sha256 = "f".repeat(64);
@@ -687,7 +812,7 @@ fn durable_local_execution_evidence_is_self_contained_and_valid() {
     );
     assert_eq!(
         hex::encode(Sha256::digest(receipt_bytes)),
-        "740efeeed127af2d7b8ff40c98875bf0da3de2b3470ae47fe4da6cab458a79df"
+        "ff88e5be86a399cd79126fd7c0393c12df35fc63fb1e1e71baa9f64a2595f8c2"
     );
     assert_eq!(
         hex::encode(Sha256::digest(patch_bytes)),

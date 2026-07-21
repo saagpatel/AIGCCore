@@ -42,14 +42,14 @@ A passing `AIGC_EXECUTION_RECEIPT_V1` contains:
 - explicit unknown and excluded claims.
 
 The 2026-07-20 development qualification passed on Docker `29.5.2`, runc
-`1.3.5`, and Linux `6.8.0-117-generic`. Measured cold-cached p95 was `421 ms`,
-warm p95 `435 ms`, cleanup p95 `33 ms` with `34 ms` maximum, five-second added
-overhead p95 `195 ms` (`4%`), peak total run-owned storage use `28,926 bytes`,
+`1.3.5`, and Linux `6.8.0-117-generic`. Measured cold-cached p95 was `422 ms`,
+warm p95 `430 ms`, cleanup p95 `34 ms` with `34 ms` maximum, five-second added
+overhead p95 `186 ms` (`4%`), peak total run-owned storage use `28,926 bytes`,
 and concurrency `4`. All `22` required controls passed and all explicitly
 queried residue counts were zero. All `70` observed effect identities were
 unique and exactly covered by control evidence references. The durable receipt
 SHA-256 was
-`740efeeed127af2d7b8ff40c98875bf0da3de2b3470ae47fe4da6cab458a79df`.
+`ff88e5be86a399cd79126fd7c0393c12df35fc63fb1e1e71baa9f64a2595f8c2`.
 The durable reviewed patch SHA-256 was
 `6420e664434b60f5fda9b9c94d642d88a57308c4e41193ac4c798477c8be7a46`.
 This record is exact-run evidence and must not be treated as transferable to a

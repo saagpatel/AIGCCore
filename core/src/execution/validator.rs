@@ -30,6 +30,26 @@ pub fn validate_execution_receipt(receipt: &ExecutionReceiptV1) -> ReceiptValida
     if let Err(error) = receipt.requested_policy.validate() {
         reasons.push(error.to_string());
     }
+    if receipt.run_id.trim().is_empty()
+        || receipt.subject_identity.fixture_id.trim().is_empty()
+        || receipt.backend_identity.backend_id.trim().is_empty()
+        || receipt.backend_identity.engine_endpoint.trim().is_empty()
+        || receipt.backend_identity.daemon_id.trim().is_empty()
+        || receipt.backend_identity.architecture.trim().is_empty()
+        || receipt.backend_identity.engine_version.trim().is_empty()
+        || receipt.backend_identity.runtime_version.trim().is_empty()
+        || receipt.backend_identity.kernel_version.trim().is_empty()
+        || receipt.backend_identity.image_id.trim().is_empty()
+        || receipt.backend_identity.controller_build.trim().is_empty()
+    {
+        reasons.push(
+            "run, fixture, and backend runtime/version/build identities must be non-empty"
+                .to_string(),
+        );
+    }
+    if !is_sha256(&receipt.subject_identity.fixture_sha256) {
+        reasons.push("fixture identity must contain a lowercase SHA-256 digest".to_string());
+    }
     if !receipt.effective_policy.readback_complete {
         reasons.push("effective runtime policy readback is incomplete".to_string());
     }
@@ -232,7 +252,11 @@ pub fn validate_execution_receipt(receipt: &ExecutionReceiptV1) -> ReceiptValida
     if !receipt.cleanup.is_zero_residue() {
         reasons.push("cleanup evidence does not prove zero named residue".to_string());
     }
-    if !receipt.export_review.approved
+    if !is_sha256(&receipt.export_review.candidate_sha256)
+        || !is_sha256(&receipt.export_review.reviewed_sha256)
+        || !is_sha256(&receipt.export_review.exported_sha256)
+        || receipt.export_review.bytes == 0
+        || !receipt.export_review.approved
         || receipt.export_review.candidate_sha256 != receipt.export_review.reviewed_sha256
         || receipt.export_review.reviewed_sha256 != receipt.export_review.exported_sha256
         || receipt.export_review.bytes > receipt.requested_policy.export.max_patch_bytes
