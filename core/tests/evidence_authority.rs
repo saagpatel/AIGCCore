@@ -220,6 +220,33 @@ fn unsupported_origins_cannot_authorize_live_or_production_claims() {
 }
 
 #[test]
+fn control_simulation_requires_controlled_requested_and_observed_execution() {
+    for (field, execution_class) in [
+        ("requested", EvidenceExecutionClass::Live),
+        ("requested", EvidenceExecutionClass::Natural),
+        ("observed", EvidenceExecutionClass::Natural),
+        ("observed", EvidenceExecutionClass::Simulated),
+    ] {
+        let mut candidate = authority();
+        match field {
+            "requested" => candidate.requested_execution_class = execution_class,
+            "observed" => candidate.observed_execution_class = execution_class,
+            _ => unreachable!(),
+        }
+
+        assert!(
+            candidate.validate_internal("case-a", AUDIT).is_err(),
+            "{field} {execution_class:?} must be rejected for control simulation"
+        );
+        assert_eq!(
+            candidate.evaluate_claim(CLAIM_LOCAL_CONTROLLED_EXECUTION, &context()),
+            EvidenceClaimDecision::Unknown,
+            "{field} {execution_class:?} must not authorize a controlled claim"
+        );
+    }
+}
+
+#[test]
 fn egress_audit_origin_is_required_and_closed_to_known_values() {
     let event = |origin: Option<&str>| AuditEvent {
         ts_utc: "2026-07-20T12:00:00Z".to_string(),

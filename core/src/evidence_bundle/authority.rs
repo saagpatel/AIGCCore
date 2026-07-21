@@ -325,8 +325,13 @@ impl EvidenceAuthorityManifest {
         if self.production_equivalent {
             return Err("control simulation cannot be production-equivalent".to_string());
         }
-        if self.observed_execution_class == EvidenceExecutionClass::Live {
-            return Err("control simulation cannot declare live observed execution".to_string());
+        if self.requested_execution_class != EvidenceExecutionClass::Controlled
+            || self.observed_execution_class != EvidenceExecutionClass::Controlled
+        {
+            return Err(
+                "control simulation must declare controlled requested and observed execution"
+                    .to_string(),
+            );
         }
         for claim in REQUIRED_SIMULATION_PROHIBITIONS {
             if !self
@@ -507,7 +512,8 @@ impl EvidenceAuthorityManifest {
             return Err("evidence origin has no authorizing manifest contract".to_string());
         }
         if self.production_equivalent
-            || self.observed_execution_class == EvidenceExecutionClass::Live
+            || self.requested_execution_class != EvidenceExecutionClass::Controlled
+            || self.observed_execution_class != EvidenceExecutionClass::Controlled
         {
             return Err("control simulation overclaims execution authority".to_string());
         }
