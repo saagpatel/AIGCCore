@@ -624,6 +624,56 @@ fn raw_policy_json_rejects_every_unique_items_duplicate() {
 }
 
 #[test]
+fn normalized_path_policy_rejects_immutable_and_writable_root_overlap() {
+    let mut requested = policy();
+    requested.environment.synthetic_tmp = "/input/tmp".to_string();
+    assert!(requested.validate().is_err());
+
+    let mut requested = policy();
+    requested.filesystem.writable_workspace_path = "/input/workspace".to_string();
+    requested.working_directory = "/input/workspace".to_string();
+    requested.environment.synthetic_home = "/input/workspace/home".to_string();
+    assert!(requested.validate().is_err());
+
+    let mut requested = policy();
+    requested.filesystem.immutable_input_path = "/workspace/input".to_string();
+    assert!(requested.validate().is_err());
+
+    for alias in [
+        "/input/../workspace",
+        "/input/./workspace",
+        "/input//workspace",
+    ] {
+        let mut requested = policy();
+        requested.filesystem.writable_workspace_path = alias.to_string();
+        requested.working_directory = alias.to_string();
+        requested.environment.synthetic_home = format!("{alias}/home");
+        assert!(requested.validate().is_err(), "path alias passed: {alias}");
+    }
+
+    let mut receipt = passing_receipt();
+    receipt.requested_policy.environment.synthetic_tmp = "/input/tmp".to_string();
+    receipt
+        .effective_policy
+        .environment
+        .insert("TMPDIR".to_string(), "/input/tmp".to_string());
+    receipt
+        .effective_policy
+        .observed_environment
+        .insert("TMPDIR".to_string(), "/input/tmp".to_string());
+    let options = receipt
+        .effective_policy
+        .tmpfs
+        .remove("/tmp")
+        .expect("synthetic tmp options");
+    receipt
+        .effective_policy
+        .tmpfs
+        .insert("/input/tmp".to_string(), options);
+    assert_receipt_rejected(&receipt, "normalized disjoint absolute roots");
+}
+
+#[test]
 fn effective_seccomp_mount_environment_and_init_readback_are_bound() {
     let mut receipt = passing_receipt();
     receipt.effective_policy.enforcement_profile_sha256 = "f".repeat(64);
@@ -981,7 +1031,7 @@ fn durable_local_execution_evidence_is_self_contained_and_valid() {
     );
     assert_eq!(
         hex::encode(Sha256::digest(receipt_bytes)),
-        "de36d599bbec8d2ee17884c4b2e2e0048425cb96e7d840c81c33bc050739ba6c"
+        "c88214e29f48b07506d3b62b5e888e1346e9535bf4a76e7c15c7173d089afe88"
     );
     assert_eq!(
         hex::encode(Sha256::digest(patch_bytes)),

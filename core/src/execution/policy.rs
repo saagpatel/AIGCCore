@@ -147,13 +147,31 @@ impl ExecutionPolicyV1 {
             ));
         }
         if self.working_directory != self.filesystem.writable_workspace_path
-            || !self.filesystem.immutable_input_path.starts_with('/')
-            || !self.filesystem.writable_workspace_path.starts_with('/')
+            || normalized_absolute_path_components(&self.filesystem.immutable_input_path).is_none()
+            || normalized_absolute_path_components(&self.filesystem.writable_workspace_path)
+                .is_none()
+            || normalized_absolute_path_components(&self.environment.synthetic_tmp).is_none()
+            || normalized_absolute_path_components(&self.environment.synthetic_home).is_none()
+            || !normalized_roots_are_disjoint(
+                &self.filesystem.immutable_input_path,
+                &self.filesystem.writable_workspace_path,
+            )
+            || !normalized_roots_are_disjoint(
+                &self.filesystem.immutable_input_path,
+                &self.environment.synthetic_tmp,
+            )
+            || !normalized_roots_are_disjoint(
+                &self.filesystem.writable_workspace_path,
+                &self.environment.synthetic_tmp,
+            )
+            || !normalized_path_is_strict_descendant(
+                &self.filesystem.writable_workspace_path,
+                &self.environment.synthetic_home,
+            )
             || self.filesystem.host_mounts_allowed
         {
             return Err(CoreError::PolicyBlocked(
-                "filesystem policy must use absolute isolated paths and deny host mounts"
-                    .to_string(),
+                "filesystem policy must use normalized disjoint absolute roots, keep HOME inside workspace, and deny host mounts".to_string(),
             ));
         }
         if self.filesystem.immutable_input_path == self.filesystem.writable_workspace_path
@@ -209,11 +227,6 @@ impl ExecutionPolicyV1 {
                     || upper.starts_with("DOCKER_")
                     || upper.starts_with("SSH_")
             })
-            || !self
-                .environment
-                .synthetic_home
-                .starts_with(&(self.filesystem.writable_workspace_path.clone() + "/"))
-            || !self.environment.synthetic_tmp.starts_with('/')
         {
             return Err(CoreError::PolicyBlocked(
                 "OCI_ZERO_EGRESS_V1 forbids secrets, proxy, Docker, SSH, GitHub, and cloud credentials"
@@ -290,4 +303,43 @@ where
         ));
     }
     Ok(unique)
+}
+
+fn normalized_absolute_path_components(value: &str) -> Option<Vec<&str>> {
+    if !value.starts_with('/') || value.contains('\\') {
+        return None;
+    }
+    let components: Vec<&str> = value.split('/').skip(1).collect();
+    if components.is_empty()
+        || components
+            .iter()
+            .any(|component| component.is_empty() || *component == "." || *component == "..")
+    {
+        return None;
+    }
+    Some(components)
+}
+
+fn normalized_roots_are_disjoint(left: &str, right: &str) -> bool {
+    let (Some(left), Some(right)) = (
+        normalized_absolute_path_components(left),
+        normalized_absolute_path_components(right),
+    ) else {
+        return false;
+    };
+    !components_are_prefix(&left, &right) && !components_are_prefix(&right, &left)
+}
+
+fn normalized_path_is_strict_descendant(parent: &str, child: &str) -> bool {
+    let (Some(parent), Some(child)) = (
+        normalized_absolute_path_components(parent),
+        normalized_absolute_path_components(child),
+    ) else {
+        return false;
+    };
+    child.len() > parent.len() && components_are_prefix(&parent, &child)
+}
+
+fn components_are_prefix(prefix: &[&str], value: &[&str]) -> bool {
+    prefix.len() <= value.len() && prefix.iter().zip(value).all(|(left, right)| left == right)
 }
