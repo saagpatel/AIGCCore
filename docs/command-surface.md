@@ -2,12 +2,30 @@
 
 This project does not expose an external HTTP API. The primary runtime interface is the local Tauri command surface.
 
+## Experimental qualification binary
+
+`aigc_local_execution_qualify` is available only when the Tauri crate is built
+with `local-execution-backend-v1`. It runs the embedded
+`AIGC_LOCAL_EXECUTION_FIXTURE_V1` and writes an
+`AIGC_EXECUTION_RECEIPT_V1`.
+
+It is deliberately not registered in the Tauri invoke handler and cannot accept
+an arbitrary repository, command, environment, mount, image, network
+destination, or credential. The portable backend interface returns
+`PolicyBlocked` for every request except the exact prepared embedded
+qualification fixture and input; the qualification binary itself routes
+through that interface. See
+`docs/local-execution-v1-qualification.md`.
+
 ## Contract Notes (Phase 5)
 
 - Command names and request/response schema remain backward-compatible.
 - Runtime export directories are permission-hardened on Unix (`0o700`).
 - Healthcare run fingerprinting is based on sorted input artifact descriptors.
 - Bundled `audit_log.ndjson` now includes final validation lifecycle evidence before export result is returned.
+- Evidence Bundle bytes are validated again after the last audit-log rewrite;
+  a final validation error or failure removes the ZIP and returns no export
+  path or digest.
 - Offline proof events in audit logs may include synthetic control simulation markers (`details.evidence_origin = CONTROL_SIMULATION`) to distinguish policy proof from live traffic.
 
 ## Command: `run_redlineos`

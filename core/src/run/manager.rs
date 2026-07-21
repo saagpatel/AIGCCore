@@ -206,8 +206,45 @@ impl RunManager {
         })?;
         let mut final_bundle_inputs = bundle_inputs.clone();
         final_bundle_inputs.audit_log_ndjson = self.audit.read_all_ndjson()?;
-        EvidenceBundleBuilder::build_dir(bundle_dir, &final_bundle_inputs)?;
-        let _initial_bundle_sha = EvidenceBundleBuilder::build_zip(bundle_dir, bundle_zip)?;
+        if let Err(error) = remove_stale_export_on_error(
+            bundle_zip,
+            "initial bundle directory generation error",
+            EvidenceBundleBuilder::build_dir(bundle_dir, &final_bundle_inputs),
+        ) {
+            self.audit.append(AuditEvent {
+                ts_utc: now_rfc3339_utc(),
+                event_type: "EXPORT_FAILED".to_string(),
+                run_id: req.run_id.clone(),
+                vault_id: req.vault_id.clone(),
+                actor: Actor::System,
+                details: serde_json::json!({"reason":"BUNDLE_GENERATION_ERROR"}),
+                prev_event_hash: String::new(),
+                event_hash: String::new(),
+            })?;
+            self.transition(req, RunState::FAILED, "bundle directory generation errored")?;
+            return Err(error);
+        }
+        let _initial_bundle_sha = match remove_stale_export_on_error(
+            bundle_zip,
+            "initial bundle ZIP generation error",
+            EvidenceBundleBuilder::build_zip(bundle_dir, bundle_zip),
+        ) {
+            Ok(bundle_sha) => bundle_sha,
+            Err(error) => {
+                self.audit.append(AuditEvent {
+                    ts_utc: now_rfc3339_utc(),
+                    event_type: "EXPORT_FAILED".to_string(),
+                    run_id: req.run_id.clone(),
+                    vault_id: req.vault_id.clone(),
+                    actor: Actor::System,
+                    details: serde_json::json!({"reason":"BUNDLE_GENERATION_ERROR"}),
+                    prev_event_hash: String::new(),
+                    event_hash: String::new(),
+                })?;
+                self.transition(req, RunState::FAILED, "bundle ZIP generation errored")?;
+                return Err(error);
+            }
+        };
         self.audit.append(AuditEvent {
             ts_utc: now_rfc3339_utc(),
             event_type: "BUNDLE_GENERATION_COMPLETED".to_string(),
@@ -231,7 +268,24 @@ impl RunManager {
             event_hash: String::new(),
         })?;
         let validator = BundleValidator::new_v3();
-        let summary = validator.validate_zip(bundle_zip, req.policy_mode)?;
+        let summary = match validator.validate_zip(bundle_zip, req.policy_mode) {
+            Ok(summary) => summary,
+            Err(error) => {
+                remove_exported_bytes(bundle_zip, "initial bundle validation error")?;
+                self.audit.append(AuditEvent {
+                    ts_utc: now_rfc3339_utc(),
+                    event_type: "EXPORT_FAILED".to_string(),
+                    run_id: req.run_id.clone(),
+                    vault_id: req.vault_id.clone(),
+                    actor: Actor::System,
+                    details: serde_json::json!({"reason":"BUNDLE_VALIDATION_ERROR"}),
+                    prev_event_hash: String::new(),
+                    event_hash: String::new(),
+                })?;
+                self.transition(req, RunState::FAILED, "bundle validation error")?;
+                return Err(error);
+            }
+        };
         self.audit.append(AuditEvent {
             ts_utc: now_rfc3339_utc(),
             event_type: "BUNDLE_VALIDATION_RESULT".to_string(),
@@ -247,6 +301,7 @@ impl RunManager {
             event_hash: String::new(),
         })?;
         if summary.overall != "PASS" {
+            remove_exported_bytes(bundle_zip, "initial bundle validation failure")?;
             self.audit.append(AuditEvent {
                 ts_utc: now_rfc3339_utc(),
                 event_type: "EXPORT_FAILED".to_string(),
@@ -269,8 +324,98 @@ impl RunManager {
         // Refresh the bundle once after validation events are appended so bundled audit_log.ndjson
         // includes final export lifecycle evidence.
         final_bundle_inputs.audit_log_ndjson = self.audit.read_all_ndjson()?;
-        EvidenceBundleBuilder::build_dir(bundle_dir, &final_bundle_inputs)?;
-        let bundle_sha = EvidenceBundleBuilder::build_zip(bundle_dir, bundle_zip)?;
+        if let Err(error) = remove_stale_export_on_error(
+            bundle_zip,
+            "final bundle directory rewrite error",
+            EvidenceBundleBuilder::build_dir(bundle_dir, &final_bundle_inputs),
+        ) {
+            self.audit.append(AuditEvent {
+                ts_utc: now_rfc3339_utc(),
+                event_type: "EXPORT_FAILED".to_string(),
+                run_id: req.run_id.clone(),
+                vault_id: req.vault_id.clone(),
+                actor: Actor::System,
+                details: serde_json::json!({"reason":"FINAL_BUNDLE_REWRITE_ERROR"}),
+                prev_event_hash: String::new(),
+                event_hash: String::new(),
+            })?;
+            self.transition(req, RunState::FAILED, "final bundle directory rewrite errored")?;
+            return Err(error);
+        }
+        let bundle_sha = match remove_stale_export_on_error(
+            bundle_zip,
+            "final bundle ZIP rewrite error",
+            EvidenceBundleBuilder::build_zip(bundle_dir, bundle_zip),
+        ) {
+            Ok(bundle_sha) => bundle_sha,
+            Err(error) => {
+                self.audit.append(AuditEvent {
+                    ts_utc: now_rfc3339_utc(),
+                    event_type: "EXPORT_FAILED".to_string(),
+                    run_id: req.run_id.clone(),
+                    vault_id: req.vault_id.clone(),
+                    actor: Actor::System,
+                    details: serde_json::json!({"reason":"FINAL_BUNDLE_REWRITE_ERROR"}),
+                    prev_event_hash: String::new(),
+                    event_hash: String::new(),
+                })?;
+                self.transition(req, RunState::FAILED, "final bundle ZIP rewrite errored")?;
+                return Err(error);
+            }
+        };
+        let final_summary = match validator.validate_zip(bundle_zip, req.policy_mode) {
+            Ok(summary) => summary,
+            Err(error) => {
+                remove_exported_bytes(bundle_zip, "final bundle validation error")?;
+                self.audit.append(AuditEvent {
+                    ts_utc: now_rfc3339_utc(),
+                    event_type: "EXPORT_FAILED".to_string(),
+                    run_id: req.run_id.clone(),
+                    vault_id: req.vault_id.clone(),
+                    actor: Actor::System,
+                    details: serde_json::json!({"reason":"FINAL_BUNDLE_VALIDATION_ERROR"}),
+                    prev_event_hash: String::new(),
+                    event_hash: String::new(),
+                })?;
+                self.transition(req, RunState::FAILED, "final bundle validation errored")?;
+                return Err(error);
+            }
+        };
+        self.audit.append(AuditEvent {
+            ts_utc: now_rfc3339_utc(),
+            event_type: "BUNDLE_VALIDATION_RESULT".to_string(),
+            run_id: req.run_id.clone(),
+            vault_id: req.vault_id.clone(),
+            actor: Actor::System,
+            details: serde_json::json!({
+                "result": final_summary.overall,
+                "failed_checks": final_summary.checks.iter().filter(|c| c.result != "PASS").map(|c| c.check_id.clone()).collect::<Vec<_>>(),
+                "validator_version": "bundle_validator_v3",
+                "validation_phase": "FINAL_EXPORTED_BYTES"
+            }),
+            prev_event_hash: String::new(),
+            event_hash: String::new(),
+        })?;
+        if final_summary.overall != "PASS" {
+            remove_exported_bytes(bundle_zip, "final bundle validation failure")?;
+            self.audit.append(AuditEvent {
+                ts_utc: now_rfc3339_utc(),
+                event_type: "EXPORT_FAILED".to_string(),
+                run_id: req.run_id.clone(),
+                vault_id: req.vault_id.clone(),
+                actor: Actor::System,
+                details: serde_json::json!({"reason":"FINAL_BUNDLE_VALIDATION_FAILED"}),
+                prev_event_hash: String::new(),
+                event_hash: String::new(),
+            })?;
+            self.transition(req, RunState::FAILED, "final bundle validation failed")?;
+            return Ok(ExportOutcome {
+                status: "FAILED".to_string(),
+                bundle_path: None,
+                bundle_sha256: None,
+                block_reason: Some(ExportBlockReason::BUNDLE_VALIDATION_FAILED),
+            });
+        }
 
         // 15) EXPORT_COMPLETED
         let rel = bundle_zip.to_string_lossy().to_string();
@@ -386,6 +531,36 @@ fn harden_preflight_file_permissions(path: &Path) -> CoreResult<()> {
     Ok(())
 }
 
+fn remove_exported_bytes(path: &Path, context: &str) -> CoreResult<()> {
+    match std::fs::remove_file(path) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    if std::fs::symlink_metadata(path).is_ok() {
+        return Err(std::io::Error::other(format!(
+            "{context}: exported bytes remain at {}",
+            path.display()
+        ))
+        .into());
+    }
+    Ok(())
+}
+
+fn remove_stale_export_on_error<T>(
+    path: &Path,
+    context: &str,
+    result: CoreResult<T>,
+) -> CoreResult<T> {
+    match result {
+        Ok(value) => Ok(value),
+        Err(error) => {
+            remove_exported_bytes(path, context)?;
+            Err(error)
+        }
+    }
+}
+
 fn valid_transition(from: RunState, to: RunState) -> bool {
     use RunState::*;
     match (from, to) {
@@ -417,7 +592,8 @@ fn now_rfc3339_utc() -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        harden_preflight_file_permissions, valid_transition, PreflightArtifacts, RunState,
+        harden_preflight_file_permissions, remove_exported_bytes, remove_stale_export_on_error,
+        valid_transition, PreflightArtifacts, RunState,
     };
 
     #[test]
@@ -475,5 +651,32 @@ mod tests {
                 & 0o777;
             assert_eq!(file_mode, 0o600);
         }
+    }
+
+    #[test]
+    fn failed_bundle_validation_cleanup_removes_exact_exported_bytes() {
+        let temp = tempfile::tempdir().expect("temporary test directory");
+        let bundle = temp.path().join("failed-validation.zip");
+        std::fs::write(&bundle, b"invalid bundle").expect("write invalid bundle");
+        remove_exported_bytes(&bundle, "initial validation failure")
+            .expect("failed export bytes should be removed");
+        assert!(!bundle.exists());
+        remove_exported_bytes(&bundle, "initial validation error")
+            .expect("already-absent export bytes should remain absent");
+    }
+
+    #[test]
+    fn failed_final_rewrite_removes_previously_validated_zip() {
+        let temp = tempfile::tempdir().expect("temporary test directory");
+        let bundle = temp.path().join("previously-validated.zip");
+        std::fs::write(&bundle, b"stale validated bytes").expect("write stale ZIP");
+        let rewrite_error = std::io::Error::other("injected final rewrite failure").into();
+        let result: crate::error::CoreResult<()> = remove_stale_export_on_error(
+            &bundle,
+            "injected final rewrite failure",
+            Err(rewrite_error),
+        );
+        assert!(result.is_err());
+        assert!(std::fs::symlink_metadata(&bundle).is_err());
     }
 }

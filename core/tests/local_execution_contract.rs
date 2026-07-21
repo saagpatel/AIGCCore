@@ -1,0 +1,1044 @@
+use aigc_core::execution::*;
+use sha2::{Digest, Sha256};
+use std::collections::{BTreeMap, BTreeSet};
+
+fn policy() -> ExecutionPolicyV1 {
+    ExecutionPolicyV1 {
+        schema_version: EXECUTION_POLICY_SCHEMA_V1.to_string(),
+        policy_id: "policy-test".to_string(),
+        backend_id: OCI_ZERO_EGRESS_BACKEND_V1.to_string(),
+        input_tree_sha256: "a".repeat(64),
+        image_id: format!("sha256:{}", "b".repeat(64)),
+        argv: vec!["node".to_string(), "/input/fixture.js".to_string()],
+        working_directory: "/workspace".to_string(),
+        filesystem: FilesystemPolicyV1 {
+            immutable_input_path: "/input".to_string(),
+            writable_workspace_path: "/workspace".to_string(),
+            output_path_allowlist: vec!["candidate.patch.json".to_string()],
+            max_output_bytes: 8192,
+            host_mounts_allowed: false,
+        },
+        network: NetworkPolicyV1 {
+            mode: ExecutionNetworkModeV1::DenyAll,
+            blocked_classes: BTreeSet::from([
+                NetworkClassV1::Dns,
+                NetworkClassV1::Ipv4,
+                NetworkClassV1::Ipv6,
+                NetworkClassV1::Metadata,
+                NetworkClassV1::Loopback,
+                NetworkClassV1::UnixSocket,
+                NetworkClassV1::Proxy,
+            ]),
+        },
+        process: ProcessPolicyV1 {
+            child_processes_allowed: true,
+            pid_limit: 16,
+            wall_time_ms: 15_000,
+            controller_death_cleanup_required: true,
+            trusted_init_required: true,
+        },
+        resources: ResourcePolicyV1 {
+            memory_bytes: 256 * 1024 * 1024,
+            memory_swap_bytes: 256 * 1024 * 1024,
+            cpu_quota_millis: 500,
+            workspace_bytes: 64 * 1024 * 1024,
+            max_file_bytes: 8 * 1024 * 1024,
+            max_open_files: 64,
+        },
+        environment: EnvironmentPolicyV1 {
+            allowed_keys: BTreeSet::from([
+                "HOME".to_string(),
+                "HOSTNAME".to_string(),
+                "LANG".to_string(),
+                "NODE_VERSION".to_string(),
+                "PATH".to_string(),
+                "TMPDIR".to_string(),
+                "YARN_VERSION".to_string(),
+            ]),
+            secrets: SecretPolicyV1::None,
+            synthetic_home: "/workspace/home".to_string(),
+            synthetic_tmp: "/tmp".to_string(),
+        },
+        export: ExportPolicyV1 {
+            patch_only: true,
+            review_required: true,
+            reviewer_kind: "DETERMINISTIC_FIXTURE_REVIEWER_V1".to_string(),
+            max_patch_bytes: 8192,
+        },
+        evidence: EvidencePolicyV1 {
+            required_control_ids: BTreeSet::from(["control-1".to_string()]),
+            require_effective_policy_readback: true,
+            require_zero_residue: true,
+            maximum_claim: "exact qualified OCI runtime only".to_string(),
+        },
+    }
+}
+
+fn passing_receipt() -> ExecutionReceiptV1 {
+    let requested = policy();
+    let digest = "c".repeat(64);
+    let seccomp_profile =
+        r#"{"architectures":["SCMP_ARCH_AARCH64"],"defaultAction":"SCMP_ACT_ERRNO"}"#;
+    let seccomp_digest = hex::encode(Sha256::digest(seccomp_profile.as_bytes()));
+    let cold_sample = PerformanceSampleV1 {
+        phase: PerformancePhaseV1::ColdCached,
+        elapsed_ms: 10,
+        cleanup_ms: 5,
+        peak_disk_bytes: 1,
+    };
+    let warm_sample = PerformanceSampleV1 {
+        phase: PerformancePhaseV1::Warm,
+        ..cold_sample.clone()
+    };
+    let five_second_sample = PerformanceSampleV1 {
+        phase: PerformancePhaseV1::FiveSecondOverhead,
+        elapsed_ms: 5_000,
+        ..cold_sample.clone()
+    };
+    let configured_environment = BTreeMap::from([
+        ("HOME".to_string(), "/workspace/home".to_string()),
+        ("TMPDIR".to_string(), "/tmp".to_string()),
+        ("LANG".to_string(), "C.UTF-8".to_string()),
+        ("NODE_VERSION".to_string(), "22.0.0".to_string()),
+        ("PATH".to_string(), "/usr/local/bin:/usr/bin".to_string()),
+        ("YARN_VERSION".to_string(), "1.22.0".to_string()),
+    ]);
+    let mut observed_environment = configured_environment.clone();
+    observed_environment.insert("HOSTNAME".to_string(), "fixture-v1".to_string());
+    ExecutionReceiptV1 {
+        schema_version: EXECUTION_RECEIPT_SCHEMA_V1.to_string(),
+        run_id: "run-test".to_string(),
+        result: ExecutionTerminalResultV1::Pass,
+        subject_identity: SubjectIdentityV1 {
+            fixture_id: "fixture-v1".to_string(),
+            fixture_sha256: "d".repeat(64),
+            input_tree_sha256: requested.input_tree_sha256.clone(),
+            argv: requested.argv.clone(),
+        },
+        backend_identity: BackendIdentityV1 {
+            backend_id: requested.backend_id.clone(),
+            engine_endpoint: "unix:///program-owned/docker.sock".to_string(),
+            daemon_id: "daemon-test-v1".to_string(),
+            architecture: "aarch64".to_string(),
+            engine_version: "29.5.2".to_string(),
+            runtime_version: "runc 1.3.5".to_string(),
+            kernel_version: "6.8".to_string(),
+            image_id: requested.image_id.clone(),
+            enforcement_profile_sha256: seccomp_digest.clone(),
+            controller_build: "test".to_string(),
+            controller_executable_sha256: "e".repeat(64),
+        },
+        effective_policy: EffectivePolicyV1 {
+            readback_complete: true,
+            image_id: requested.image_id.clone(),
+            enforcement_profile_sha256: seccomp_digest,
+            seccomp_architectures: vec!["SCMP_ARCH_AARCH64".to_string()],
+            argv: requested.argv.clone(),
+            working_directory: requested.working_directory.clone(),
+            user: "65534:65534".to_string(),
+            network_mode: "none".to_string(),
+            readonly_root: true,
+            mount_count: 0,
+            host_mount_count: 0,
+            host_config_mount_count: 0,
+            runtime_mount_count: 0,
+            cap_drop: vec!["ALL".to_string()],
+            security_options: vec![
+                "no-new-privileges".to_string(),
+                format!("seccomp={seccomp_profile}"),
+            ],
+            init_enabled: true,
+            init_implementation: "docker-init".to_string(),
+            init_version: "0.19.0".to_string(),
+            pid_limit: 16,
+            memory_bytes: 256 * 1024 * 1024,
+            memory_swap_bytes: 256 * 1024 * 1024,
+            cpu_quota_nanos: 500_000_000,
+            tmpfs: BTreeMap::from([
+                (
+                    "/workspace".to_string(),
+                    "rw,nosuid,nodev,size=67108864,mode=0700,uid=65534,gid=65534".to_string(),
+                ),
+                (
+                    "/tmp".to_string(),
+                    "rw,nosuid,nodev,noexec,size=8388608,mode=0700,uid=65534,gid=65534".to_string(),
+                ),
+            ]),
+            ulimits: BTreeMap::from([
+                ("nofile".to_string(), 64),
+                ("fsize".to_string(), 8 * 1024 * 1024),
+            ]),
+            environment_key_names: observed_environment.keys().cloned().collect(),
+            environment: configured_environment,
+            observed_environment,
+        },
+        requested_policy: requested,
+        observed_effects: vec![EffectObservationV1 {
+            effect_id: "effect-1".to_string(),
+            effect_class: "NETWORK".to_string(),
+            attempted: true,
+            allowed: false,
+            persisted: false,
+            evidence_origin: EvidenceOriginV1::RuntimeEnforced,
+            sensor_identity: "docker-inspect".to_string(),
+            detail: "socket denied".to_string(),
+        }],
+        controls: vec![ControlResultV1 {
+            control_id: "control-1".to_string(),
+            control_kind: "NEGATIVE".to_string(),
+            expected: "denied".to_string(),
+            observed: "denied".to_string(),
+            evidence_refs: vec![ControlEvidenceRefV1 {
+                effect_id: "effect-1".to_string(),
+                expected_attempted: true,
+                expected_allowed: false,
+            }],
+            result: ExecutionTerminalResultV1::Pass,
+        }],
+        export_review: ExportReviewV1 {
+            candidate_sha256: digest.clone(),
+            reviewed_sha256: digest.clone(),
+            exported_sha256: digest,
+            reviewer_kind: "DETERMINISTIC_FIXTURE_REVIEWER_V1".to_string(),
+            approved: true,
+            rejected_entries: vec![],
+            bytes: 128,
+        },
+        cleanup: CleanupEvidenceV1 {
+            attempted: true,
+            completed: true,
+            containers_remaining: 0,
+            images_remaining: 0,
+            networks_remaining: 0,
+            volumes_remaining: 0,
+            processes_remaining: 0,
+            listeners_remaining: 0,
+            mounts_remaining: 0,
+            temporary_roots_remaining: 0,
+            detail: "clean".to_string(),
+        },
+        performance: Some(PerformanceSummaryV1 {
+            cold_samples: vec![cold_sample; 5],
+            warm_samples: vec![warm_sample; 30],
+            five_second_samples: vec![five_second_sample; 5],
+            concurrency_observations: vec![
+                ConcurrencyObservationV1 {
+                    concurrency: 1,
+                    batch_wall_samples_ms: vec![10; 5],
+                    batch_wall_p95_ms: 10,
+                    passed: true,
+                },
+                ConcurrencyObservationV1 {
+                    concurrency: 2,
+                    batch_wall_samples_ms: vec![15; 5],
+                    batch_wall_p95_ms: 15,
+                    passed: true,
+                },
+                ConcurrencyObservationV1 {
+                    concurrency: 4,
+                    batch_wall_samples_ms: vec![20; 5],
+                    batch_wall_p95_ms: 20,
+                    passed: true,
+                },
+            ],
+            input_bytes: 1,
+            warm_start_p95_ms: 10,
+            cold_start_p95_ms: 10,
+            cleanup_p95_ms: 5,
+            cleanup_max_ms: 5,
+            added_overhead_p95_ms: 0,
+            added_overhead_percent: 0,
+            peak_disk_bytes: 1,
+            disk_amplification_ceiling_bytes: 128 * 1024 * 1024 + 2,
+            highest_passing_concurrency: 4,
+            gates_passed: true,
+        }),
+        evidence_ceiling: EvidenceCeilingV1 {
+            enforced: vec!["exact config".to_string()],
+            observed: vec!["socket denied".to_string()],
+            unknown: vec!["outer VM integrity".to_string()],
+            excluded_claims: vec!["hostile kernel resistance".to_string()],
+            maximum_claim: "exact qualified OCI runtime only".to_string(),
+        },
+        limitations: vec!["fixture scoped".to_string()],
+    }
+}
+
+#[test]
+fn valid_contract_and_receipt_pass() {
+    policy().validate().expect("policy should be valid");
+    let validation = validate_execution_receipt(&passing_receipt());
+    assert_eq!(validation.result, ExecutionTerminalResultV1::Pass);
+    assert!(validation.reasons.is_empty());
+}
+
+#[test]
+fn secret_bearing_environment_is_blocked() {
+    let mut requested = policy();
+    requested
+        .environment
+        .allowed_keys
+        .insert("GITHUB_TOKEN".to_string());
+    assert!(requested.validate().is_err());
+}
+
+#[test]
+fn mutable_image_or_unsafe_export_path_is_blocked() {
+    let mut requested = policy();
+    requested.image_id = "sha256:latest".to_string();
+    assert!(requested.validate().is_err());
+
+    let mut requested = policy();
+    requested.filesystem.output_path_allowlist = vec!["../escape".to_string()];
+    assert!(requested.validate().is_err());
+}
+
+#[test]
+fn simulated_or_incomplete_evidence_cannot_pass() {
+    let mut receipt = passing_receipt();
+    receipt.observed_effects[0].evidence_origin = EvidenceOriginV1::ControlSimulation;
+    receipt.cleanup.containers_remaining = 1;
+    let validation = validate_execution_receipt(&receipt);
+    assert_eq!(validation.result, ExecutionTerminalResultV1::Error);
+    assert!(validation
+        .reasons
+        .iter()
+        .any(|reason| reason.contains("CONTROL_SIMULATION")));
+    assert!(validation
+        .reasons
+        .iter()
+        .any(|reason| reason.contains("zero named residue")));
+}
+
+#[test]
+fn digest_mismatch_blocks_export_claim() {
+    let mut receipt = passing_receipt();
+    receipt.export_review.exported_sha256 = "f".repeat(64);
+    let validation = validate_execution_receipt(&receipt);
+    assert_eq!(validation.result, ExecutionTerminalResultV1::Error);
+    assert!(validation
+        .reasons
+        .iter()
+        .any(|reason| reason.contains("digest-bound")));
+}
+
+fn assert_receipt_rejected(receipt: &ExecutionReceiptV1, reason_fragment: &str) {
+    let validation = validate_execution_receipt(receipt);
+    assert_eq!(validation.result, ExecutionTerminalResultV1::Error);
+    assert!(
+        validation
+            .reasons
+            .iter()
+            .any(|reason| reason.contains(reason_fragment)),
+        "expected reason containing {reason_fragment:?}, got {:?}",
+        validation.reasons
+    );
+}
+
+#[test]
+fn export_identity_requires_three_valid_lowercase_digests_and_nonzero_bytes() {
+    let digest_mutations: Vec<fn(&mut ExecutionReceiptV1)> = vec![
+        |receipt| receipt.export_review.candidate_sha256.clear(),
+        |receipt| receipt.export_review.reviewed_sha256.clear(),
+        |receipt| receipt.export_review.exported_sha256.clear(),
+    ];
+    for mutate in digest_mutations {
+        let mut receipt = passing_receipt();
+        mutate(&mut receipt);
+        assert_receipt_rejected(&receipt, "digest-bound");
+    }
+
+    let mut receipt = passing_receipt();
+    let equal_but_invalid = "z".repeat(64);
+    receipt.export_review.candidate_sha256 = equal_but_invalid.clone();
+    receipt.export_review.reviewed_sha256 = equal_but_invalid.clone();
+    receipt.export_review.exported_sha256 = equal_but_invalid;
+    assert_receipt_rejected(&receipt, "digest-bound");
+
+    let mut receipt = passing_receipt();
+    let uppercase = "A".repeat(64);
+    receipt.export_review.candidate_sha256 = uppercase.clone();
+    receipt.export_review.reviewed_sha256 = uppercase.clone();
+    receipt.export_review.exported_sha256 = uppercase;
+    assert_receipt_rejected(&receipt, "digest-bound");
+
+    let mut receipt = passing_receipt();
+    receipt.export_review.bytes = 0;
+    assert_receipt_rejected(&receipt, "digest-bound");
+}
+
+#[test]
+fn fixture_identity_requires_a_valid_lowercase_sha256() {
+    for invalid in [String::new(), "not-a-digest".to_string(), "D".repeat(64)] {
+        let mut receipt = passing_receipt();
+        receipt.subject_identity.fixture_sha256 = invalid;
+        assert_receipt_rejected(&receipt, "fixture identity");
+    }
+}
+
+#[test]
+fn schema_required_subject_and_backend_binding_fields_cannot_be_empty() {
+    let identity_mutations: Vec<(&str, fn(&mut ExecutionReceiptV1))> = vec![
+        ("input_tree_sha256", |receipt| {
+            receipt.subject_identity.input_tree_sha256.clear()
+        }),
+        ("argv", |receipt| receipt.subject_identity.argv.clear()),
+        ("enforcement_profile_sha256", |receipt| {
+            receipt.backend_identity.enforcement_profile_sha256.clear()
+        }),
+        ("controller_executable_sha256", |receipt| {
+            receipt
+                .backend_identity
+                .controller_executable_sha256
+                .clear()
+        }),
+    ];
+    for (field, mutate) in identity_mutations {
+        let mut receipt = passing_receipt();
+        mutate(&mut receipt);
+        let validation = validate_execution_receipt(&receipt);
+        assert_eq!(
+            validation.result,
+            ExecutionTerminalResultV1::Error,
+            "empty {field} unexpectedly passed"
+        );
+    }
+}
+
+#[test]
+fn every_schema_required_run_fixture_and_backend_identity_is_nonempty() {
+    let identity_mutations: Vec<(&str, fn(&mut ExecutionReceiptV1))> = vec![
+        ("run_id", |receipt| receipt.run_id.clear()),
+        ("fixture_id", |receipt| {
+            receipt.subject_identity.fixture_id.clear()
+        }),
+        ("backend_id", |receipt| {
+            receipt.backend_identity.backend_id.clear()
+        }),
+        ("engine_endpoint", |receipt| {
+            receipt.backend_identity.engine_endpoint.clear()
+        }),
+        ("daemon_id", |receipt| {
+            receipt.backend_identity.daemon_id.clear()
+        }),
+        ("architecture", |receipt| {
+            receipt.backend_identity.architecture.clear()
+        }),
+        ("engine_version", |receipt| {
+            receipt.backend_identity.engine_version.clear()
+        }),
+        ("runtime_version", |receipt| {
+            receipt.backend_identity.runtime_version.clear()
+        }),
+        ("kernel_version", |receipt| {
+            receipt.backend_identity.kernel_version.clear()
+        }),
+        ("image_id", |receipt| {
+            receipt.backend_identity.image_id.clear()
+        }),
+        ("controller_build", |receipt| {
+            receipt.backend_identity.controller_build.clear()
+        }),
+    ];
+    for (field, mutate) in identity_mutations {
+        let mut receipt = passing_receipt();
+        mutate(&mut receipt);
+        let validation = validate_execution_receipt(&receipt);
+        assert_eq!(
+            validation.result,
+            ExecutionTerminalResultV1::Error,
+            "empty {field} unexpectedly passed"
+        );
+        assert!(
+            validation
+                .reasons
+                .iter()
+                .any(|reason| reason.contains("identities must be non-empty")),
+            "empty {field} did not produce the identity reason: {:?}",
+            validation.reasons
+        );
+    }
+}
+
+#[test]
+fn schema_parity_rejects_endpoint_control_claim_and_effective_policy_bypasses() {
+    let mut receipt = passing_receipt();
+    receipt
+        .requested_policy
+        .filesystem
+        .output_path_allowlist
+        .push("candidate.patch.json".to_string());
+    assert_receipt_rejected(&receipt, "output allowlist");
+
+    for destination in ["/input", "/unexpected"] {
+        let mut receipt = passing_receipt();
+        let workspace_options = receipt.effective_policy.tmpfs["/workspace"].clone();
+        receipt
+            .effective_policy
+            .tmpfs
+            .insert(destination.to_string(), workspace_options);
+        assert_receipt_rejected(&receipt, "tmpfs destinations");
+    }
+
+    let mut receipt = passing_receipt();
+    receipt.effective_policy.tmpfs.remove("/tmp");
+    assert_receipt_rejected(&receipt, "tmpfs destinations");
+
+    let mut receipt = passing_receipt();
+    receipt.effective_policy.tmpfs.insert(
+        "/tmp".to_string(),
+        "rw,nosuid,nodev,size=8388608,mode=0700,uid=65534,gid=65534".to_string(),
+    );
+    assert_receipt_rejected(&receipt, "tmpfs destinations");
+
+    let mut receipt = passing_receipt();
+    receipt.backend_identity.engine_endpoint = "https://example.invalid".to_string();
+    assert_receipt_rejected(&receipt, "requested and effective");
+
+    let mut receipt = passing_receipt();
+    receipt.controls[0].control_kind = "ARBITRARY".to_string();
+    assert_receipt_rejected(&receipt, "unsupported control kind");
+
+    let claim_mutations: Vec<fn(&mut ExecutionReceiptV1)> = vec![
+        |receipt| receipt.evidence_ceiling.enforced.clear(),
+        |receipt| receipt.evidence_ceiling.observed.clear(),
+        |receipt| receipt.evidence_ceiling.unknown.clear(),
+        |receipt| receipt.evidence_ceiling.excluded_claims.clear(),
+        |receipt| receipt.evidence_ceiling.enforced[0].clear(),
+        |receipt| receipt.evidence_ceiling.observed[0].clear(),
+        |receipt| receipt.evidence_ceiling.unknown[0].clear(),
+        |receipt| receipt.evidence_ceiling.excluded_claims[0].clear(),
+        |receipt| receipt.limitations[0].clear(),
+    ];
+    for mutate in claim_mutations {
+        let mut receipt = passing_receipt();
+        mutate(&mut receipt);
+        assert_receipt_rejected(&receipt, "claim ceiling");
+    }
+
+    let mut receipt = passing_receipt();
+    receipt.cleanup.detail.clear();
+    assert_receipt_rejected(&receipt, "cleanup evidence");
+
+    let mut receipt = passing_receipt();
+    receipt
+        .effective_policy
+        .ulimits
+        .insert("extra".to_string(), 0);
+    assert_receipt_rejected(&receipt, "requested and effective");
+
+    let mut receipt = passing_receipt();
+    receipt.effective_policy.cap_drop = vec!["all".to_string()];
+    assert_receipt_rejected(&receipt, "requested and effective");
+
+    let mut receipt = passing_receipt();
+    receipt
+        .performance
+        .as_mut()
+        .expect("performance")
+        .input_bytes = 0;
+    assert_receipt_rejected(&receipt, "performance");
+}
+
+#[test]
+fn schema_parity_rejects_coherently_digest_bound_malformed_seccomp_architecture() {
+    let mut receipt = passing_receipt();
+    let malformed_profile = r#"{"architectures":["NOT_AN_ARCH"],"defaultAction":"SCMP_ACT_ERRNO"}"#;
+    let malformed_digest = hex::encode(Sha256::digest(malformed_profile.as_bytes()));
+    receipt.effective_policy.security_options[1] = format!("seccomp={malformed_profile}");
+    receipt.effective_policy.seccomp_architectures = vec!["NOT_AN_ARCH".to_string()];
+    receipt.effective_policy.enforcement_profile_sha256 = malformed_digest.clone();
+    receipt.backend_identity.enforcement_profile_sha256 = malformed_digest;
+    assert_receipt_rejected(&receipt, "architecture identity is malformed");
+}
+
+#[test]
+fn serde_receipt_contract_rejects_unknown_fields_at_every_schema_object_boundary() {
+    let receipt = serde_json::to_value(passing_receipt()).expect("serialize passing receipt");
+    let object_paths = [
+        "",
+        "/subject_identity",
+        "/backend_identity",
+        "/requested_policy",
+        "/requested_policy/filesystem",
+        "/requested_policy/network",
+        "/requested_policy/process",
+        "/requested_policy/resources",
+        "/requested_policy/environment",
+        "/requested_policy/export",
+        "/requested_policy/evidence",
+        "/effective_policy",
+        "/observed_effects/0",
+        "/controls/0",
+        "/controls/0/evidence_refs/0",
+        "/export_review",
+        "/cleanup",
+        "/performance",
+        "/performance/cold_samples/0",
+        "/performance/concurrency_observations/0",
+        "/evidence_ceiling",
+    ];
+    for path in object_paths {
+        let mut mutated = receipt.clone();
+        mutated
+            .pointer_mut(path)
+            .and_then(serde_json::Value::as_object_mut)
+            .unwrap_or_else(|| panic!("missing object at {path}"))
+            .insert("unexpected".to_string(), serde_json::Value::Bool(true));
+        assert!(
+            serde_json::from_value::<ExecutionReceiptV1>(mutated).is_err(),
+            "unknown field unexpectedly accepted at {path}"
+        );
+    }
+}
+
+#[test]
+fn raw_policy_json_rejects_every_unique_items_duplicate() {
+    let policy = serde_json::to_value(policy()).expect("serialize passing policy");
+    for path in [
+        "/network/blocked_classes",
+        "/environment/allowed_keys",
+        "/evidence/required_control_ids",
+    ] {
+        let mut mutated = policy.clone();
+        let values = mutated
+            .pointer_mut(path)
+            .and_then(serde_json::Value::as_array_mut)
+            .unwrap_or_else(|| panic!("missing array at {path}"));
+        values.push(values[0].clone());
+        assert!(
+            serde_json::from_value::<ExecutionPolicyV1>(mutated).is_err(),
+            "duplicate set item unexpectedly accepted at {path}"
+        );
+    }
+
+    let mut mutated = policy;
+    let values = mutated
+        .pointer_mut("/filesystem/output_path_allowlist")
+        .and_then(serde_json::Value::as_array_mut)
+        .expect("output allowlist array");
+    values.push(values[0].clone());
+    let parsed: ExecutionPolicyV1 = serde_json::from_value(mutated)
+        .expect("duplicate vector should deserialize for validation");
+    assert!(parsed.validate().is_err());
+}
+
+#[test]
+fn normalized_path_policy_rejects_immutable_and_writable_root_overlap() {
+    let mut requested = policy();
+    requested.environment.synthetic_tmp = "/input/tmp".to_string();
+    assert!(requested.validate().is_err());
+
+    let mut requested = policy();
+    requested.filesystem.writable_workspace_path = "/input/workspace".to_string();
+    requested.working_directory = "/input/workspace".to_string();
+    requested.environment.synthetic_home = "/input/workspace/home".to_string();
+    assert!(requested.validate().is_err());
+
+    let mut requested = policy();
+    requested.filesystem.immutable_input_path = "/workspace/input".to_string();
+    assert!(requested.validate().is_err());
+
+    for alias in [
+        "/input/../workspace",
+        "/input/./workspace",
+        "/input//workspace",
+    ] {
+        let mut requested = policy();
+        requested.filesystem.writable_workspace_path = alias.to_string();
+        requested.working_directory = alias.to_string();
+        requested.environment.synthetic_home = format!("{alias}/home");
+        assert!(requested.validate().is_err(), "path alias passed: {alias}");
+    }
+
+    let mut receipt = passing_receipt();
+    receipt.requested_policy.environment.synthetic_tmp = "/input/tmp".to_string();
+    receipt
+        .effective_policy
+        .environment
+        .insert("TMPDIR".to_string(), "/input/tmp".to_string());
+    receipt
+        .effective_policy
+        .observed_environment
+        .insert("TMPDIR".to_string(), "/input/tmp".to_string());
+    let options = receipt
+        .effective_policy
+        .tmpfs
+        .remove("/tmp")
+        .expect("synthetic tmp options");
+    receipt
+        .effective_policy
+        .tmpfs
+        .insert("/input/tmp".to_string(), options);
+    assert_receipt_rejected(&receipt, "normalized disjoint absolute roots");
+}
+
+#[test]
+fn effective_seccomp_mount_environment_and_init_readback_are_bound() {
+    let mut receipt = passing_receipt();
+    receipt.effective_policy.enforcement_profile_sha256 = "f".repeat(64);
+    assert_receipt_rejected(&receipt, "seccomp profile, architecture, and digest");
+
+    let mut receipt = passing_receipt();
+    receipt.effective_policy.seccomp_architectures = vec!["SCMP_ARCH_X86_64".to_string()];
+    assert_receipt_rejected(&receipt, "seccomp profile, architecture, and digest");
+
+    let mut receipt = passing_receipt();
+    receipt.effective_policy.security_options[1] =
+        "seccomp={\"defaultAction\":\"SCMP_ACT_ERRNO\"}".to_string();
+    assert_receipt_rejected(&receipt, "architecture binding");
+
+    for field in ["binds", "host-config-mounts", "runtime-mounts"] {
+        let mut receipt = passing_receipt();
+        receipt.effective_policy.mount_count = 1;
+        match field {
+            "binds" => receipt.effective_policy.host_mount_count = 1,
+            "host-config-mounts" => receipt.effective_policy.host_config_mount_count = 1,
+            "runtime-mounts" => receipt.effective_policy.runtime_mount_count = 1,
+            _ => unreachable!(),
+        }
+        assert_receipt_rejected(&receipt, "requested and effective");
+    }
+
+    let mut receipt = passing_receipt();
+    receipt
+        .effective_policy
+        .observed_environment
+        .insert("PATH".to_string(), "/forged".to_string());
+    assert_receipt_rejected(&receipt, "runtime values");
+
+    let mut receipt = passing_receipt();
+    receipt
+        .effective_policy
+        .environment
+        .insert("HOME".to_string(), "/forged-home".to_string());
+    receipt
+        .effective_policy
+        .observed_environment
+        .insert("HOME".to_string(), "/forged-home".to_string());
+    assert_receipt_rejected(&receipt, "synthetic environment");
+
+    let mut receipt = passing_receipt();
+    receipt
+        .effective_policy
+        .observed_environment
+        .remove("TMPDIR");
+    receipt
+        .effective_policy
+        .environment_key_names
+        .retain(|key| key != "TMPDIR");
+    assert_receipt_rejected(&receipt, "synthetic environment");
+
+    let mut receipt = passing_receipt();
+    receipt
+        .effective_policy
+        .environment_key_names
+        .push("HOME".to_string());
+    assert_receipt_rejected(&receipt, "incomplete or differ");
+
+    let mut receipt = passing_receipt();
+    receipt.effective_policy.init_implementation = "untrusted-init".to_string();
+    assert_receipt_rejected(&receipt, "requested and effective");
+
+    let mut receipt = passing_receipt();
+    receipt.effective_policy.init_version = "UNKNOWN".to_string();
+    assert_receipt_rejected(&receipt, "requested and effective");
+}
+
+#[test]
+fn every_control_must_be_unique_and_pass_including_extras() {
+    for result in [
+        ExecutionTerminalResultV1::Fail,
+        ExecutionTerminalResultV1::Blocked,
+        ExecutionTerminalResultV1::Unknown,
+        ExecutionTerminalResultV1::Error,
+    ] {
+        let mut receipt = passing_receipt();
+        receipt.controls[0].result = result;
+        assert_receipt_rejected(&receipt, "failed, blocked, unknown, or errored");
+    }
+
+    let mut receipt = passing_receipt();
+    receipt.controls.push(receipt.controls[0].clone());
+    assert_receipt_rejected(&receipt, "duplicate control IDs");
+
+    let mut receipt = passing_receipt();
+    let mut duplicate = receipt.controls[0].clone();
+    duplicate.result = ExecutionTerminalResultV1::Fail;
+    receipt.controls.push(duplicate);
+    assert_receipt_rejected(&receipt, "duplicate control IDs");
+    assert_receipt_rejected(&receipt, "failed, blocked, unknown, or errored");
+
+    let mut receipt = passing_receipt();
+    receipt.controls.push(ControlResultV1 {
+        control_id: "extra-unhealthy".to_string(),
+        control_kind: "NEGATIVE".to_string(),
+        expected: "pass".to_string(),
+        observed: "fail".to_string(),
+        evidence_refs: vec![ControlEvidenceRefV1 {
+            effect_id: "effect-1".to_string(),
+            expected_attempted: true,
+            expected_allowed: false,
+        }],
+        result: ExecutionTerminalResultV1::Fail,
+    });
+    assert_receipt_rejected(&receipt, "failed, blocked, unknown, or errored");
+}
+
+#[test]
+fn control_evidence_references_reject_delete_flip_and_detach_mutations() {
+    let mut receipt = passing_receipt();
+    receipt.controls[0].evidence_refs.clear();
+    assert_receipt_rejected(&receipt, "no effect evidence references");
+    assert_receipt_rejected(&receipt, "exact set equality");
+
+    let mut receipt = passing_receipt();
+    receipt.controls[0].evidence_refs[0].expected_allowed = true;
+    assert_receipt_rejected(&receipt, "flags contradict");
+
+    let mut receipt = passing_receipt();
+    receipt.observed_effects[0].allowed = true;
+    assert_receipt_rejected(&receipt, "flags contradict");
+
+    let mut receipt = passing_receipt();
+    receipt.controls[0].evidence_refs[0].expected_attempted = false;
+    assert_receipt_rejected(&receipt, "flags contradict");
+
+    let mut receipt = passing_receipt();
+    receipt.observed_effects.clear();
+    assert_receipt_rejected(&receipt, "references missing observed effect");
+
+    let mut receipt = passing_receipt();
+    receipt.controls[0].evidence_refs[0].effect_id = "detached-effect".to_string();
+    assert_receipt_rejected(&receipt, "references missing observed effect");
+    assert_receipt_rejected(&receipt, "exact set equality");
+
+    let mut receipt = passing_receipt();
+    receipt.observed_effects.push(EffectObservationV1 {
+        effect_id: "detached-effect".to_string(),
+        effect_class: "FILESYSTEM".to_string(),
+        attempted: true,
+        allowed: false,
+        persisted: false,
+        evidence_origin: EvidenceOriginV1::TrustedSensor,
+        sensor_identity: "fixture-sensor".to_string(),
+        detail: "detached observation".to_string(),
+    });
+    assert_receipt_rejected(&receipt, "exact set equality");
+}
+
+#[test]
+fn control_evidence_references_reject_duplicate_and_empty_identity_mutations() {
+    let mut receipt = passing_receipt();
+    let duplicate_ref = receipt.controls[0].evidence_refs[0].clone();
+    receipt.controls[0].evidence_refs.push(duplicate_ref);
+    assert_receipt_rejected(&receipt, "duplicate effect evidence references");
+
+    let mut receipt = passing_receipt();
+    let duplicate_effect = receipt.observed_effects[0].clone();
+    receipt.observed_effects.push(duplicate_effect);
+    assert_receipt_rejected(&receipt, "duplicate observed effect ID");
+
+    let mut receipt = passing_receipt();
+    receipt.observed_effects[0].attempted = false;
+    receipt.controls[0].evidence_refs[0].expected_attempted = false;
+    assert_receipt_rejected(&receipt, "does not prove an attempted effect");
+
+    let mut receipt = passing_receipt();
+    receipt.observed_effects[0].effect_id.clear();
+    assert_receipt_rejected(&receipt, "effect identity");
+
+    let mut receipt = passing_receipt();
+    receipt.observed_effects[0].effect_class.clear();
+    assert_receipt_rejected(&receipt, "effect identity");
+
+    let mut receipt = passing_receipt();
+    receipt.observed_effects[0].sensor_identity.clear();
+    assert_receipt_rejected(&receipt, "effect identity");
+
+    let mut receipt = passing_receipt();
+    receipt.observed_effects[0].detail.clear();
+    assert_receipt_rejected(&receipt, "effect identity");
+
+    let mut receipt = passing_receipt();
+    receipt.controls[0].control_id.clear();
+    assert_receipt_rejected(&receipt, "control identity");
+
+    let mut receipt = passing_receipt();
+    receipt.controls[0].control_kind.clear();
+    assert_receipt_rejected(&receipt, "control identity");
+
+    let mut receipt = passing_receipt();
+    receipt.controls[0].expected.clear();
+    assert_receipt_rejected(&receipt, "control identity");
+
+    let mut receipt = passing_receipt();
+    receipt.controls[0].observed.clear();
+    assert_receipt_rejected(&receipt, "control identity");
+
+    let mut receipt = passing_receipt();
+    receipt.controls[0].evidence_refs[0].effect_id.clear();
+    assert_receipt_rejected(&receipt, "empty effect evidence reference");
+}
+
+#[test]
+fn performance_summary_fields_are_recomputed_from_raw_samples() {
+    let summary_mutations: Vec<fn(&mut PerformanceSummaryV1)> = vec![
+        |performance| performance.cold_start_p95_ms += 1,
+        |performance| performance.warm_start_p95_ms += 1,
+        |performance| performance.cleanup_p95_ms += 1,
+        |performance| performance.cleanup_max_ms += 1,
+        |performance| performance.added_overhead_p95_ms += 1,
+        |performance| performance.added_overhead_percent += 1,
+        |performance| performance.peak_disk_bytes += 1,
+        |performance| performance.disk_amplification_ceiling_bytes += 1,
+        |performance| performance.highest_passing_concurrency = 2,
+        |performance| performance.gates_passed = false,
+    ];
+    for mutate in summary_mutations {
+        let mut receipt = passing_receipt();
+        mutate(receipt.performance.as_mut().expect("performance"));
+        assert_receipt_rejected(&receipt, "do not match raw structured samples");
+    }
+}
+
+#[test]
+fn performance_raw_sample_phase_duration_and_gate_forgery_are_rejected() {
+    let mut receipt = passing_receipt();
+    receipt
+        .performance
+        .as_mut()
+        .expect("performance")
+        .cold_samples[0]
+        .phase = PerformancePhaseV1::Warm;
+    assert_receipt_rejected(&receipt, "invalid counts, phases");
+
+    let mut receipt = passing_receipt();
+    receipt
+        .performance
+        .as_mut()
+        .expect("performance")
+        .five_second_samples[0]
+        .elapsed_ms = 4_999;
+    assert_receipt_rejected(&receipt, "five-second durations");
+
+    let mut receipt = passing_receipt();
+    receipt
+        .performance
+        .as_mut()
+        .expect("performance")
+        .warm_samples[28]
+        .elapsed_ms = 2_001;
+    receipt
+        .performance
+        .as_mut()
+        .expect("performance")
+        .warm_samples[29]
+        .elapsed_ms = 2_001;
+    receipt
+        .performance
+        .as_mut()
+        .expect("performance")
+        .warm_start_p95_ms = 2_001;
+    receipt
+        .performance
+        .as_mut()
+        .expect("performance")
+        .gates_passed = false;
+    assert_receipt_rejected(&receipt, "exact gates");
+
+    let mut receipt = passing_receipt();
+    let performance = receipt.performance.as_mut().expect("performance");
+    performance.concurrency_observations[1].batch_wall_p95_ms += 1;
+    assert_receipt_rejected(&receipt, "concurrency observations");
+
+    let mut receipt = passing_receipt();
+    let performance = receipt.performance.as_mut().expect("performance");
+    performance.concurrency_observations[2].passed = false;
+    assert_receipt_rejected(&receipt, "concurrency pass claims");
+
+    let mut receipt = passing_receipt();
+    let performance = receipt.performance.as_mut().expect("performance");
+    performance.concurrency_observations[2].concurrency = 2;
+    assert_receipt_rejected(&receipt, "missing, duplicate");
+}
+
+#[test]
+fn every_performance_gate_is_driven_by_raw_observations() {
+    let raw_gate_mutations: Vec<fn(&mut PerformanceSummaryV1)> = vec![
+        |performance| {
+            performance
+                .cold_samples
+                .iter_mut()
+                .for_each(|sample| sample.elapsed_ms = 5_001)
+        },
+        |performance| {
+            performance
+                .warm_samples
+                .iter_mut()
+                .for_each(|sample| sample.elapsed_ms = 2_001)
+        },
+        |performance| {
+            performance
+                .cold_samples
+                .iter_mut()
+                .for_each(|sample| sample.cleanup_ms = 2_001)
+        },
+        |performance| performance.cold_samples[0].cleanup_ms = 5_001,
+        |performance| {
+            performance
+                .five_second_samples
+                .iter_mut()
+                .for_each(|sample| sample.elapsed_ms = 6_001)
+        },
+        |performance| performance.cold_samples[0].peak_disk_bytes += 128 * 1024 * 1024 + 2,
+        |performance| {
+            performance.concurrency_observations[0].batch_wall_samples_ms = vec![2_001; 5]
+        },
+    ];
+    for mutate in raw_gate_mutations {
+        let mut receipt = passing_receipt();
+        mutate(receipt.performance.as_mut().expect("performance"));
+        assert_receipt_rejected(&receipt, "performance");
+    }
+}
+
+#[test]
+fn checked_in_execution_schemas_are_valid_json_and_exclude_simulation_origin() {
+    let policy: serde_json::Value =
+        serde_json::from_str(include_str!("../schemas/execution-policy-v1.schema.json"))
+            .expect("policy schema should be valid JSON");
+    let receipt_text = include_str!("../schemas/execution-receipt-v1.schema.json");
+    let receipt: serde_json::Value =
+        serde_json::from_str(receipt_text).expect("receipt schema should be valid JSON");
+    assert_eq!(policy["title"], "ExecutionPolicyV1");
+    assert_eq!(receipt["title"], "ExecutionReceiptV1");
+    assert!(!receipt_text.contains("CONTROL_SIMULATION"));
+}
+
+#[test]
+fn durable_local_execution_evidence_is_self_contained_and_valid() {
+    let receipt_bytes = include_bytes!("../../docs/evidence/local-execution-v1-receipt.json");
+    let patch_bytes = include_bytes!("../../docs/evidence/local-execution-v1-reviewed.patch.json");
+    let receipt: ExecutionReceiptV1 =
+        serde_json::from_slice(receipt_bytes).expect("durable receipt should parse");
+    let validation = validate_execution_receipt(&receipt);
+    assert_eq!(
+        validation.result,
+        ExecutionTerminalResultV1::Pass,
+        "{:?}",
+        validation.reasons
+    );
+    assert_eq!(
+        hex::encode(Sha256::digest(receipt_bytes)),
+        "c88214e29f48b07506d3b62b5e888e1346e9535bf4a76e7c15c7173d089afe88"
+    );
+    assert_eq!(
+        hex::encode(Sha256::digest(patch_bytes)),
+        receipt.export_review.exported_sha256
+    );
+    let patch: serde_json::Value =
+        serde_json::from_slice(patch_bytes).expect("durable patch should parse");
+    assert_eq!(patch["changes"][0]["path"], "allowed.txt");
+    assert_eq!(patch["changes"][0]["after"], "qualified-change\n");
+}
