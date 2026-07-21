@@ -2641,7 +2641,7 @@ mod authority_integrity_tests {
     }
 
     #[test]
-    fn full_ipc_adapter_dependency_path_reaches_loopback_sensor() {
+    fn tauri_ipc_adapter_dependency_path_reaches_loopback_sensor() {
         let _environment_guard = environment_lock();
         let root = temp_test_dir("positive");
         fs::create_dir_all(&root).expect("create temp root");
@@ -2670,7 +2670,7 @@ mod authority_integrity_tests {
             format!("{endpoint}\n")
         );
         println!("MHAI_LP007_POSITIVE_ATTEMPT_SENSOR=PASS");
-        println!("MHAI_LP007_FULL_PATH=PASS");
+        println!("MHAI_LP007_TAURI_IPC_TO_DEPENDENCY_PATH=PASS");
         std::env::remove_var("AIGC_AUTHORITY_INTEGRITY_ATTEMPT_LOG");
         fs::remove_dir_all(root).expect("remove temp root");
     }

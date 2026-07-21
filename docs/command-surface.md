@@ -196,4 +196,39 @@ Validation notes:
 
 Purpose: Run Phase 3 EvidenceOS capability mapping + strict citation export.
 
-Request and response are unchanged from prior implementation and remain exposed in `src-tauri/src/main.rs`.
+Request and response are unchanged from prior implementation and remain exposed in `src-tauri/src/lib.rs`.
+
+## Test-only command: `authority_integrity_probe_adapter`
+
+Purpose: Exercise the source-owned Tauri IPC dispatcher through the production
+loopback adapter policy to a run-owned socket-attempt sensor.
+
+Availability: The command is registered only when the
+`authority-integrity-test-hooks` Cargo feature is enabled. Production builds do
+not enable the feature or expose this command.
+
+Request:
+
+```json
+{
+  "input": {
+    "endpoint": "http://127.0.0.1:<run-owned-port>"
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "adapter_id": "authority-integrity-probe",
+  "endpoint": "http://127.0.0.1:<run-owned-port>",
+  "dependency_path_reached": true
+}
+```
+
+The feature-enabled Rust test proves the Tauri IPC-to-adapter-dependency path.
+The TypeScript invocation envelope is covered separately by
+`src/ui/authorityIntegrity.spec.ts`; there is no single cross-language test from
+executing frontend code through the dependency sensor, so this evidence does
+not claim a frontend-to-dependency `FULL_PATH` result.
