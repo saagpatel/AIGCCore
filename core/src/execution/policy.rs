@@ -30,6 +30,7 @@ pub enum SecretPolicyV1 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct FilesystemPolicyV1 {
     pub immutable_input_path: String,
     pub writable_workspace_path: String,
@@ -39,12 +40,14 @@ pub struct FilesystemPolicyV1 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct NetworkPolicyV1 {
     pub mode: ExecutionNetworkModeV1,
     pub blocked_classes: BTreeSet<NetworkClassV1>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct ProcessPolicyV1 {
     pub child_processes_allowed: bool,
     pub pid_limit: u32,
@@ -54,6 +57,7 @@ pub struct ProcessPolicyV1 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct ResourcePolicyV1 {
     pub memory_bytes: u64,
     pub memory_swap_bytes: u64,
@@ -64,6 +68,7 @@ pub struct ResourcePolicyV1 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct EnvironmentPolicyV1 {
     pub allowed_keys: BTreeSet<String>,
     pub secrets: SecretPolicyV1,
@@ -72,6 +77,7 @@ pub struct EnvironmentPolicyV1 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct ExportPolicyV1 {
     pub patch_only: bool,
     pub review_required: bool,
@@ -80,6 +86,7 @@ pub struct ExportPolicyV1 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct EvidencePolicyV1 {
     pub required_control_ids: BTreeSet<String>,
     pub require_effective_policy_readback: bool,
@@ -88,6 +95,7 @@ pub struct EvidencePolicyV1 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct ExecutionPolicyV1 {
     pub schema_version: String,
     pub policy_id: String,

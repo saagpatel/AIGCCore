@@ -23,6 +23,7 @@ pub enum EvidenceOriginV1 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct SubjectIdentityV1 {
     pub fixture_id: String,
     pub fixture_sha256: String,
@@ -31,6 +32,7 @@ pub struct SubjectIdentityV1 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct BackendIdentityV1 {
     pub backend_id: String,
     pub engine_endpoint: String,
@@ -46,6 +48,7 @@ pub struct BackendIdentityV1 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct EffectivePolicyV1 {
     pub readback_complete: bool,
     pub image_id: String,
@@ -77,6 +80,7 @@ pub struct EffectivePolicyV1 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct EffectObservationV1 {
     pub effect_id: String,
     pub effect_class: String,
@@ -89,6 +93,7 @@ pub struct EffectObservationV1 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct ControlEvidenceRefV1 {
     pub effect_id: String,
     pub expected_attempted: bool,
@@ -96,6 +101,7 @@ pub struct ControlEvidenceRefV1 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct ControlResultV1 {
     pub control_id: String,
     pub control_kind: String,
@@ -107,6 +113,7 @@ pub struct ControlResultV1 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct ExportReviewV1 {
     pub candidate_sha256: String,
     pub reviewed_sha256: String,
@@ -118,6 +125,7 @@ pub struct ExportReviewV1 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct CleanupEvidenceV1 {
     pub attempted: bool,
     pub completed: bool,
@@ -156,6 +164,7 @@ pub enum PerformancePhaseV1 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct PerformanceSampleV1 {
     pub phase: PerformancePhaseV1,
     pub elapsed_ms: u64,
@@ -164,6 +173,7 @@ pub struct PerformanceSampleV1 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct ConcurrencyObservationV1 {
     pub concurrency: u32,
     pub batch_wall_samples_ms: Vec<u64>,
@@ -172,6 +182,7 @@ pub struct ConcurrencyObservationV1 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct PerformanceSummaryV1 {
     pub cold_samples: Vec<PerformanceSampleV1>,
     pub warm_samples: Vec<PerformanceSampleV1>,
@@ -191,6 +202,7 @@ pub struct PerformanceSummaryV1 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct EvidenceCeilingV1 {
     pub enforced: Vec<String>,
     pub observed: Vec<String>,
@@ -200,6 +212,7 @@ pub struct EvidenceCeilingV1 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct ExecutionReceiptV1 {
     pub schema_version: String,
     pub run_id: String,

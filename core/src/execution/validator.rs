@@ -65,6 +65,14 @@ pub fn validate_execution_receipt(receipt: &ExecutionReceiptV1) -> ReceiptValida
         ),
         Err(error) => reasons.push(error),
     }
+    if receipt
+        .effective_policy
+        .seccomp_architectures
+        .iter()
+        .any(|architecture| !is_seccomp_architecture(architecture))
+    {
+        reasons.push("effective seccomp architecture identity is malformed".to_string());
+    }
     if receipt.subject_identity.input_tree_sha256 != receipt.requested_policy.input_tree_sha256
         || receipt.subject_identity.argv != receipt.requested_policy.argv
         || receipt.backend_identity.backend_id != receipt.requested_policy.backend_id
@@ -98,7 +106,7 @@ pub fn validate_execution_receipt(receipt: &ExecutionReceiptV1) -> ReceiptValida
             .effective_policy
             .cap_drop
             .iter()
-            .any(|value| value.eq_ignore_ascii_case("ALL"))
+            .any(|value| value == "ALL")
         || !receipt
             .effective_policy
             .security_options
@@ -137,6 +145,11 @@ pub fn validate_execution_receipt(receipt: &ExecutionReceiptV1) -> ReceiptValida
             != Some(u64::from(receipt.requested_policy.resources.max_open_files))
         || receipt.effective_policy.ulimits.get("fsize").copied()
             != Some(receipt.requested_policy.resources.max_file_bytes)
+        || receipt
+            .effective_policy
+            .ulimits
+            .values()
+            .any(|value| *value == 0)
     {
         reasons.push("requested and effective execution policies do not match".to_string());
     }
@@ -160,6 +173,11 @@ pub fn validate_execution_receipt(receipt: &ExecutionReceiptV1) -> ReceiptValida
         .cloned()
         .collect();
     if effective_keys.len() != receipt.effective_policy.environment_key_names.len()
+        || receipt
+            .effective_policy
+            .environment_key_names
+            .iter()
+            .any(String::is_empty)
         || effective_keys != observed_keys
         || !configured_keys.is_subset(&observed_keys)
         || !observed_keys.is_subset(requested_keys)
@@ -249,7 +267,7 @@ pub fn validate_execution_receipt(receipt: &ExecutionReceiptV1) -> ReceiptValida
             unhealthy_controls.join(", ")
         ));
     }
-    if !receipt.cleanup.is_zero_residue() {
+    if !receipt.cleanup.is_zero_residue() || receipt.cleanup.detail.is_empty() {
         reasons.push("cleanup evidence does not prove zero named residue".to_string());
     }
     if !is_sha256(&receipt.export_review.candidate_sha256)
@@ -266,9 +284,11 @@ pub fn validate_execution_receipt(receipt: &ExecutionReceiptV1) -> ReceiptValida
         reasons.push("export review is not digest-bound and clean".to_string());
     }
     if receipt.evidence_ceiling.maximum_claim != receipt.requested_policy.evidence.maximum_claim
-        || receipt.evidence_ceiling.unknown.is_empty()
-        || receipt.evidence_ceiling.excluded_claims.is_empty()
-        || receipt.limitations.is_empty()
+        || !is_nonempty_string_list(&receipt.evidence_ceiling.enforced)
+        || !is_nonempty_string_list(&receipt.evidence_ceiling.observed)
+        || !is_nonempty_string_list(&receipt.evidence_ceiling.unknown)
+        || !is_nonempty_string_list(&receipt.evidence_ceiling.excluded_claims)
+        || !is_nonempty_string_list(&receipt.limitations)
     {
         reasons.push("claim ceiling and residual unknowns are incomplete".to_string());
     }
@@ -334,6 +354,15 @@ fn validate_control_evidence(receipt: &ExecutionReceiptV1) -> Vec<String> {
                 "control identity, kind, expected detail, and observed detail must be non-empty"
                     .to_string(),
             );
+        }
+        if !matches!(
+            control.control_kind.as_str(),
+            "POSITIVE" | "VULNERABLE" | "NEGATIVE"
+        ) {
+            reasons.push(format!(
+                "control {} has an unsupported control kind",
+                control.control_id
+            ));
         }
         if control.evidence_refs.is_empty() {
             reasons.push(format!(
@@ -446,7 +475,8 @@ fn normalized_seccomp_identity(
 
 fn validate_performance(performance: &PerformanceSummaryV1) -> Vec<String> {
     let mut reasons = Vec::new();
-    let sample_shape_valid = performance.cold_samples.len() == 5
+    let sample_shape_valid = performance.input_bytes > 0
+        && performance.cold_samples.len() == 5
         && performance.warm_samples.len() == 30
         && performance.five_second_samples.len() == 5
         && performance
@@ -620,4 +650,17 @@ fn is_sha256(value: &str) -> bool {
         && value
             .chars()
             .all(|character| character.is_ascii_digit() || ('a'..='f').contains(&character))
+}
+
+fn is_seccomp_architecture(value: &str) -> bool {
+    value.strip_prefix("SCMP_ARCH_").is_some_and(|suffix| {
+        !suffix.is_empty()
+            && suffix.chars().all(|character| {
+                character.is_ascii_uppercase() || character.is_ascii_digit() || character == '_'
+            })
+    })
+}
+
+fn is_nonempty_string_list(values: &[String]) -> bool {
+    !values.is_empty() && values.iter().all(|value| !value.is_empty())
 }

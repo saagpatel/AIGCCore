@@ -455,6 +455,109 @@ fn every_schema_required_run_fixture_and_backend_identity_is_nonempty() {
 }
 
 #[test]
+fn schema_parity_rejects_endpoint_control_claim_and_effective_policy_bypasses() {
+    let mut receipt = passing_receipt();
+    receipt.backend_identity.engine_endpoint = "https://example.invalid".to_string();
+    assert_receipt_rejected(&receipt, "requested and effective");
+
+    let mut receipt = passing_receipt();
+    receipt.controls[0].control_kind = "ARBITRARY".to_string();
+    assert_receipt_rejected(&receipt, "unsupported control kind");
+
+    let claim_mutations: Vec<fn(&mut ExecutionReceiptV1)> = vec![
+        |receipt| receipt.evidence_ceiling.enforced.clear(),
+        |receipt| receipt.evidence_ceiling.observed.clear(),
+        |receipt| receipt.evidence_ceiling.unknown.clear(),
+        |receipt| receipt.evidence_ceiling.excluded_claims.clear(),
+        |receipt| receipt.evidence_ceiling.enforced[0].clear(),
+        |receipt| receipt.evidence_ceiling.observed[0].clear(),
+        |receipt| receipt.evidence_ceiling.unknown[0].clear(),
+        |receipt| receipt.evidence_ceiling.excluded_claims[0].clear(),
+        |receipt| receipt.limitations[0].clear(),
+    ];
+    for mutate in claim_mutations {
+        let mut receipt = passing_receipt();
+        mutate(&mut receipt);
+        assert_receipt_rejected(&receipt, "claim ceiling");
+    }
+
+    let mut receipt = passing_receipt();
+    receipt.cleanup.detail.clear();
+    assert_receipt_rejected(&receipt, "cleanup evidence");
+
+    let mut receipt = passing_receipt();
+    receipt
+        .effective_policy
+        .ulimits
+        .insert("extra".to_string(), 0);
+    assert_receipt_rejected(&receipt, "requested and effective");
+
+    let mut receipt = passing_receipt();
+    receipt.effective_policy.cap_drop = vec!["all".to_string()];
+    assert_receipt_rejected(&receipt, "requested and effective");
+
+    let mut receipt = passing_receipt();
+    receipt
+        .performance
+        .as_mut()
+        .expect("performance")
+        .input_bytes = 0;
+    assert_receipt_rejected(&receipt, "performance");
+}
+
+#[test]
+fn schema_parity_rejects_coherently_digest_bound_malformed_seccomp_architecture() {
+    let mut receipt = passing_receipt();
+    let malformed_profile = r#"{"architectures":["NOT_AN_ARCH"],"defaultAction":"SCMP_ACT_ERRNO"}"#;
+    let malformed_digest = hex::encode(Sha256::digest(malformed_profile.as_bytes()));
+    receipt.effective_policy.security_options[1] = format!("seccomp={malformed_profile}");
+    receipt.effective_policy.seccomp_architectures = vec!["NOT_AN_ARCH".to_string()];
+    receipt.effective_policy.enforcement_profile_sha256 = malformed_digest.clone();
+    receipt.backend_identity.enforcement_profile_sha256 = malformed_digest;
+    assert_receipt_rejected(&receipt, "architecture identity is malformed");
+}
+
+#[test]
+fn serde_receipt_contract_rejects_unknown_fields_at_every_schema_object_boundary() {
+    let receipt = serde_json::to_value(passing_receipt()).expect("serialize passing receipt");
+    let object_paths = [
+        "",
+        "/subject_identity",
+        "/backend_identity",
+        "/requested_policy",
+        "/requested_policy/filesystem",
+        "/requested_policy/network",
+        "/requested_policy/process",
+        "/requested_policy/resources",
+        "/requested_policy/environment",
+        "/requested_policy/export",
+        "/requested_policy/evidence",
+        "/effective_policy",
+        "/observed_effects/0",
+        "/controls/0",
+        "/controls/0/evidence_refs/0",
+        "/export_review",
+        "/cleanup",
+        "/performance",
+        "/performance/cold_samples/0",
+        "/performance/concurrency_observations/0",
+        "/evidence_ceiling",
+    ];
+    for path in object_paths {
+        let mut mutated = receipt.clone();
+        mutated
+            .pointer_mut(path)
+            .and_then(serde_json::Value::as_object_mut)
+            .unwrap_or_else(|| panic!("missing object at {path}"))
+            .insert("unexpected".to_string(), serde_json::Value::Bool(true));
+        assert!(
+            serde_json::from_value::<ExecutionReceiptV1>(mutated).is_err(),
+            "unknown field unexpectedly accepted at {path}"
+        );
+    }
+}
+
+#[test]
 fn effective_seccomp_mount_environment_and_init_readback_are_bound() {
     let mut receipt = passing_receipt();
     receipt.effective_policy.enforcement_profile_sha256 = "f".repeat(64);
@@ -812,7 +915,7 @@ fn durable_local_execution_evidence_is_self_contained_and_valid() {
     );
     assert_eq!(
         hex::encode(Sha256::digest(receipt_bytes)),
-        "ff88e5be86a399cd79126fd7c0393c12df35fc63fb1e1e71baa9f64a2595f8c2"
+        "06e649413e7414899f2224130413a012e484dc9d1f92e2d33a6e90a2ed8123b2"
     );
     assert_eq!(
         hex::encode(Sha256::digest(patch_bytes)),
