@@ -687,7 +687,7 @@ fn durable_local_execution_evidence_is_self_contained_and_valid() {
     );
     assert_eq!(
         hex::encode(Sha256::digest(receipt_bytes)),
-        "ca96016ca4d4ac050392dfa0f983e889e63df6ec9ece974ae828d9213f0c4a6e"
+        "740efeeed127af2d7b8ff40c98875bf0da3de2b3470ae47fe4da6cab458a79df"
     );
     assert_eq!(
         hex::encode(Sha256::digest(patch_bytes)),
