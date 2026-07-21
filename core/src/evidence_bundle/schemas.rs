@@ -1,4 +1,5 @@
 use crate::adapters::pinning::ModelSnapshot;
+use crate::evidence_bundle::authority::EvidenceAuthorityManifest;
 use crate::policy::network_snapshot::NetworkSnapshot;
 use crate::policy::types::{InputExportProfile, PolicyMode};
 use serde::{Deserialize, Serialize};
@@ -25,6 +26,7 @@ pub struct SchemaVersions {
 pub struct RunManifest {
     pub run_id: String,
     pub vault_id: String,
+    pub evidence_authority: EvidenceAuthorityManifest,
     pub determinism: DeterminismManifest,
     pub inputs: Vec<ManifestArtifactRef>,
     pub outputs: Vec<ManifestOutputRef>,

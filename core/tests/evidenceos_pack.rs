@@ -5,6 +5,7 @@ use aigc_core::determinism::json_canonical;
 use aigc_core::determinism::run_id::sha256_hex;
 use aigc_core::eval::runner::EvalRunner;
 use aigc_core::evidence_bundle::artifact_hashes::{render_artifact_hashes_csv, ArtifactHashRow};
+use aigc_core::evidence_bundle::authority::EvidenceAuthorityManifest;
 use aigc_core::evidence_bundle::builder::EvidenceBundleBuilder;
 use aigc_core::evidence_bundle::schemas::*;
 use aigc_core::evidenceos::model::{CitationInput, EvidenceItem, NarrativeClaimInput};
@@ -14,6 +15,20 @@ use aigc_core::policy::types::{InputExportProfile, NetworkMode, PolicyMode, Proo
 use aigc_core::validator::BundleValidator;
 use serde_json::json;
 use std::path::Path;
+
+fn test_authority(run_id: &str) -> EvidenceAuthorityManifest {
+    EvidenceAuthorityManifest::controlled_simulation(
+        run_id,
+        "aigccore-test:evidenceos_pack",
+        "test-revision",
+        "test-executable",
+        sha256_hex(b"test-executable"),
+        sha256_hex(b"test-arguments"),
+        sha256_hex(b"test-environment"),
+        "2026-01-01T00:00:00Z",
+        "2026-01-02T00:00:00Z",
+    )
+}
 
 #[test]
 fn evidenceos_bundle_validates_and_is_deterministic() {
@@ -72,7 +87,8 @@ fn make_inputs(bundle_root: &Path) -> Result<EvidenceBundleInputs, Box<dyn std::
         }],
         narrative_claims: vec![NarrativeClaimInput {
             claim_id: "C0001".to_string(),
-            text: "The run stayed offline and recorded blocked egress attempts.".to_string(),
+            text: "The control simulation exercised the offline block path without live traffic."
+                .to_string(),
             citations: vec![CitationInput {
                 artifact_id: artifact_id.clone(),
                 locator_type: "PDF_TEXT_SPAN_V1".to_string(),
@@ -95,7 +111,8 @@ fn make_inputs(bundle_root: &Path) -> Result<EvidenceBundleInputs, Box<dyn std::
         ("EGRESS_REQUEST_BLOCKED", Actor::System, json!({
             "destination":{"scheme":"https","host":"example.invalid","port":443,"path":"/"},
             "block_reason":"OFFLINE_MODE",
-            "request_hash_sha256": sha256_hex(b"blocked")
+            "request_hash_sha256": sha256_hex(b"blocked"),
+            "evidence_origin":"CONTROL_SIMULATION"
         })),
         ("VAULT_ENCRYPTION_STATUS", Actor::System, json!({
             "encryption_at_rest": true,
@@ -184,6 +201,7 @@ fn make_inputs(bundle_root: &Path) -> Result<EvidenceBundleInputs, Box<dyn std::
         run_manifest: RunManifest {
             run_id: run_id.clone(),
             vault_id: vault_id.clone(),
+            evidence_authority: test_authority(&run_id),
             determinism: DeterminismManifest {
                 enabled: true,
                 manifest_inputs_fingerprint: run_fingerprint,
@@ -204,7 +222,7 @@ fn make_inputs(bundle_root: &Path) -> Result<EvidenceBundleInputs, Box<dyn std::
         bundle_info: BundleInfo {
             bundle_version: "1.0.0".to_string(),
             schema_versions: SchemaVersions {
-                run_manifest: "RUN_MANIFEST_V1".to_string(),
+                run_manifest: "RUN_MANIFEST_V2".to_string(),
                 eval_report: "EVAL_REPORT_V1".to_string(),
                 citations_map: "LOCATOR_SCHEMA_V1".to_string(),
                 redactions_map: "REDACTION_SCHEMA_V1".to_string(),

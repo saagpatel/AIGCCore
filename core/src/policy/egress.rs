@@ -76,7 +76,8 @@ impl<'a> EgressClient<'a> {
                     details: json!({
                         "destination": destination,
                         "allowlist_rule_id": allowlist_rule_id,
-                        "request_hash_sha256": request_hash_sha256
+                        "request_hash_sha256": request_hash_sha256,
+                        "evidence_origin": "RUNTIME_OBSERVATION"
                     }),
                     prev_event_hash: "".to_string(),
                     event_hash: "".to_string(),
@@ -92,7 +93,8 @@ impl<'a> EgressClient<'a> {
                     details: json!({
                         "destination": destination,
                         "block_reason": reason,
-                        "request_hash_sha256": request_hash_sha256
+                        "request_hash_sha256": request_hash_sha256,
+                        "evidence_origin": "RUNTIME_OBSERVATION"
                     }),
                     prev_event_hash: "".to_string(),
                     event_hash: "".to_string(),
