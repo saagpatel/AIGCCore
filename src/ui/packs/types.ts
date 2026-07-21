@@ -1,3 +1,43 @@
+export type EvidenceAuthorityManifest = {
+  schema_version: string;
+  case_id: string;
+  requested_execution_class: string;
+  observed_execution_class: string;
+  evidence_origin: string;
+  production_equivalent: boolean;
+  generated_at_utc: string;
+  valid_until_utc: string;
+  source: {
+    producer: string;
+    source_revision: string;
+    executable: string;
+    executable_sha256: string;
+    arguments_sha256: string;
+    environment_sha256: string;
+    audit_log_sha256: string;
+  };
+  allowed_effects: string[];
+  observed_effects: string[];
+  credential_availability: string;
+  tools: Array<{
+    tool_id: string;
+    declared_available: boolean;
+    observed_used: boolean;
+    external_mutation_allowed: boolean;
+  }>;
+  state_scope: {
+    cache_scope: string;
+    prior_approval_reused: boolean;
+    credential_state_reused: boolean;
+    mutable_cache_reused: boolean;
+  };
+  downstream_claims: {
+    may_satisfy: string[];
+    must_not_satisfy: string[];
+  };
+  limitations: string[];
+};
+
 export type PackCommandStatus = {
   status: string;
   message: string;
@@ -6,6 +46,7 @@ export type PackCommandStatus = {
   error_code?: string | null;
   run_id?: string | null;
   audit_path?: string | null;
+  evidence_authority?: EvidenceAuthorityManifest | null;
 };
 
 export type ArtifactPayloadInput = {

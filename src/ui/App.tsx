@@ -4,6 +4,7 @@ import { FinanceOSPanel } from "./packs/FinanceOSPanel";
 import { HealthcareOSPanel } from "./packs/HealthcareOSPanel";
 import { IncidentOSPanel } from "./packs/IncidentOSPanel";
 import { RedlineOSPanel } from "./packs/RedlineOSPanel";
+import { EvidenceAuthorityNotice } from "./packs/EvidenceAuthorityNotice";
 import {
   SAMPLE_FINANCE_STATEMENT,
   SAMPLE_HEALTHCARE_CONSENT,
@@ -13,14 +14,12 @@ import {
   buildHealthcareCommandInput,
   buildIncidentCommandInput,
 } from "./packs/samplePayloads";
-import type { PackCommandStatus } from "./packs/types";
+import type { EvidenceAuthorityManifest, PackCommandStatus } from "./packs/types";
 
 type NetworkSnapshot = {
   network_mode: "OFFLINE" | "ONLINE_ALLOWLISTED";
   proof_level:
-    | "OFFLINE_STRICT"
-    | "ONLINE_ALLOWLIST_CORE_ONLY"
-    | "ONLINE_ALLOWLIST_WITH_OS_FIREWALL_PROFILE";
+    "OFFLINE_STRICT" | "ONLINE_ALLOWLIST_CORE_ONLY" | "ONLINE_ALLOWLIST_WITH_OS_FIREWALL_PROFILE";
   ui_remote_fetch_disabled: boolean;
 };
 
@@ -37,6 +36,7 @@ type EvidenceOsRunResult = {
   bundle_path: string;
   bundle_sha256: string;
   missing_control_ids: string[];
+  evidence_authority: EvidenceAuthorityManifest;
 };
 
 type EvidenceOsRunInput = {
@@ -57,14 +57,14 @@ export function App() {
   const [selectedCapability, setSelectedCapability] = useState("ALL");
   const [artifactTitle, setArtifactTitle] = useState("Network policy evidence");
   const [artifactBody, setArtifactBody] = useState(
-    "Audit log excerpt proving offline mode and blocked egress.",
+    "Audit log excerpt describing a controlled simulation of the offline policy path.",
   );
   const [artifactTags, setArtifactTags] = useState("OPS,NETWORK");
   const [controlFamilies, setControlFamilies] = useState(
     "Auditability,NetworkGovernance,Traceability",
   );
   const [claimText, setClaimText] = useState(
-    "The run stayed offline and blocked non-allowlisted egress requests.",
+    "The controlled policy simulation exercised the offline block path; it did not observe live network traffic.",
   );
 
   const [futurePackRunning, setFuturePackRunning] = useState<string | null>(null);
@@ -266,6 +266,7 @@ export function App() {
                   ? runResult.missing_control_ids.join(", ")
                   : "None"}
               </p>
+              <EvidenceAuthorityNotice authority={runResult.evidence_authority} />
             </div>
           )}
         </section>
