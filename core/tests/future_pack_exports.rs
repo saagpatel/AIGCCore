@@ -772,4 +772,15 @@ fn exported_bundle_audit_log_contains_final_validation_events() {
     let audit_log_ndjson = read_zip_entry_text(&bundle_zip, "audit_log.ndjson").unwrap();
     assert!(audit_log_ndjson.contains("\"event_type\":\"EXPORT_REQUESTED\""));
     assert!(audit_log_ndjson.contains("\"event_type\":\"BUNDLE_VALIDATION_RESULT\""));
+    let terminal_audit = std::fs::read_to_string(&audit_path).unwrap();
+    let final_validation = terminal_audit
+        .find("\"validation_phase\":\"FINAL_EXPORTED_BYTES\"")
+        .expect("terminal audit should record validation of final exported bytes");
+    let export_completed = terminal_audit
+        .find("\"event_type\":\"EXPORT_COMPLETED\"")
+        .expect("terminal audit should record completed export");
+    assert!(
+        final_validation < export_completed,
+        "final-byte validation must precede EXPORT_COMPLETED"
+    );
 }

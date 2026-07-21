@@ -5,6 +5,15 @@ description = "AIGC Core desktop shell"
 edition = "2021"
 license = "UNLICENSED"
 
+[[bin]]
+name = "aigc_core_tauri"
+path = "src/main.rs"
+
+[[bin]]
+name = "aigc_local_execution_qualify"
+path = "src/bin/aigc_local_execution_qualify.rs"
+required-features = ["local-execution-backend-v1"]
+
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }
 
@@ -19,6 +28,7 @@ time = { version = "0.3.36", features = ["formatting"] }
 [features]
 default = []
 authority-integrity-test-hooks = []
+local-execution-backend-v1 = []
 
 [dev-dependencies]
 tauri = { version = "2.11.3", features = ["test"] }
