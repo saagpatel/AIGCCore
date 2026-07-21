@@ -73,6 +73,67 @@ pub fn validate_execution_receipt(receipt: &ExecutionReceiptV1) -> ReceiptValida
     {
         reasons.push("effective seccomp architecture identity is malformed".to_string());
     }
+    let expected_tmpfs_paths = BTreeSet::from([
+        receipt
+            .requested_policy
+            .filesystem
+            .writable_workspace_path
+            .as_str(),
+        receipt.requested_policy.environment.synthetic_tmp.as_str(),
+    ]);
+    let effective_tmpfs_paths: BTreeSet<&str> = receipt
+        .effective_policy
+        .tmpfs
+        .keys()
+        .map(String::as_str)
+        .collect();
+    let workspace_tmpfs = receipt
+        .effective_policy
+        .tmpfs
+        .get(&receipt.requested_policy.filesystem.writable_workspace_path);
+    let synthetic_tmpfs = receipt
+        .effective_policy
+        .tmpfs
+        .get(&receipt.requested_policy.environment.synthetic_tmp);
+    if effective_tmpfs_paths != expected_tmpfs_paths
+        || workspace_tmpfs.is_none_or(|options| {
+            !tmpfs_options_match(
+                options,
+                &[
+                    "rw".to_string(),
+                    "nosuid".to_string(),
+                    "nodev".to_string(),
+                    format!(
+                        "size={}",
+                        receipt.requested_policy.resources.workspace_bytes
+                    ),
+                    "mode=0700".to_string(),
+                    "uid=65534".to_string(),
+                    "gid=65534".to_string(),
+                ],
+            )
+        })
+        || synthetic_tmpfs.is_none_or(|options| {
+            !tmpfs_options_match(
+                options,
+                &[
+                    "rw".to_string(),
+                    "nosuid".to_string(),
+                    "nodev".to_string(),
+                    "noexec".to_string(),
+                    format!("size={}", receipt.requested_policy.resources.max_file_bytes),
+                    "mode=0700".to_string(),
+                    "uid=65534".to_string(),
+                    "gid=65534".to_string(),
+                ],
+            )
+        })
+    {
+        reasons.push(
+            "effective tmpfs destinations and exact options do not match the isolated policy"
+                .to_string(),
+        );
+    }
     if receipt.subject_identity.input_tree_sha256 != receipt.requested_policy.input_tree_sha256
         || receipt.subject_identity.argv != receipt.requested_policy.argv
         || receipt.backend_identity.backend_id != receipt.requested_policy.backend_id
@@ -130,17 +191,6 @@ pub fn validate_execution_receipt(receipt: &ExecutionReceiptV1) -> ReceiptValida
             != receipt.requested_policy.resources.memory_swap_bytes
         || receipt.effective_policy.cpu_quota_nanos
             != u64::from(receipt.requested_policy.resources.cpu_quota_millis) * 1_000_000
-        || receipt
-            .effective_policy
-            .tmpfs
-            .get(&receipt.requested_policy.filesystem.writable_workspace_path)
-            .is_none_or(|options| {
-                !options.contains(&format!(
-                    "size={}",
-                    receipt.requested_policy.resources.workspace_bytes
-                )) || !options.contains("nosuid")
-                    || !options.contains("nodev")
-            })
         || receipt.effective_policy.ulimits.get("nofile").copied()
             != Some(u64::from(receipt.requested_policy.resources.max_open_files))
         || receipt.effective_policy.ulimits.get("fsize").copied()
@@ -663,4 +713,11 @@ fn is_seccomp_architecture(value: &str) -> bool {
 
 fn is_nonempty_string_list(values: &[String]) -> bool {
     !values.is_empty() && values.iter().all(|value| !value.is_empty())
+}
+
+fn tmpfs_options_match(actual: &str, expected: &[String]) -> bool {
+    let actual_tokens: Vec<&str> = actual.split(',').collect();
+    let actual_unique: BTreeSet<&str> = actual_tokens.iter().copied().collect();
+    let expected_tokens: BTreeSet<&str> = expected.iter().map(String::as_str).collect();
+    actual_tokens.len() == expected.len() && actual_unique == expected_tokens
 }

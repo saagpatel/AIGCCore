@@ -154,10 +154,16 @@ fn passing_receipt() -> ExecutionReceiptV1 {
             memory_bytes: 256 * 1024 * 1024,
             memory_swap_bytes: 256 * 1024 * 1024,
             cpu_quota_nanos: 500_000_000,
-            tmpfs: BTreeMap::from([(
-                "/workspace".to_string(),
-                "rw,nosuid,nodev,size=67108864".to_string(),
-            )]),
+            tmpfs: BTreeMap::from([
+                (
+                    "/workspace".to_string(),
+                    "rw,nosuid,nodev,size=67108864,mode=0700,uid=65534,gid=65534".to_string(),
+                ),
+                (
+                    "/tmp".to_string(),
+                    "rw,nosuid,nodev,noexec,size=8388608,mode=0700,uid=65534,gid=65534".to_string(),
+                ),
+            ]),
             ulimits: BTreeMap::from([
                 ("nofile".to_string(), 64),
                 ("fsize".to_string(), 8 * 1024 * 1024),
@@ -457,6 +463,35 @@ fn every_schema_required_run_fixture_and_backend_identity_is_nonempty() {
 #[test]
 fn schema_parity_rejects_endpoint_control_claim_and_effective_policy_bypasses() {
     let mut receipt = passing_receipt();
+    receipt
+        .requested_policy
+        .filesystem
+        .output_path_allowlist
+        .push("candidate.patch.json".to_string());
+    assert_receipt_rejected(&receipt, "output allowlist");
+
+    for destination in ["/input", "/unexpected"] {
+        let mut receipt = passing_receipt();
+        let workspace_options = receipt.effective_policy.tmpfs["/workspace"].clone();
+        receipt
+            .effective_policy
+            .tmpfs
+            .insert(destination.to_string(), workspace_options);
+        assert_receipt_rejected(&receipt, "tmpfs destinations");
+    }
+
+    let mut receipt = passing_receipt();
+    receipt.effective_policy.tmpfs.remove("/tmp");
+    assert_receipt_rejected(&receipt, "tmpfs destinations");
+
+    let mut receipt = passing_receipt();
+    receipt.effective_policy.tmpfs.insert(
+        "/tmp".to_string(),
+        "rw,nosuid,nodev,size=8388608,mode=0700,uid=65534,gid=65534".to_string(),
+    );
+    assert_receipt_rejected(&receipt, "tmpfs destinations");
+
+    let mut receipt = passing_receipt();
     receipt.backend_identity.engine_endpoint = "https://example.invalid".to_string();
     assert_receipt_rejected(&receipt, "requested and effective");
 
@@ -555,6 +590,37 @@ fn serde_receipt_contract_rejects_unknown_fields_at_every_schema_object_boundary
             "unknown field unexpectedly accepted at {path}"
         );
     }
+}
+
+#[test]
+fn raw_policy_json_rejects_every_unique_items_duplicate() {
+    let policy = serde_json::to_value(policy()).expect("serialize passing policy");
+    for path in [
+        "/network/blocked_classes",
+        "/environment/allowed_keys",
+        "/evidence/required_control_ids",
+    ] {
+        let mut mutated = policy.clone();
+        let values = mutated
+            .pointer_mut(path)
+            .and_then(serde_json::Value::as_array_mut)
+            .unwrap_or_else(|| panic!("missing array at {path}"));
+        values.push(values[0].clone());
+        assert!(
+            serde_json::from_value::<ExecutionPolicyV1>(mutated).is_err(),
+            "duplicate set item unexpectedly accepted at {path}"
+        );
+    }
+
+    let mut mutated = policy;
+    let values = mutated
+        .pointer_mut("/filesystem/output_path_allowlist")
+        .and_then(serde_json::Value::as_array_mut)
+        .expect("output allowlist array");
+    values.push(values[0].clone());
+    let parsed: ExecutionPolicyV1 = serde_json::from_value(mutated)
+        .expect("duplicate vector should deserialize for validation");
+    assert!(parsed.validate().is_err());
 }
 
 #[test]
@@ -915,7 +981,7 @@ fn durable_local_execution_evidence_is_self_contained_and_valid() {
     );
     assert_eq!(
         hex::encode(Sha256::digest(receipt_bytes)),
-        "06e649413e7414899f2224130413a012e484dc9d1f92e2d33a6e90a2ed8123b2"
+        "de36d599bbec8d2ee17884c4b2e2e0048425cb96e7d840c81c33bc050739ba6c"
     );
     assert_eq!(
         hex::encode(Sha256::digest(patch_bytes)),

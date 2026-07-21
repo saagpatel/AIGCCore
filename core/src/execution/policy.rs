@@ -43,6 +43,7 @@ pub struct FilesystemPolicyV1 {
 #[serde(deny_unknown_fields)]
 pub struct NetworkPolicyV1 {
     pub mode: ExecutionNetworkModeV1,
+    #[serde(deserialize_with = "deserialize_unique_btree_set")]
     pub blocked_classes: BTreeSet<NetworkClassV1>,
 }
 
@@ -70,6 +71,7 @@ pub struct ResourcePolicyV1 {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct EnvironmentPolicyV1 {
+    #[serde(deserialize_with = "deserialize_unique_btree_set")]
     pub allowed_keys: BTreeSet<String>,
     pub secrets: SecretPolicyV1,
     pub synthetic_home: String,
@@ -88,6 +90,7 @@ pub struct ExportPolicyV1 {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct EvidencePolicyV1 {
+    #[serde(deserialize_with = "deserialize_unique_btree_set")]
     pub required_control_ids: BTreeSet<String>,
     pub require_effective_policy_readback: bool,
     pub require_zero_residue: bool,
@@ -155,6 +158,13 @@ impl ExecutionPolicyV1 {
         }
         if self.filesystem.immutable_input_path == self.filesystem.writable_workspace_path
             || self.filesystem.output_path_allowlist.is_empty()
+            || self
+                .filesystem
+                .output_path_allowlist
+                .iter()
+                .collect::<BTreeSet<_>>()
+                .len()
+                != self.filesystem.output_path_allowlist.len()
             || self.filesystem.max_output_bytes == 0
             || self.filesystem.max_output_bytes != self.export.max_patch_bytes
             || self
@@ -264,4 +274,20 @@ fn is_safe_relative_path(value: &str) -> bool {
         && value
             .split('/')
             .all(|component| !component.is_empty() && component != "." && component != "..")
+}
+
+fn deserialize_unique_btree_set<'de, D, T>(deserializer: D) -> Result<BTreeSet<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de> + Ord,
+{
+    let values = Vec::<T>::deserialize(deserializer)?;
+    let value_count = values.len();
+    let unique: BTreeSet<T> = values.into_iter().collect();
+    if unique.len() != value_count {
+        return Err(serde::de::Error::custom(
+            "duplicate values are not admissible",
+        ));
+    }
+    Ok(unique)
 }
