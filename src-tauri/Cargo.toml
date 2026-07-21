@@ -18,3 +18,7 @@ time = { version = "0.3.36", features = ["formatting"] }
 
 [features]
 default = []
+authority-integrity-test-hooks = []
+
+[dev-dependencies]
+tauri = { version = "2.11.3", features = ["test"] }
