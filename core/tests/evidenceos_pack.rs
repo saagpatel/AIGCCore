@@ -1,4 +1,4 @@
-use aigc_core::adapters::pinning::{PinningLevel, ModelSnapshot};
+use aigc_core::adapters::pinning::{ModelSnapshot, PinningLevel};
 use aigc_core::audit::event::{Actor, AuditEvent};
 use aigc_core::audit::log::AuditLog;
 use aigc_core::determinism::json_canonical;
@@ -39,7 +39,8 @@ fn evidenceos_bundle_validates_and_is_deterministic() {
     let zip_2 = temp.path().join("bundle_2.zip");
 
     let inputs_1 = make_inputs(&bundle_root_1).unwrap();
-    let inputs_2 = make_inputs(&bundle_root_2).unwrap();
+    let mut inputs_2 = make_inputs(&bundle_root_2).unwrap();
+    inputs_2.audit_log_ndjson = inputs_2.audit_log_ndjson.replace('\n', "\r\n");
 
     EvidenceBundleBuilder::build_dir(&bundle_root_1, &inputs_1).unwrap();
     EvidenceBundleBuilder::build_dir(&bundle_root_2, &inputs_2).unwrap();
@@ -54,8 +55,12 @@ fn evidenceos_bundle_validates_and_is_deterministic() {
 
     let eval = EvalRunner::new_v3().unwrap();
     let gates = eval.run_all_for_bundle(&zip_1, PolicyMode::STRICT).unwrap();
-    assert!(gates.iter().any(|g| g.gate_id == "EVIDENCEOS.OUTPUTS_PRESENT_V1" && g.result == "PASS"));
-    assert!(gates.iter().any(|g| g.gate_id == "EVIDENCEOS.MAPPING_REVIEW_PRESENT_V1" && g.result == "PASS"));
+    assert!(gates
+        .iter()
+        .any(|g| g.gate_id == "EVIDENCEOS.OUTPUTS_PRESENT_V1" && g.result == "PASS"));
+    assert!(gates
+        .iter()
+        .any(|g| g.gate_id == "EVIDENCEOS.MAPPING_REVIEW_PRESENT_V1" && g.result == "PASS"));
 }
 
 fn make_inputs(bundle_root: &Path) -> Result<EvidenceBundleInputs, Box<dyn std::error::Error>> {
@@ -106,19 +111,35 @@ fn make_inputs(bundle_root: &Path) -> Result<EvidenceBundleInputs, Box<dyn std::
     let audit_path = bundle_root.join("audit.ndjson");
     let mut audit = AuditLog::open_or_create(&audit_path)?;
     let base_events = vec![
-        ("NETWORK_MODE_SET", Actor::User, json!({"network_mode":"OFFLINE","proof_level":"OFFLINE_STRICT","ui_remote_fetch_disabled":true})),
-        ("ALLOWLIST_UPDATED", Actor::System, json!({"allowlist_hash_sha256": sha256_hex(b""), "allowlist_count":0})),
-        ("EGRESS_REQUEST_BLOCKED", Actor::System, json!({
-            "destination":{"scheme":"https","host":"example.invalid","port":443,"path":"/"},
-            "block_reason":"OFFLINE_MODE",
-            "request_hash_sha256": sha256_hex(b"blocked"),
-            "evidence_origin":"CONTROL_SIMULATION"
-        })),
-        ("VAULT_ENCRYPTION_STATUS", Actor::System, json!({
-            "encryption_at_rest": true,
-            "algorithm": "XCHACHA20_POLY1305",
-            "key_storage": "FILE_FALLBACK"
-        })),
+        (
+            "NETWORK_MODE_SET",
+            Actor::User,
+            json!({"network_mode":"OFFLINE","proof_level":"OFFLINE_STRICT","ui_remote_fetch_disabled":true}),
+        ),
+        (
+            "ALLOWLIST_UPDATED",
+            Actor::System,
+            json!({"allowlist_hash_sha256": sha256_hex(b""), "allowlist_count":0}),
+        ),
+        (
+            "EGRESS_REQUEST_BLOCKED",
+            Actor::System,
+            json!({
+                "destination":{"scheme":"https","host":"example.invalid","port":443,"path":"/"},
+                "block_reason":"OFFLINE_MODE",
+                "request_hash_sha256": sha256_hex(b"blocked"),
+                "evidence_origin":"CONTROL_SIMULATION"
+            }),
+        ),
+        (
+            "VAULT_ENCRYPTION_STATUS",
+            Actor::System,
+            json!({
+                "encryption_at_rest": true,
+                "algorithm": "XCHACHA20_POLY1305",
+                "key_storage": "FILE_FALLBACK"
+            }),
+        ),
     ];
     for (event_type, actor, details) in base_events {
         audit.append(AuditEvent {

@@ -8,9 +8,55 @@ fn main() {
     let repository_root = Path::new(&manifest_dir)
         .parent()
         .expect("src-tauri must be inside the repository");
+    emit_source_revision_rerun_inputs(repository_root);
     let source_revision = source_revision(repository_root);
     println!("cargo:rustc-env=AIGC_SOURCE_REVISION={source_revision}");
     tauri_build::build()
+}
+
+fn emit_source_revision_rerun_inputs(repository_root: &Path) {
+    let tracked = git_output(repository_root, &["ls-files", "-z"]);
+    for path in tracked
+        .split(|byte| *byte == 0)
+        .filter(|path| !path.is_empty())
+    {
+        let path = String::from_utf8(path.to_vec()).expect("tracked paths must be UTF-8");
+        assert!(
+            !path.contains(['\n', '\r']),
+            "tracked path contains a Cargo directive delimiter"
+        );
+        println!(
+            "cargo:rerun-if-changed={}",
+            repository_root.join(path).display()
+        );
+    }
+
+    let mut git_metadata = vec![
+        "HEAD".to_string(),
+        "index".to_string(),
+        "packed-refs".to_string(),
+    ];
+    if let Some(symbolic_ref) =
+        git_optional_stdout(repository_root, &["symbolic-ref", "-q", "HEAD"])
+    {
+        git_metadata.push(symbolic_ref);
+    }
+    for git_path in git_metadata {
+        let absolute_path = git_stdout(
+            repository_root,
+            &[
+                "rev-parse",
+                "--path-format=absolute",
+                "--git-path",
+                &git_path,
+            ],
+        );
+        assert!(
+            !absolute_path.contains(['\n', '\r']),
+            "Git metadata path contains a Cargo directive delimiter"
+        );
+        println!("cargo:rerun-if-changed={absolute_path}");
+    }
 }
 
 fn source_revision(repository_root: &Path) -> String {
@@ -52,6 +98,41 @@ fn source_revision(repository_root: &Path) -> String {
     } else {
         validate_revision(format!("{revision}+DIRTY"))
     }
+}
+
+fn git_output(repository_root: &Path, args: &[&str]) -> Vec<u8> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(repository_root)
+        .args(args)
+        .output()
+        .expect("git is required to bind AIGCCore provenance");
+    assert!(
+        output.status.success(),
+        "unable to read AIGCCore Git provenance inputs"
+    );
+    output.stdout
+}
+
+fn git_stdout(repository_root: &Path, args: &[&str]) -> String {
+    String::from_utf8(git_output(repository_root, args))
+        .expect("Git provenance output must be UTF-8")
+        .trim()
+        .to_string()
+}
+
+fn git_optional_stdout(repository_root: &Path, args: &[&str]) -> Option<String> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(repository_root)
+        .args(args)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let value = String::from_utf8(output.stdout).ok()?.trim().to_string();
+    (!value.is_empty()).then_some(value)
 }
 
 fn git_quiet(repository_root: &Path, args: &[&str]) -> bool {
