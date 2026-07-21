@@ -63,3 +63,7 @@ All pack commands now follow a standardized runtime contract:
 2. Healthcare input fingerprinting now uses sorted artifact descriptors to maintain deterministic run identity regardless input order.
 3. Export bundle embedding now refreshes bundled `audit_log.ndjson` with post-validation lifecycle events.
 4. Runtime command helper audit timestamps now use runtime UTC generation instead of fixed literals.
+5. The final ZIP is validated again after the last bundled audit-log rewrite.
+   Initial/final generation, rewrite, or validation errors and non-PASS results
+   remove any ZIP at the export path and cannot emit `EXPORT_COMPLETED`, a
+   bundle path, or a bundle digest.

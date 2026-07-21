@@ -38,6 +38,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+#[cfg(feature = "local-execution-backend-v1")]
+pub mod local_execution;
+
 #[cfg(feature = "authority-integrity-test-hooks")]
 use aigc_core::adapters::interface::{
     AdapterCapabilitiesResponse, AdapterClient, AdapterHealthResponse, AdapterModel,
