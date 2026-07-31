@@ -41,15 +41,18 @@ A passing `AIGC_EXECUTION_RECEIPT_V1` contains:
   level claimed;
 - explicit unknown and excluded claims.
 
-The 2026-07-21 development qualification passed on Docker `29.5.2`, runc
-`1.3.5`, and Linux `6.8.0-117-generic`. Measured cold-cached p95 was `415 ms`,
-warm p95 `434 ms`, cleanup p95 `31 ms` with `32 ms` maximum, five-second added
-overhead p95 `181 ms` (`4%`), peak total run-owned storage use `28,926 bytes`,
-and concurrency `4`. All `22` required controls passed and all explicitly
-queried residue counts were zero. All `70` observed effect identities were
-unique and exactly covered by control evidence references. The durable receipt
-SHA-256 was
-`c88214e29f48b07506d3b62b5e888e1346e9535bf4a76e7c15c7173d089afe88`.
+The 2026-07-31 post-ancestry qualification ran from source head
+`f6fc2b6d5279551806061fbb52790fe56b8eefb7`, after merging
+`main@099af4776a112204205c67a95d381823c1e3777f`, and passed on Docker
+`29.5.2`, runc `1.3.5`, and Linux `6.8.0-117-generic`. Measured cold-cached p95
+was `440 ms`, warm p95 `421 ms`, cleanup p95 `30 ms` with `31 ms` maximum,
+five-second added overhead p95 `184 ms` (`4%`), peak total run-owned storage use
+`28,926 bytes`, and concurrency `4`. All `22` required controls passed and all
+explicitly queried residue counts were zero. All `70` observed effect identities
+were unique and exactly covered by control evidence references.
+`CONTROL_SIMULATION` remained explicit and was rejected as admissible
+enforcement evidence. The durable receipt SHA-256 was
+`8f146713248e6eec78cee97f83c7fb3f8cf0e0b7b3224f08ca8a1534a11165d6`.
 The durable reviewed patch SHA-256 was
 `6420e664434b60f5fda9b9c94d642d88a57308c4e41193ac4c798477c8be7a46`.
 This record is exact-run evidence and must not be treated as transferable to a
