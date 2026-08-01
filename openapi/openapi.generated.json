@@ -211,13 +211,15 @@
             "type": "array",
             "items": {
               "type": "object",
-              "required": ["artifact_id", "sha256", "filename"],
+              "required": ["artifact_id", "filename"],
               "properties": {
                 "artifact_id": {
                   "type": "string"
                 },
                 "sha256": {
-                  "type": "string"
+                  "type": "string",
+                  "default": "",
+                  "description": "Optional compatibility declaration. Omission maps to the empty legacy value; a valid 64-hex value is enforced against decoded payload bytes."
                 },
                 "filename": {
                   "type": "string"
@@ -258,13 +260,15 @@
             "type": "array",
             "items": {
               "type": "object",
-              "required": ["artifact_id", "sha256", "source_type"],
+              "required": ["artifact_id", "source_type"],
               "properties": {
                 "artifact_id": {
                   "type": "string"
                 },
                 "sha256": {
-                  "type": "string"
+                  "type": "string",
+                  "default": "",
+                  "description": "Optional compatibility declaration. Omission maps to the empty legacy value; a valid 64-hex value is enforced against decoded payload bytes."
                 },
                 "source_type": {
                   "type": "string"
@@ -307,13 +311,15 @@
             "type": "array",
             "items": {
               "type": "object",
-              "required": ["artifact_id", "sha256", "artifact_kind"],
+              "required": ["artifact_id", "artifact_kind"],
               "properties": {
                 "artifact_id": {
                   "type": "string"
                 },
                 "sha256": {
-                  "type": "string"
+                  "type": "string",
+                  "default": "",
+                  "description": "Optional compatibility declaration. Omission maps to the empty legacy value; a valid 64-hex value is enforced against decoded payload bytes."
                 },
                 "artifact_kind": {
                   "type": "string"
@@ -356,13 +362,15 @@
             "type": "array",
             "items": {
               "type": "object",
-              "required": ["artifact_id", "sha256", "artifact_kind"],
+              "required": ["artifact_id", "artifact_kind"],
               "properties": {
                 "artifact_id": {
                   "type": "string"
                 },
                 "sha256": {
-                  "type": "string"
+                  "type": "string",
+                  "default": "",
+                  "description": "Optional compatibility declaration. Omission maps to the empty legacy value; a valid 64-hex value is enforced against decoded payload bytes."
                 },
                 "artifact_kind": {
                   "type": "string"
@@ -374,13 +382,15 @@
             "type": "array",
             "items": {
               "type": "object",
-              "required": ["artifact_id", "sha256", "artifact_kind"],
+              "required": ["artifact_id", "artifact_kind"],
               "properties": {
                 "artifact_id": {
                   "type": "string"
                 },
                 "sha256": {
-                  "type": "string"
+                  "type": "string",
+                  "default": "",
+                  "description": "Optional compatibility declaration. Omission maps to the empty legacy value; a valid 64-hex value is enforced against decoded payload bytes."
                 },
                 "artifact_kind": {
                   "type": "string"

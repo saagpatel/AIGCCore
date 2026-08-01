@@ -276,6 +276,7 @@ struct IngestedArtifactPayload {
     sha256: String,
     sha_enforced: bool,
     declared_sha: String,
+    ingest_transformations: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -734,16 +735,21 @@ fn run_redlineos_impl(input: RedlineCommandInput) -> Result<PackCommandStatus, P
             &audit_path,
         )
     })?;
-    append_ingestion_audit_event(&mut audit, &run_id, &vault_id, &ingested_contract).map_err(
-        |e| {
-            PackCommandError::failed_with_meta(
-                "AUDIT_APPEND_FAILED",
-                format!("Failed to append artifact ingestion audit event: {e}"),
-                &run_id,
-                &audit_path,
-            )
-        },
-    )?;
+    append_ingestion_audit_event(
+        &mut audit,
+        &run_id,
+        &vault_id,
+        &ingested_contract,
+        "application/pdf",
+    )
+    .map_err(|e| {
+        PackCommandError::failed_with_meta(
+            "AUDIT_APPEND_FAILED",
+            format!("Failed to append artifact ingestion audit event: {e}"),
+            &run_id,
+            &audit_path,
+        )
+    })?;
 
     let deliverables = vec![
         (
@@ -968,7 +974,14 @@ fn run_incidentos_impl(input: IncidentCommandInput) -> Result<PackCommandStatus,
             &audit_path,
         )
     })?;
-    append_ingestion_audit_event(&mut audit, &run_id, &vault_id, &ingested_log).map_err(|e| {
+    append_ingestion_audit_event(
+        &mut audit,
+        &run_id,
+        &vault_id,
+        &ingested_log,
+        "application/x-ndjson",
+    )
+    .map_err(|e| {
         PackCommandError::failed_with_meta(
             "AUDIT_APPEND_FAILED",
             format!("Failed to append artifact ingestion audit event: {e}"),
@@ -1203,16 +1216,21 @@ fn run_financeos_impl(input: FinanceCommandInput) -> Result<PackCommandStatus, P
             &audit_path,
         )
     })?;
-    append_ingestion_audit_event(&mut audit, &run_id, &vault_id, &ingested_statement).map_err(
-        |e| {
-            PackCommandError::failed_with_meta(
-                "AUDIT_APPEND_FAILED",
-                format!("Failed to append artifact ingestion audit event: {e}"),
-                &run_id,
-                &audit_path,
-            )
-        },
-    )?;
+    append_ingestion_audit_event(
+        &mut audit,
+        &run_id,
+        &vault_id,
+        &ingested_statement,
+        "application/json",
+    )
+    .map_err(|e| {
+        PackCommandError::failed_with_meta(
+            "AUDIT_APPEND_FAILED",
+            format!("Failed to append artifact ingestion audit event: {e}"),
+            &run_id,
+            &audit_path,
+        )
+    })?;
 
     let audit_path_md = manifest.deliverable_paths[0].clone();
     let compliance_path_md = manifest.deliverable_paths[1].clone();
@@ -1477,26 +1495,36 @@ fn run_healthcareos_impl(input: HealthcareCommandInput) -> Result<PackCommandSta
             &audit_path,
         )
     })?;
-    append_ingestion_audit_event(&mut audit, &run_id, &vault_id, &ingested_transcript).map_err(
-        |e| {
-            PackCommandError::failed_with_meta(
-                "AUDIT_APPEND_FAILED",
-                format!("Failed to append artifact ingestion audit event: {e}"),
-                &run_id,
-                &audit_path,
-            )
-        },
-    )?;
-    append_ingestion_audit_event(&mut audit, &run_id, &vault_id, &ingested_consent).map_err(
-        |e| {
-            PackCommandError::failed_with_meta(
-                "AUDIT_APPEND_FAILED",
-                format!("Failed to append artifact ingestion audit event: {e}"),
-                &run_id,
-                &audit_path,
-            )
-        },
-    )?;
+    append_ingestion_audit_event(
+        &mut audit,
+        &run_id,
+        &vault_id,
+        &ingested_transcript,
+        "application/json",
+    )
+    .map_err(|e| {
+        PackCommandError::failed_with_meta(
+            "AUDIT_APPEND_FAILED",
+            format!("Failed to append artifact ingestion audit event: {e}"),
+            &run_id,
+            &audit_path,
+        )
+    })?;
+    append_ingestion_audit_event(
+        &mut audit,
+        &run_id,
+        &vault_id,
+        &ingested_consent,
+        "application/json",
+    )
+    .map_err(|e| {
+        PackCommandError::failed_with_meta(
+            "AUDIT_APPEND_FAILED",
+            format!("Failed to append artifact ingestion audit event: {e}"),
+            &run_id,
+            &audit_path,
+        )
+    })?;
 
     let draft_note_path = manifest.deliverable_paths[0].clone();
     let checklist_path = manifest.deliverable_paths[1].clone();
@@ -1774,23 +1802,36 @@ fn ingest_payload(
     expectation: PayloadExpectation,
 ) -> Result<IngestedArtifactPayload, PackCommandError> {
     let payload = find_artifact_payload(artifact_id, payloads)?;
-    let (bytes, text, max_bytes) = match expectation {
+    let (bytes, text, max_bytes, ingest_transformations) = match expectation {
         PayloadExpectation::Text => {
             if let Some(content) = payload
                 .content_text
                 .as_deref()
                 .filter(|value| !value.trim().is_empty())
             {
-                (content.as_bytes().to_vec(), Some(content.to_string()), MAX_TEXT_PAYLOAD_BYTES)
+                (
+                    content.as_bytes().to_vec(),
+                    Some(content.to_string()),
+                    MAX_TEXT_PAYLOAD_BYTES,
+                    Vec::new(),
+                )
             } else {
                 let decoded = decode_base64_payload(payload)?;
                 let text = String::from_utf8(decoded.clone()).map_err(|e| {
                     PackCommandError::blocked(
                         "ARTIFACT_PAYLOAD_INVALID_UTF8",
-                        format!("Payload for {} is not UTF-8 text: {}", payload.artifact_id, e),
+                        format!(
+                            "Payload for {} is not UTF-8 text: {}",
+                            payload.artifact_id, e
+                        ),
                     )
                 })?;
-                (decoded, Some(text), MAX_TEXT_PAYLOAD_BYTES)
+                (
+                    decoded,
+                    Some(text),
+                    MAX_TEXT_PAYLOAD_BYTES,
+                    vec!["BASE64_DECODE".to_string(), "UTF8_DECODE".to_string()],
+                )
             }
         }
         PayloadExpectation::BinaryPdf => {
@@ -1825,7 +1866,12 @@ fn ingest_payload(
                     ),
                 ));
             }
-            (decoded, None, MAX_BINARY_PAYLOAD_BYTES)
+            (
+                decoded,
+                None,
+                MAX_BINARY_PAYLOAD_BYTES,
+                vec!["BASE64_DECODE".to_string()],
+            )
         }
     };
 
@@ -1853,6 +1899,7 @@ fn ingest_payload(
         sha256: computed_sha,
         sha_enforced,
         declared_sha: declared_sha.trim().to_string(),
+        ingest_transformations,
     })
 }
 
@@ -1921,6 +1968,7 @@ fn append_ingestion_audit_event(
     run_id: &str,
     vault_id: &str,
     payload: &IngestedArtifactPayload,
+    content_type: &str,
 ) -> Result<(), String> {
     let sha_policy = if payload.sha_enforced {
         "ENFORCED"
@@ -1930,12 +1978,17 @@ fn append_ingestion_audit_event(
     audit
         .append(AuditEvent {
             ts_utc: now_rfc3339_utc(),
-            event_type: "ARTIFACT_INGESTION_VALIDATED".to_string(),
+            event_type: "ARTIFACT_INGESTED".to_string(),
             run_id: run_id.to_string(),
             vault_id: vault_id.to_string(),
             actor: Actor::System,
             details: json!({
                 "artifact_id": payload.artifact_id,
+                "artifact_sha256": payload.sha256,
+                "content_type": content_type,
+                "size_bytes": payload.bytes.len(),
+                "origin_path": "tauri://command-payload",
+                "ingest_transformations": payload.ingest_transformations,
                 "declared_sha256": payload.declared_sha,
                 "computed_sha256": payload.sha256,
                 "payload_bytes": payload.bytes.len(),
@@ -2245,6 +2298,154 @@ mod tests {
     }
 
     #[test]
+    fn ingestion_contract_omitted_sha_defaults_to_legacy_compatibility_for_all_packs() {
+        let redline: RedlineCommandInput = serde_json::from_value(serde_json::json!({
+            "schema_version": "REDLINEOS_INPUT_V1",
+            "contract_artifacts": [{
+                "artifact_id": "contract_001",
+                "filename": "contract.pdf"
+            }],
+            "extraction_mode": "NATIVE_PDF",
+            "jurisdiction_hint": null,
+            "review_profile": "default",
+            "artifact_payloads": []
+        }))
+        .expect("RedlineOS command should deserialize an omitted legacy sha256");
+        assert!(redline.workflow_input.contract_artifacts[0]
+            .sha256
+            .is_empty());
+
+        let incident: IncidentCommandInput = serde_json::from_value(serde_json::json!({
+            "schema_version": "INCIDENTOS_INPUT_V1",
+            "incident_artifacts": [{
+                "artifact_id": "incident_001",
+                "source_type": "syslog"
+            }],
+            "timeline_start_hint": null,
+            "timeline_end_hint": null,
+            "customer_redaction_profile": "STRICT",
+            "artifact_payloads": []
+        }))
+        .expect("IncidentOS command should deserialize an omitted legacy sha256");
+        assert!(incident.workflow_input.incident_artifacts[0]
+            .sha256
+            .is_empty());
+
+        let finance: FinanceCommandInput = serde_json::from_value(serde_json::json!({
+            "schema_version": "FINANCEOS_INPUT_V1",
+            "finance_artifacts": [{
+                "artifact_id": "finance_001",
+                "artifact_kind": "statement"
+            }],
+            "period": "2026-01",
+            "exception_rules_profile": "standard",
+            "retention_profile": "ret_min",
+            "artifact_payloads": []
+        }))
+        .expect("FinanceOS command should deserialize an omitted legacy sha256");
+        assert!(finance.workflow_input.finance_artifacts[0]
+            .sha256
+            .is_empty());
+
+        let healthcare: HealthcareCommandInput = serde_json::from_value(serde_json::json!({
+            "schema_version": "HEALTHCAREOS_INPUT_V1",
+            "consent_artifacts": [{
+                "artifact_id": "consent_001",
+                "artifact_kind": "consent"
+            }],
+            "transcript_artifacts": [{
+                "artifact_id": "transcript_001",
+                "artifact_kind": "transcript"
+            }],
+            "draft_template_profile": "soap",
+            "verifier_identity": "clinician_1",
+            "artifact_payloads": []
+        }))
+        .expect("HealthcareOS command should deserialize omitted legacy sha256 fields");
+        assert!(healthcare.workflow_input.consent_artifacts[0]
+            .sha256
+            .is_empty());
+        assert!(healthcare.workflow_input.transcript_artifacts[0]
+            .sha256
+            .is_empty());
+    }
+
+    #[test]
+    fn ingestion_contract_appends_locked_ingested_event_without_raw_content() {
+        let valid_sha = sha256_hex(valid_incident_log().as_bytes());
+        let payloads = vec![ArtifactPayloadInput {
+            artifact_id: "incident_001".to_string(),
+            content_text: Some(valid_incident_log().to_string()),
+            content_base64: None,
+        }];
+        let ingested = ingest_payload(
+            "incident_001",
+            &valid_sha,
+            &payloads,
+            PayloadExpectation::Text,
+        )
+        .expect("matching synthetic payload should ingest");
+        let runtime_dir = std::env::temp_dir().join(format!(
+            "aigc_ingestion_audit_contract_{}_{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock should be after epoch")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&runtime_dir).expect("test runtime directory should be created");
+        let audit_path = runtime_dir.join("audit.ndjson");
+        let mut audit = AuditLog::open_or_create(&audit_path).expect("audit log should open");
+
+        append_ingestion_audit_event(
+            &mut audit,
+            "r_ingestion_contract",
+            "v_ingestion_contract",
+            &ingested,
+            "application/x-ndjson",
+        )
+        .expect("locked artifact-ingested event should append");
+
+        let contents = fs::read_to_string(&audit_path).expect("audit log should be readable");
+        let event: serde_json::Value = serde_json::from_str(
+            contents
+                .lines()
+                .last()
+                .expect("audit log should contain the ingestion event"),
+        )
+        .expect("ingestion audit event should parse");
+        assert_eq!(event["event_type"], "ARTIFACT_INGESTED");
+        let details = &event["details"];
+        assert_eq!(details["artifact_id"], "incident_001");
+        assert_eq!(details["artifact_sha256"], valid_sha);
+        assert_eq!(details["content_type"], "application/x-ndjson");
+        assert_eq!(details["origin_path"], "tauri://command-payload");
+        assert_eq!(details["ingest_transformations"], serde_json::json!([]));
+        assert_eq!(details["sha_policy"], "ENFORCED");
+        assert!(details.get("size_bytes").is_some());
+        assert!(details.get("content_text").is_none());
+        assert!(details.get("content_base64").is_none());
+
+        fs::remove_dir_all(runtime_dir).expect("test runtime directory should be removed");
+    }
+
+    #[test]
+    fn ingestion_contract_base64_text_transformations_are_sorted_and_explicit() {
+        let payloads = vec![ArtifactPayloadInput {
+            artifact_id: "incident_001".to_string(),
+            content_text: None,
+            content_base64: Some(BASE64_STANDARD.encode(valid_incident_log())),
+        }];
+        let ingested = ingest_payload("incident_001", "demo", &payloads, PayloadExpectation::Text)
+            .expect("base64 synthetic text payload should ingest");
+
+        assert_eq!(
+            ingested.ingest_transformations,
+            vec!["BASE64_DECODE".to_string(), "UTF8_DECODE".to_string()]
+        );
+    }
+
+    #[test]
     fn healthcare_fingerprint_is_stable_across_input_order() {
         let forward = vec![
             InputArtifactDescriptor {
@@ -2510,6 +2711,7 @@ mod tests {
             status.error_code.as_deref(),
             Some("ARTIFACT_SHA256_MISMATCH")
         );
+        assert_ne!(status.error_code.as_deref(), Some("AUDIT_APPEND_FAILED"));
     }
 
     #[test]
