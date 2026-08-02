@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ContractArtifactRef {
     pub artifact_id: String,
+    #[serde(default)]
     pub sha256: String,
     pub filename: String,
 }
