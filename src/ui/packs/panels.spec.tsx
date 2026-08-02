@@ -5,6 +5,7 @@ import { FinanceOSPanel } from "./FinanceOSPanel";
 import { HealthcareOSPanel } from "./HealthcareOSPanel";
 import { IncidentOSPanel } from "./IncidentOSPanel";
 import { RedlineOSPanel } from "./RedlineOSPanel";
+import { StatusBadge } from "../StatusBadge";
 
 describe("pack panels", () => {
   it("renders incident, finance, and healthcare runtime input states", () => {
@@ -95,6 +96,87 @@ describe("pack panels", () => {
     ).toBe(false);
     expect(screen.getByText("Bundle path: /tmp/health.zip")).toBeTruthy();
     expect(screen.getByText("Audit path: /tmp/health/audit.ndjson")).toBeTruthy();
+  });
+
+  it("renders BLOCKED, SUCCESS, and FAILED as mutually distinct statuses", () => {
+    const resolved = () => Promise.resolve();
+    const noop = () => {};
+
+    // Scoped to this render's container: the suite has no auto-cleanup, so a
+    // document-wide query would pick up badges left behind by earlier tests.
+    const readBadge = (scope: HTMLElement) => {
+      const badge = scope.querySelector(".status-badge");
+      if (!badge) throw new Error("expected a status badge to be rendered");
+      return {
+        status: badge.getAttribute("data-status"),
+        tone: badge.getAttribute("data-tone"),
+        word: badge.querySelector(".status-badge-word")?.textContent,
+      };
+    };
+
+    const { container, rerender } = render(
+      <IncidentOSPanel
+        running={false}
+        result={{ status: "SUCCESS", message: "ok" }}
+        error={null}
+        payloadText={'{"ok":true}'}
+        onPayloadChange={noop}
+        onLoadSample={noop}
+        onRun={resolved}
+      />,
+    );
+    const success = readBadge(container);
+
+    rerender(
+      <IncidentOSPanel
+        running={false}
+        result={{ status: "BLOCKED", message: "policy refused the export" }}
+        error={null}
+        payloadText={'{"ok":true}'}
+        onPayloadChange={noop}
+        onLoadSample={noop}
+        onRun={resolved}
+      />,
+    );
+    const blocked = readBadge(container);
+
+    rerender(
+      <IncidentOSPanel
+        running={false}
+        result={{ status: "FAILED", message: "export crashed" }}
+        error={null}
+        payloadText={'{"ok":true}'}
+        onPayloadChange={noop}
+        onLoadSample={noop}
+        onRun={resolved}
+      />,
+    );
+    const failed = readBadge(container);
+
+    // The word is always present, so the distinction survives without colour.
+    expect(success.word).toBe("SUCCESS");
+    expect(blocked.word).toBe("BLOCKED");
+    expect(failed.word).toBe("FAILED");
+
+    // BLOCKED is a governance outcome, not a shade of success or of failure.
+    expect(blocked.tone).toBe("warn");
+    expect(blocked.tone).not.toBe(success.tone);
+    expect(blocked.tone).not.toBe(failed.tone);
+    expect(success.tone).not.toBe(failed.tone);
+  });
+
+  it("keeps NOT_APPLICABLE and UNKNOWN muted but distinguishable", () => {
+    const { container, rerender } = render(<StatusBadge status="NOT_APPLICABLE" />);
+    const inapplicable = container.querySelector(".status-badge")?.getAttribute("data-tone");
+
+    rerender(<StatusBadge status="UNKNOWN" detail="Enforcement layer unreachable" />);
+    const badge = container.querySelector(".status-badge");
+
+    expect(inapplicable).toBe("inapplicable");
+    expect(badge?.getAttribute("data-tone")).toBe("unresolved");
+    expect(inapplicable).not.toBe(badge?.getAttribute("data-tone"));
+    expect(badge?.textContent).toContain("UNKNOWN");
+    expect(badge?.textContent).toContain("Enforcement layer unreachable");
   });
 
   it("supports redline sample toggle and command payload generation", async () => {
