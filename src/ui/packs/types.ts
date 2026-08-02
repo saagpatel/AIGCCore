@@ -1,5 +1,35 @@
+/**
+ * Terminal statuses the Tauri pack commands emit.
+ * Source: src-tauri/src/lib.rs:2228 (SUCCESS), :2237 (BLOCKED), :2246 (FAILED);
+ * PackCommandError::blocked :294 and ::failed :304/:319 cover the error paths.
+ */
+export type PackStatus = "SUCCESS" | "BLOCKED" | "FAILED";
+
+/**
+ * EvidenceOS export status. src-tauri/src/lib.rs:660 rejects any outcome other
+ * than COMPLETED before it reaches the UI, so COMPLETED is the only value the
+ * frontend can observe. ExportOutcome itself is wider (core/src/run/manager.rs:41).
+ */
+export type EvidenceExportStatus = "COMPLETED";
+
+/**
+ * Gate outcomes. Source: core/src/eval/runner.rs:96/:102/:141/:159 and the
+ * PASS/NOT_APPLICABLE acceptance check at core/src/run/manager.rs:150.
+ */
+export type GateStatus = "PASS" | "NOT_APPLICABLE";
+
+/**
+ * Rendered when the UI holds no verified value. Never emitted as a run outcome;
+ * the validator uses the same token for an unresolvable field
+ * (core/src/validator/mod.rs:785).
+ */
+export type UnresolvedStatus = "UNKNOWN";
+
+/** Every status StatusBadge is able to render. */
+export type StatusValue = PackStatus | EvidenceExportStatus | GateStatus | UnresolvedStatus;
+
 export type PackCommandStatus = {
-  status: string;
+  status: PackStatus;
   message: string;
   bundle_path?: string | null;
   bundle_sha256?: string | null;

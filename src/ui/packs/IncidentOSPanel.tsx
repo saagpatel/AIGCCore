@@ -1,4 +1,5 @@
 import type { PackCommandStatus } from "./types";
+import { StatusBadge } from "../StatusBadge";
 
 type Props = {
   running: boolean;
@@ -47,7 +48,9 @@ export function IncidentOSPanel({
       {error && <p className="error">{error}</p>}
       {result && (
         <div className="result">
-          <p>Status: {result.status}</p>
+          <p>
+            Status: <StatusBadge status={result.status} />
+          </p>
           <p>{result.message}</p>
           {result.error_code && <p>Error code: {result.error_code}</p>}
           {result.run_id && <p>Run ID: {result.run_id}</p>}

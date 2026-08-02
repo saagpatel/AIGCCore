@@ -4,6 +4,7 @@ import { FinanceOSPanel } from "./packs/FinanceOSPanel";
 import { HealthcareOSPanel } from "./packs/HealthcareOSPanel";
 import { IncidentOSPanel } from "./packs/IncidentOSPanel";
 import { RedlineOSPanel } from "./packs/RedlineOSPanel";
+import { StatusBadge } from "./StatusBadge";
 import {
   SAMPLE_FINANCE_STATEMENT,
   SAMPLE_HEALTHCARE_CONSENT,
@@ -13,14 +14,12 @@ import {
   buildHealthcareCommandInput,
   buildIncidentCommandInput,
 } from "./packs/samplePayloads";
-import type { PackCommandStatus } from "./packs/types";
+import type { EvidenceExportStatus, PackCommandStatus } from "./packs/types";
 
 type NetworkSnapshot = {
   network_mode: "OFFLINE" | "ONLINE_ALLOWLISTED";
   proof_level:
-    | "OFFLINE_STRICT"
-    | "ONLINE_ALLOWLIST_CORE_ONLY"
-    | "ONLINE_ALLOWLIST_WITH_OS_FIREWALL_PROFILE";
+    "OFFLINE_STRICT" | "ONLINE_ALLOWLIST_CORE_ONLY" | "ONLINE_ALLOWLIST_WITH_OS_FIREWALL_PROFILE";
   ui_remote_fetch_disabled: boolean;
 };
 
@@ -33,7 +32,7 @@ type ControlDefinition = {
 };
 
 type EvidenceOsRunResult = {
-  status: string;
+  status: EvidenceExportStatus;
   bundle_path: string;
   bundle_sha256: string;
   missing_control_ids: string[];
@@ -50,6 +49,7 @@ type EvidenceOsRunInput = {
 
 export function App() {
   const [snap, setSnap] = useState<NetworkSnapshot | null>(null);
+  const [snapError, setSnapError] = useState<string | null>(null);
   const [controls, setControls] = useState<ControlDefinition[]>([]);
   const [runResult, setRunResult] = useState<EvidenceOsRunResult | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
@@ -75,10 +75,13 @@ export function App() {
   const [healthcareTranscriptPayload, setHealthcareTranscriptPayload] = useState("");
   const [healthcareConsentPayload, setHealthcareConsentPayload] = useState("");
 
-  const status = useMemo(() => {
-    if (!snap) return "Loading…";
-    return `${snap.network_mode} (${snap.proof_level})`;
-  }, [snap]);
+  const networkStatus = useMemo(() => {
+    if (snapError) {
+      return <StatusBadge status="UNKNOWN" detail="Enforcement layer unreachable, state unknown" />;
+    }
+    if (!snap) return <strong>Loading…</strong>;
+    return <strong>{`${snap.network_mode} (${snap.proof_level})`}</strong>;
+  }, [snap, snapError]);
 
   const capabilities = useMemo(() => {
     const all = controls.map((control) => control.capability);
@@ -90,12 +93,13 @@ export function App() {
       try {
         const s = await invoke<NetworkSnapshot>("get_network_snapshot");
         setSnap(s);
-      } catch {
-        setSnap({
-          network_mode: "OFFLINE",
-          proof_level: "OFFLINE_STRICT",
-          ui_remote_fetch_disabled: true,
-        });
+        setSnapError(null);
+      } catch (error) {
+        // The enforcement layer is what proves the network posture. If it is
+        // unreachable we have no posture to report, so report exactly that
+        // rather than asserting the strongest claim the app can make.
+        setSnap(null);
+        setSnapError(String(error));
       }
 
       try {
@@ -167,8 +171,12 @@ export function App() {
     <div className="app">
       <header className="topbar">
         <h1 className="brand">AIGC Core</h1>
-        <div className="badge" data-mode={snap?.network_mode ?? "UNKNOWN"}>
-          Network: <strong>{status}</strong>
+        <div
+          className="badge"
+          data-mode={snap?.network_mode ?? (snapError ? "UNKNOWN" : "LOADING")}
+          data-testid="network-status"
+        >
+          Network: {networkStatus}
         </div>
       </header>
 
@@ -256,7 +264,7 @@ export function App() {
           {runResult && (
             <div className="result">
               <p>
-                Export status: <strong>{runResult.status}</strong>
+                Export status: <StatusBadge status={runResult.status} />
               </p>
               <p>Bundle path: {runResult.bundle_path}</p>
               <p>Bundle SHA-256: {runResult.bundle_sha256}</p>

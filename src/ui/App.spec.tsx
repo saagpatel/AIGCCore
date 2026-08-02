@@ -212,6 +212,33 @@ describe("App", () => {
     });
   });
 
+  it("reports the network state as unresolved instead of fabricating OFFLINE_STRICT", async () => {
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === "get_network_snapshot") {
+        throw new Error("ipc unavailable");
+      }
+      if (command === "list_control_library") {
+        return [];
+      }
+      return { status: "SUCCESS", message: `${command} complete` };
+    });
+
+    render(<App />);
+    await screen.findByRole("heading", { level: 1, name: "AIGC Core" });
+
+    const networkBadge = await screen.findByTestId("network-status");
+    await waitFor(() => {
+      expect(networkBadge.textContent).toContain("UNKNOWN");
+    });
+
+    expect(networkBadge.textContent).not.toContain("OFFLINE_STRICT");
+    expect(networkBadge.textContent).not.toContain("OFFLINE");
+    expect(networkBadge.textContent).toContain("Enforcement layer unreachable");
+    expect(networkBadge.querySelector("[data-status]")?.getAttribute("data-status")).toBe(
+      "UNKNOWN",
+    );
+  });
+
   it("maps invoke runtime exceptions to failed pack status metadata", async () => {
     invokeMock.mockImplementation(async (command: string) => {
       if (command === "get_network_snapshot") {
@@ -236,7 +263,8 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Load HealthcareOS sample data" }));
     fireEvent.click(screen.getByRole("button", { name: "Run HealthcareOS Export" }));
     await waitFor(() => {
-      expect(screen.getByText("Status: FAILED")).toBeTruthy();
+      const failedWord = screen.getByText("FAILED");
+      expect(failedWord.closest(".status-badge")?.getAttribute("data-tone")).toBe("bad");
       expect(screen.getByText("Error code: INVOKE_RUNTIME_ERROR")).toBeTruthy();
       expect(screen.getAllByText("Error: invoke exploded").length).toBeGreaterThanOrEqual(1);
     });

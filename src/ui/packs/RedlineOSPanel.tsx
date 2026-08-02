@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import type { PackCommandStatus, RedlineCommandInput, RedlineOSInput } from "./types";
 import { SAMPLE_REDLINE_CONTRACT_BASE64 } from "./samplePayloads";
+import { StatusBadge } from "../StatusBadge";
 
 type Props = {
   running: boolean;
@@ -117,7 +118,7 @@ export function RedlineOSPanel({ running, result, error, onRun }: Props) {
       {result && (
         <div className="result">
           <p>
-            Status: <strong>{result.status}</strong>
+            Status: <StatusBadge status={result.status} />
           </p>
           <p>{result.message}</p>
           {result.error_code && <p>Error code: {result.error_code}</p>}
