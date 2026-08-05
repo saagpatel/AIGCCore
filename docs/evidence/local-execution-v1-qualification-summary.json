@@ -1,0 +1,62 @@
+{
+  "schema_version": "AIGC_LOCAL_EXECUTION_QUALIFICATION_SUMMARY_V1",
+  "observed_at": "2026-07-31",
+  "result": "PASS",
+  "source_receipt_sha256": "8f146713248e6eec78cee97f83c7fb3f8cf0e0b7b3224f08ca8a1534a11165d6",
+  "reviewed_patch_sha256": "6420e664434b60f5fda9b9c94d642d88a57308c4e41193ac4c798477c8be7a46",
+  "runtime": {
+    "backend_id": "OCI_ZERO_EGRESS_V1",
+    "engine_endpoint": "unix:///Users/d/.colima/default/docker.sock",
+    "daemon_id": "957303c7-d656-40f0-b27c-200f0979ef6e",
+    "architecture": "aarch64",
+    "engine_version": "29.5.2",
+    "runtime_version": "1.3.5",
+    "kernel_version": "6.8.0-117-generic",
+    "image_id": "sha256:644afe5be5946300fc629dcdd407cb7cc1942f5c1dc15a0b6014f7fc5d9e4cf3",
+    "enforcement_profile_sha256": "469aba1bbbdbee368009505ac6aff7f56b930ada01ff247246ef7e050d029342",
+    "controller_build": "0.1.0",
+    "controller_executable_sha256": "881c382e45cd42890baff971a7b7463331be1f94e0cd1803b81b01da59215f34"
+  },
+  "sample_counts": {
+    "cold_cached": 5,
+    "warm": 30,
+    "five_second": 5,
+    "concurrency_batches_per_level": 5
+  },
+  "performance": {
+    "cold_start_p95_ms": 440,
+    "warm_start_p95_ms": 421,
+    "cleanup_p95_ms": 30,
+    "cleanup_max_ms": 31,
+    "added_overhead_p95_ms": 184,
+    "added_overhead_percent": 4,
+    "peak_disk_bytes": 28926,
+    "disk_amplification_ceiling_bytes": 134253943,
+    "highest_passing_concurrency": 4,
+    "gates_passed": true
+  },
+  "controls": {
+    "required": 22,
+    "passed": 22,
+    "observed_effects": 70,
+    "unique_referenced_effects": 70
+  },
+  "residue": {
+    "containers": 0,
+    "images": 0,
+    "networks": 0,
+    "volumes": 0,
+    "processes": 0,
+    "listeners": 0,
+    "mounts": 0,
+    "temporary_roots": 0
+  },
+  "claim_ceiling": "Exact deterministic synthetic fixture, recorded runtime identity, effective configuration, controls, export digest, and cleanup only; CONTROL_SIMULATION remains explicit and is not admitted as enforcement.",
+  "excluded_claims": [
+    "outer engine, daemon, VM, kernel, or host integrity",
+    "hostile-runtime or container-escape resistance",
+    "general-purpose arbitrary repository execution",
+    "credential isolation",
+    "portability to a different engine, image, architecture, or host"
+  ]
+}

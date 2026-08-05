@@ -1,6 +1,6 @@
 use crate::error::{CoreError, CoreResult};
 use aes_gcm::{aead::Aead, Aes256Gcm, KeyInit, Nonce as AesNonce};
-use chacha20poly1305::{aead::Aead as XAead, KeyInit as XKeyInit, XChaCha20Poly1305, XNonce};
+use chacha20poly1305::{XChaCha20Poly1305, XNonce};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
@@ -51,8 +51,10 @@ pub fn encrypt_bytes(
                 .map_err(|e| CoreError::InvalidInput(format!("invalid key: {}", e)))?;
             let mut nonce = [0u8; 12];
             rand::rng().fill_bytes(&mut nonce);
+            let aes_nonce = AesNonce::try_from(nonce.as_slice())
+                .map_err(|e| CoreError::InvalidInput(format!("invalid nonce: {}", e)))?;
             let ct = cipher
-                .encrypt(AesNonce::from_slice(&nonce), plaintext)
+                .encrypt(&aes_nonce, plaintext)
                 .map_err(|e| CoreError::PolicyBlocked(format!("encryption failed: {}", e)))?;
             Ok(EncryptedBlob {
                 algorithm,
@@ -87,8 +89,10 @@ pub fn decrypt_bytes(blob: &EncryptedBlob, dek: &[u8; 32]) -> CoreResult<Vec<u8>
             }
             let cipher = Aes256Gcm::new_from_slice(dek)
                 .map_err(|e| CoreError::InvalidInput(format!("invalid key: {}", e)))?;
+            let aes_nonce = AesNonce::try_from(blob.nonce.as_slice())
+                .map_err(|e| CoreError::InvalidInput(format!("invalid nonce: {}", e)))?;
             cipher
-                .decrypt(AesNonce::from_slice(&blob.nonce), blob.ciphertext.as_ref())
+                .decrypt(&aes_nonce, blob.ciphertext.as_ref())
                 .map_err(|e| CoreError::PolicyBlocked(format!("decryption failed: {}", e)))
         }
     }

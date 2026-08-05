@@ -13,11 +13,11 @@ This file defines canonical project commands, paths, and repo-specific conventio
 
 ## Canonical Paths
 
-- Rust domain core: `/Users/d/Projects/MoneyPRJsViaGPT/AIGCCore/core`
-- Tauri shell + command handlers: `/Users/d/Projects/MoneyPRJsViaGPT/AIGCCore/src-tauri`
-- React UI: `/Users/d/Projects/MoneyPRJsViaGPT/AIGCCore/src`
-- Local validator CLI(s): `/Users/d/Projects/MoneyPRJsViaGPT/AIGCCore/tools`
-- Packet-driven docs created in-repo: `/Users/d/Projects/MoneyPRJsViaGPT/AIGCCore/docs`
+- Rust domain core: `/Users/d/Projects/AIGCCore/core`
+- Tauri shell + command handlers: `/Users/d/Projects/AIGCCore/src-tauri`
+- React UI: `/Users/d/Projects/AIGCCore/src`
+- Local validator CLI(s): `/Users/d/Projects/AIGCCore/tools`
+- Packet-driven docs created in-repo: `/Users/d/Projects/AIGCCore/docs`
 
 ## Canonical Commands
 
@@ -29,7 +29,7 @@ Primary runner is `pnpm` and Rust `cargo`.
 - Run all eval gates locally: `pnpm gate:all`
 - Rust tests: `cargo test --workspace`
 
-Source of truth for scripts is `/Users/d/Projects/MoneyPRJsViaGPT/AIGCCore/package.json`.
+Source of truth for scripts is `/Users/d/Projects/AIGCCore/package.json`.
 
 ## Hard Rules (Packet-Aligned)
 

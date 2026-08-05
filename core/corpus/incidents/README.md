@@ -128,7 +128,7 @@ The gate is BLOCKER severity, meaning:
 
 ### Phase 5 Completion
 - Gate implementation: `tools/gates/check-incidentos-determinism.mjs`
-- Tauri handler: `src-tauri/src/main.rs` run_incidentos command
+- Tauri handler: `src-tauri/src/lib.rs` run_incidentos command
 - UI panel: `src/ui/packs/IncidentOSPanel.tsx`
 
 ### Future Enhancement
