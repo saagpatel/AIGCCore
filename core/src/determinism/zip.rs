@@ -71,7 +71,8 @@ pub fn zip_dir_deterministic(root_dir: &Path, out_zip: &Path) -> CoreResult<Stri
         std::io::copy(&mut rf, &mut zw)?;
     }
 
-    zw.set_comment("");
+    zw.set_comment("")
+        .map_err(|e| CoreError::Zip(e.to_string()))?;
     zw.finish().map_err(|e| CoreError::Zip(e.to_string()))?;
 
     // Compute sha256 of zip bytes (used by export completed + validator outputs)

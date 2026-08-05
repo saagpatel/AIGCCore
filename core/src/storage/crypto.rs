@@ -35,8 +35,10 @@ pub fn encrypt_bytes(
                 .map_err(|e| CoreError::InvalidInput(format!("invalid key: {}", e)))?;
             let mut nonce = [0u8; 24];
             rand::rng().fill_bytes(&mut nonce);
+            let xnonce = XNonce::try_from(nonce.as_slice())
+                .map_err(|e| CoreError::InvalidInput(format!("invalid nonce: {}", e)))?;
             let ct = cipher
-                .encrypt(XNonce::from_slice(&nonce), plaintext)
+                .encrypt(&xnonce, plaintext)
                 .map_err(|e| CoreError::PolicyBlocked(format!("encryption failed: {}", e)))?;
             Ok(EncryptedBlob {
                 algorithm,
@@ -49,8 +51,10 @@ pub fn encrypt_bytes(
                 .map_err(|e| CoreError::InvalidInput(format!("invalid key: {}", e)))?;
             let mut nonce = [0u8; 12];
             rand::rng().fill_bytes(&mut nonce);
+            let aes_nonce = AesNonce::try_from(nonce.as_slice())
+                .map_err(|e| CoreError::InvalidInput(format!("invalid nonce: {}", e)))?;
             let ct = cipher
-                .encrypt(AesNonce::from_slice(&nonce), plaintext)
+                .encrypt(&aes_nonce, plaintext)
                 .map_err(|e| CoreError::PolicyBlocked(format!("encryption failed: {}", e)))?;
             Ok(EncryptedBlob {
                 algorithm,
@@ -71,8 +75,10 @@ pub fn decrypt_bytes(blob: &EncryptedBlob, dek: &[u8; 32]) -> CoreResult<Vec<u8>
             }
             let cipher = XChaCha20Poly1305::new_from_slice(dek)
                 .map_err(|e| CoreError::InvalidInput(format!("invalid key: {}", e)))?;
+            let xnonce = XNonce::try_from(blob.nonce.as_slice())
+                .map_err(|e| CoreError::InvalidInput(format!("invalid nonce: {}", e)))?;
             cipher
-                .decrypt(XNonce::from_slice(&blob.nonce), blob.ciphertext.as_ref())
+                .decrypt(&xnonce, blob.ciphertext.as_ref())
                 .map_err(|e| CoreError::PolicyBlocked(format!("decryption failed: {}", e)))
         }
         EncryptionAlgorithm::AES_256_GCM => {
@@ -83,8 +89,10 @@ pub fn decrypt_bytes(blob: &EncryptedBlob, dek: &[u8; 32]) -> CoreResult<Vec<u8>
             }
             let cipher = Aes256Gcm::new_from_slice(dek)
                 .map_err(|e| CoreError::InvalidInput(format!("invalid key: {}", e)))?;
+            let aes_nonce = AesNonce::try_from(blob.nonce.as_slice())
+                .map_err(|e| CoreError::InvalidInput(format!("invalid nonce: {}", e)))?;
             cipher
-                .decrypt(AesNonce::from_slice(&blob.nonce), blob.ciphertext.as_ref())
+                .decrypt(&aes_nonce, blob.ciphertext.as_ref())
                 .map_err(|e| CoreError::PolicyBlocked(format!("decryption failed: {}", e)))
         }
     }
