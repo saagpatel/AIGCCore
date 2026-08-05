@@ -4,6 +4,7 @@ use aigc_core::audit::log::AuditLog;
 use aigc_core::determinism::run_id::sha256_hex;
 use aigc_core::eval::runner::EvalRunner;
 use aigc_core::evidence_bundle::artifact_hashes::{render_artifact_hashes_csv, ArtifactHashRow};
+use aigc_core::evidence_bundle::authority::EvidenceAuthorityManifest;
 use aigc_core::evidence_bundle::builder::EvidenceBundleBuilder;
 use aigc_core::evidence_bundle::schemas::*;
 use aigc_core::evidenceos::model::{CitationInput, EvidenceItem, NarrativeClaimInput};
@@ -17,6 +18,20 @@ use aigc_core::storage::vault::{VaultConfig, VaultStorage};
 use aigc_core::validator::BundleValidator;
 use serde_json::json;
 use std::path::PathBuf;
+
+fn controlled_gate_authority(run_id: &str, producer: &str) -> EvidenceAuthorityManifest {
+    EvidenceAuthorityManifest::controlled_simulation(
+        run_id,
+        producer,
+        "gate-runner-revision",
+        "gate-runner",
+        sha256_hex(b"gate-runner"),
+        sha256_hex(b"gate-runner-arguments"),
+        sha256_hex(b"gate-runner-environment"),
+        "2026-01-01T00:00:00Z",
+        "2026-01-02T00:00:00Z",
+    )
+}
 
 fn main() {
     // Phase 2: gate_runner generates a deterministic self-audit Evidence Bundle and runs:
@@ -211,7 +226,8 @@ fn make_self_audit_inputs(bundle_root: &PathBuf, policy_mode: PolicyMode) -> Evi
                     "path": "/blocked"
                 },
                 "block_reason": "OFFLINE_MODE",
-                "request_hash_sha256": sha256_hex(b"blocked_request")
+                "request_hash_sha256": sha256_hex(b"blocked_request"),
+                "evidence_origin": "CONTROL_SIMULATION"
             }),
             prev_event_hash: "".to_string(),
             event_hash: "".to_string(),
@@ -388,7 +404,7 @@ fn make_self_audit_inputs(bundle_root: &PathBuf, policy_mode: PolicyMode) -> Evi
     let bundle_info = BundleInfo {
         bundle_version: "1.0.0".to_string(),
         schema_versions: SchemaVersions {
-            run_manifest: "RUN_MANIFEST_V1".to_string(),
+            run_manifest: "RUN_MANIFEST_V2".to_string(),
             eval_report: "EVAL_REPORT_V1".to_string(),
             citations_map: "LOCATOR_SCHEMA_V1".to_string(),
             redactions_map: "REDACTION_SCHEMA_V1".to_string(),
@@ -402,6 +418,7 @@ fn make_self_audit_inputs(bundle_root: &PathBuf, policy_mode: PolicyMode) -> Evi
     let run_manifest = RunManifest {
         run_id: run_id.clone(),
         vault_id: vault_id.clone(),
+        evidence_authority: controlled_gate_authority(&run_id, "gate-runner:self-audit"),
         determinism: DeterminismManifest {
             enabled: determinism_enabled,
             manifest_inputs_fingerprint: manifest_inputs_fingerprint.clone(),
@@ -571,7 +588,8 @@ fn make_evidenceos_inputs(policy_mode: PolicyMode) -> EvidenceBundleInputs {
                     "path": "/blocked"
                 },
                 "block_reason": "OFFLINE_MODE",
-                "request_hash_sha256": sha256_hex(b"blocked_request")
+                "request_hash_sha256": sha256_hex(b"blocked_request"),
+                "evidence_origin": "CONTROL_SIMULATION"
             }),
             prev_event_hash: "".to_string(),
             event_hash: "".to_string(),
@@ -657,6 +675,7 @@ fn make_evidenceos_inputs(policy_mode: PolicyMode) -> EvidenceBundleInputs {
         run_manifest: RunManifest {
             run_id: run_id.clone(),
             vault_id: vault_id.clone(),
+            evidence_authority: controlled_gate_authority(&run_id, "gate-runner:evidenceos"),
             determinism: DeterminismManifest {
                 enabled: determinism_enabled,
                 manifest_inputs_fingerprint: manifest_inputs_fingerprint.clone(),
@@ -677,7 +696,7 @@ fn make_evidenceos_inputs(policy_mode: PolicyMode) -> EvidenceBundleInputs {
         bundle_info: BundleInfo {
             bundle_version: "1.0.0".to_string(),
             schema_versions: SchemaVersions {
-                run_manifest: "RUN_MANIFEST_V1".to_string(),
+                run_manifest: "RUN_MANIFEST_V2".to_string(),
                 eval_report: "EVAL_REPORT_V1".to_string(),
                 citations_map: "LOCATOR_SCHEMA_V1".to_string(),
                 redactions_map: "REDACTION_SCHEMA_V1".to_string(),

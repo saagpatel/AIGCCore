@@ -5,6 +5,7 @@ import { HealthcareOSPanel } from "./packs/HealthcareOSPanel";
 import { IncidentOSPanel } from "./packs/IncidentOSPanel";
 import { RedlineOSPanel } from "./packs/RedlineOSPanel";
 import { StatusBadge } from "./StatusBadge";
+import { EvidenceAuthorityNotice } from "./packs/EvidenceAuthorityNotice";
 import {
   SAMPLE_FINANCE_STATEMENT,
   SAMPLE_HEALTHCARE_CONSENT,
@@ -14,7 +15,11 @@ import {
   buildHealthcareCommandInput,
   buildIncidentCommandInput,
 } from "./packs/samplePayloads";
-import type { EvidenceExportStatus, PackCommandStatus } from "./packs/types";
+import type {
+  EvidenceAuthorityManifest,
+  EvidenceExportStatus,
+  PackCommandStatus,
+} from "./packs/types";
 
 type NetworkSnapshot = {
   network_mode: "OFFLINE" | "ONLINE_ALLOWLISTED";
@@ -36,6 +41,7 @@ type EvidenceOsRunResult = {
   bundle_path: string;
   bundle_sha256: string;
   missing_control_ids: string[];
+  evidence_authority: EvidenceAuthorityManifest;
 };
 
 type EvidenceOsRunInput = {
@@ -57,14 +63,14 @@ export function App() {
   const [selectedCapability, setSelectedCapability] = useState("ALL");
   const [artifactTitle, setArtifactTitle] = useState("Network policy evidence");
   const [artifactBody, setArtifactBody] = useState(
-    "Audit log excerpt proving offline mode and blocked egress.",
+    "Audit log excerpt from a controlled offline-policy simulation.",
   );
   const [artifactTags, setArtifactTags] = useState("OPS,NETWORK");
   const [controlFamilies, setControlFamilies] = useState(
     "Auditability,NetworkGovernance,Traceability",
   );
   const [claimText, setClaimText] = useState(
-    "The run stayed offline and blocked non-allowlisted egress requests.",
+    "A controlled simulation exercised the offline block path; no live traffic.",
   );
 
   const [futurePackRunning, setFuturePackRunning] = useState<string | null>(null);
@@ -274,6 +280,7 @@ export function App() {
                   ? runResult.missing_control_ids.join(", ")
                   : "None"}
               </p>
+              <EvidenceAuthorityNotice authority={runResult.evidence_authority} />
             </div>
           )}
         </section>

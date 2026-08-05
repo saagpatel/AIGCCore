@@ -1,10 +1,11 @@
-use aigc_core::adapters::pinning::{PinningLevel, ModelSnapshot};
+use aigc_core::adapters::pinning::{ModelSnapshot, PinningLevel};
 use aigc_core::audit::event::{Actor, AuditEvent};
 use aigc_core::audit::log::AuditLog;
 use aigc_core::determinism::json_canonical;
 use aigc_core::determinism::run_id::sha256_hex;
 use aigc_core::eval::runner::EvalRunner;
 use aigc_core::evidence_bundle::artifact_hashes::{render_artifact_hashes_csv, ArtifactHashRow};
+use aigc_core::evidence_bundle::authority::EvidenceAuthorityManifest;
 use aigc_core::evidence_bundle::builder::EvidenceBundleBuilder;
 use aigc_core::evidence_bundle::schemas::*;
 use aigc_core::evidenceos::model::{CitationInput, EvidenceItem, NarrativeClaimInput};
@@ -13,7 +14,22 @@ use aigc_core::policy::network_snapshot::{AdapterEndpointSnapshot, NetworkSnapsh
 use aigc_core::policy::types::{InputExportProfile, NetworkMode, PolicyMode, ProofLevel};
 use aigc_core::validator::BundleValidator;
 use serde_json::json;
+use std::fs;
 use std::path::Path;
+
+fn test_authority(run_id: &str) -> EvidenceAuthorityManifest {
+    EvidenceAuthorityManifest::controlled_simulation(
+        run_id,
+        "aigccore-test:evidenceos_pack",
+        "test-revision",
+        "test-executable",
+        sha256_hex(b"test-executable"),
+        sha256_hex(b"test-arguments"),
+        sha256_hex(b"test-environment"),
+        "2026-01-01T00:00:00Z",
+        "2026-01-02T00:00:00Z",
+    )
+}
 
 #[test]
 fn evidenceos_bundle_validates_and_is_deterministic() {
@@ -24,7 +40,8 @@ fn evidenceos_bundle_validates_and_is_deterministic() {
     let zip_2 = temp.path().join("bundle_2.zip");
 
     let inputs_1 = make_inputs(&bundle_root_1).unwrap();
-    let inputs_2 = make_inputs(&bundle_root_2).unwrap();
+    let mut inputs_2 = make_inputs(&bundle_root_2).unwrap();
+    inputs_2.audit_log_ndjson = inputs_2.audit_log_ndjson.replace('\n', "\r\n");
 
     EvidenceBundleBuilder::build_dir(&bundle_root_1, &inputs_1).unwrap();
     EvidenceBundleBuilder::build_dir(&bundle_root_2, &inputs_2).unwrap();
@@ -39,8 +56,85 @@ fn evidenceos_bundle_validates_and_is_deterministic() {
 
     let eval = EvalRunner::new_v3().unwrap();
     let gates = eval.run_all_for_bundle(&zip_1, PolicyMode::STRICT).unwrap();
-    assert!(gates.iter().any(|g| g.gate_id == "EVIDENCEOS.OUTPUTS_PRESENT_V1" && g.result == "PASS"));
-    assert!(gates.iter().any(|g| g.gate_id == "EVIDENCEOS.MAPPING_REVIEW_PRESENT_V1" && g.result == "PASS"));
+    assert!(gates
+        .iter()
+        .any(|g| g.gate_id == "EVIDENCEOS.OUTPUTS_PRESENT_V1" && g.result == "PASS"));
+    assert!(gates
+        .iter()
+        .any(|g| g.gate_id == "EVIDENCEOS.MAPPING_REVIEW_PRESENT_V1" && g.result == "PASS"));
+}
+
+#[test]
+fn legacy_run_manifest_v1_is_inspectable_but_non_authorizing() {
+    let temp = tempfile::tempdir().unwrap();
+    let bundle_root = temp.path().join("legacy_bundle");
+    let bundle_zip = temp.path().join("legacy_bundle.zip");
+    let mut inputs = make_inputs(&bundle_root).unwrap();
+    inputs.bundle_info.schema_versions.run_manifest = "RUN_MANIFEST_V1".to_string();
+
+    EvidenceBundleBuilder::build_dir(&bundle_root, &inputs).unwrap();
+    remove_evidence_authority(&bundle_root);
+    EvidenceBundleBuilder::build_zip(&bundle_root, &bundle_zip).unwrap();
+
+    let summary = BundleValidator::new_v3()
+        .validate_zip(&bundle_zip, PolicyMode::STRICT)
+        .unwrap();
+    let authority_check = summary
+        .checks
+        .iter()
+        .find(|check| check.check_id == "CHK.EVIDENCE.AUTHORITY_CONTRACT")
+        .expect("authority check must remain visible for a legacy bundle");
+
+    assert_eq!(summary.overall, "FAIL");
+    assert_eq!(authority_check.severity, "BLOCKER");
+    assert_eq!(authority_check.result, "FAIL");
+    assert_eq!(
+        authority_check.message,
+        "legacy RUN_MANIFEST_V1 is inspectable but non-authorizing; migrate to RUN_MANIFEST_V2 with explicit evidence authority"
+    );
+    assert!(summary.checks.iter().any(|check| {
+        check.check_id == "CHK.BUNDLE.REQUIRED_FILES" && check.result == "PASS"
+    }));
+}
+
+#[test]
+fn run_manifest_v2_without_authority_fails_closed() {
+    let temp = tempfile::tempdir().unwrap();
+    let bundle_root = temp.path().join("missing_authority_bundle");
+    let bundle_zip = temp.path().join("missing_authority_bundle.zip");
+    let inputs = make_inputs(&bundle_root).unwrap();
+
+    EvidenceBundleBuilder::build_dir(&bundle_root, &inputs).unwrap();
+    remove_evidence_authority(&bundle_root);
+    EvidenceBundleBuilder::build_zip(&bundle_root, &bundle_zip).unwrap();
+
+    let summary = BundleValidator::new_v3()
+        .validate_zip(&bundle_zip, PolicyMode::STRICT)
+        .unwrap();
+    let authority_check = summary
+        .checks
+        .iter()
+        .find(|check| check.check_id == "CHK.EVIDENCE.AUTHORITY_CONTRACT")
+        .expect("authority check must fail closed");
+
+    assert_eq!(summary.overall, "FAIL");
+    assert_eq!(authority_check.result, "FAIL");
+    assert!(authority_check
+        .message
+        .contains("failed to read run_manifest.json"));
+    assert!(authority_check.message.contains("evidence_authority"));
+}
+
+fn remove_evidence_authority(bundle_root: &Path) {
+    let manifest_path = bundle_root.join("run_manifest.json");
+    let mut manifest: serde_json::Value =
+        serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
+    let removed = manifest
+        .as_object_mut()
+        .expect("run manifest must be an object")
+        .remove("evidence_authority");
+    assert!(removed.is_some(), "fixture must begin with bound authority");
+    fs::write(&manifest_path, serde_json::to_vec_pretty(&manifest).unwrap()).unwrap();
 }
 
 fn make_inputs(bundle_root: &Path) -> Result<EvidenceBundleInputs, Box<dyn std::error::Error>> {
@@ -72,7 +166,8 @@ fn make_inputs(bundle_root: &Path) -> Result<EvidenceBundleInputs, Box<dyn std::
         }],
         narrative_claims: vec![NarrativeClaimInput {
             claim_id: "C0001".to_string(),
-            text: "The run stayed offline and recorded blocked egress attempts.".to_string(),
+            text: "The control simulation exercised the offline block path without live traffic."
+                .to_string(),
             citations: vec![CitationInput {
                 artifact_id: artifact_id.clone(),
                 locator_type: "PDF_TEXT_SPAN_V1".to_string(),
@@ -90,18 +185,35 @@ fn make_inputs(bundle_root: &Path) -> Result<EvidenceBundleInputs, Box<dyn std::
     let audit_path = bundle_root.join("audit.ndjson");
     let mut audit = AuditLog::open_or_create(&audit_path)?;
     let base_events = vec![
-        ("NETWORK_MODE_SET", Actor::User, json!({"network_mode":"OFFLINE","proof_level":"OFFLINE_STRICT","ui_remote_fetch_disabled":true})),
-        ("ALLOWLIST_UPDATED", Actor::System, json!({"allowlist_hash_sha256": sha256_hex(b""), "allowlist_count":0})),
-        ("EGRESS_REQUEST_BLOCKED", Actor::System, json!({
-            "destination":{"scheme":"https","host":"example.invalid","port":443,"path":"/"},
-            "block_reason":"OFFLINE_MODE",
-            "request_hash_sha256": sha256_hex(b"blocked")
-        })),
-        ("VAULT_ENCRYPTION_STATUS", Actor::System, json!({
-            "encryption_at_rest": true,
-            "algorithm": "XCHACHA20_POLY1305",
-            "key_storage": "FILE_FALLBACK"
-        })),
+        (
+            "NETWORK_MODE_SET",
+            Actor::User,
+            json!({"network_mode":"OFFLINE","proof_level":"OFFLINE_STRICT","ui_remote_fetch_disabled":true}),
+        ),
+        (
+            "ALLOWLIST_UPDATED",
+            Actor::System,
+            json!({"allowlist_hash_sha256": sha256_hex(b""), "allowlist_count":0}),
+        ),
+        (
+            "EGRESS_REQUEST_BLOCKED",
+            Actor::System,
+            json!({
+                "destination":{"scheme":"https","host":"example.invalid","port":443,"path":"/"},
+                "block_reason":"OFFLINE_MODE",
+                "request_hash_sha256": sha256_hex(b"blocked"),
+                "evidence_origin":"CONTROL_SIMULATION"
+            }),
+        ),
+        (
+            "VAULT_ENCRYPTION_STATUS",
+            Actor::System,
+            json!({
+                "encryption_at_rest": true,
+                "algorithm": "XCHACHA20_POLY1305",
+                "key_storage": "FILE_FALLBACK"
+            }),
+        ),
     ];
     for (event_type, actor, details) in base_events {
         audit.append(AuditEvent {
@@ -184,6 +296,7 @@ fn make_inputs(bundle_root: &Path) -> Result<EvidenceBundleInputs, Box<dyn std::
         run_manifest: RunManifest {
             run_id: run_id.clone(),
             vault_id: vault_id.clone(),
+            evidence_authority: test_authority(&run_id),
             determinism: DeterminismManifest {
                 enabled: true,
                 manifest_inputs_fingerprint: run_fingerprint,
@@ -204,7 +317,7 @@ fn make_inputs(bundle_root: &Path) -> Result<EvidenceBundleInputs, Box<dyn std::
         bundle_info: BundleInfo {
             bundle_version: "1.0.0".to_string(),
             schema_versions: SchemaVersions {
-                run_manifest: "RUN_MANIFEST_V1".to_string(),
+                run_manifest: "RUN_MANIFEST_V2".to_string(),
                 eval_report: "EVAL_REPORT_V1".to_string(),
                 citations_map: "LOCATOR_SCHEMA_V1".to_string(),
                 redactions_map: "REDACTION_SCHEMA_V1".to_string(),
