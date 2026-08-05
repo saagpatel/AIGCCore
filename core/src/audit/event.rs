@@ -110,6 +110,22 @@ fn validate_event_taxonomy(event: &AuditEvent) -> CoreResult<()> {
             )));
         }
     }
+    if matches!(
+        event.event_type.as_str(),
+        "EGRESS_REQUEST_ALLOWED" | "EGRESS_REQUEST_BLOCKED"
+    ) {
+        let origin = event
+            .details
+            .get("evidence_origin")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default();
+        if !matches!(origin, "CONTROL_SIMULATION" | "RUNTIME_OBSERVATION") {
+            return Err(CoreError::InvalidInput(format!(
+                "event {} requires explicit evidence_origin CONTROL_SIMULATION or RUNTIME_OBSERVATION",
+                event.event_type
+            )));
+        }
+    }
     Ok(())
 }
 
@@ -158,8 +174,18 @@ fn required_detail_keys(event_type: &str) -> &'static [&'static str] {
             "error_message_redacted",
         ],
         "NO_AI_MODE_USED" => &["reason", "affected_tasks"],
-        "EGRESS_REQUEST_ALLOWED" => &["destination", "allowlist_rule_id", "request_hash_sha256"],
-        "EGRESS_REQUEST_BLOCKED" => &["destination", "block_reason", "request_hash_sha256"],
+        "EGRESS_REQUEST_ALLOWED" => &[
+            "destination",
+            "allowlist_rule_id",
+            "request_hash_sha256",
+            "evidence_origin",
+        ],
+        "EGRESS_REQUEST_BLOCKED" => &[
+            "destination",
+            "block_reason",
+            "request_hash_sha256",
+            "evidence_origin",
+        ],
         "REDACTION_APPLIED" => &[
             "artifact_id",
             "redaction_type",
