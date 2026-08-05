@@ -7,7 +7,7 @@ use aigc_core::evidence_bundle::authority::{
 use serde_json::json;
 
 const AUDIT: &str =
-    "{\"event_type\":\"EGRESS_REQUEST_BLOCKED\",\"details\":{\"evidence_origin\":\"CONTROL_SIMULATION\"}}\n";
+    "{\"event_type\":\"EGRESS_REQUEST_BLOCKED\",\"run_id\":\"case-a\",\"details\":{\"evidence_origin\":\"CONTROL_SIMULATION\"}}\n";
 
 fn authority() -> EvidenceAuthorityManifest {
     let mut authority = EvidenceAuthorityManifest::controlled_simulation(
@@ -191,7 +191,7 @@ fn audit_mismatch_and_simulation_overclaim_fail_validation() {
     assert!(overlong.validate_internal("case-a", AUDIT).is_err());
 
     let runtime_audit =
-        "{\"event_type\":\"EGRESS_REQUEST_BLOCKED\",\"details\":{\"evidence_origin\":\"RUNTIME_OBSERVATION\"}}\n";
+        "{\"event_type\":\"EGRESS_REQUEST_BLOCKED\",\"run_id\":\"case-a\",\"details\":{\"evidence_origin\":\"RUNTIME_OBSERVATION\"}}\n";
     let mut contradictory = authority();
     contradictory.bind_audit_log(runtime_audit);
     assert!(contradictory
@@ -202,7 +202,7 @@ fn audit_mismatch_and_simulation_overclaim_fail_validation() {
 #[test]
 fn unsupported_origins_cannot_authorize_live_or_production_claims() {
     let runtime_audit =
-        "{\"event_type\":\"EGRESS_REQUEST_BLOCKED\",\"details\":{\"evidence_origin\":\"RUNTIME_OBSERVATION\"}}\n";
+        "{\"event_type\":\"EGRESS_REQUEST_BLOCKED\",\"run_id\":\"case-a\",\"details\":{\"evidence_origin\":\"RUNTIME_OBSERVATION\"}}\n";
     for origin in [
         EvidenceOrigin::RuntimeObservation,
         EvidenceOrigin::Fixture,
@@ -227,6 +227,33 @@ fn unsupported_origins_cannot_authorize_live_or_production_claims() {
             candidate.evaluate_claim(CLAIM_LIVE_EXECUTION, &claim_context),
             EvidenceClaimDecision::Unknown,
             "{origin:?} must remain non-authorizing"
+        );
+    }
+}
+
+#[test]
+fn control_simulation_egress_must_be_blocked_and_case_local() {
+    let invalid_audits = [
+        (
+            "allowed event",
+            "{\"event_type\":\"EGRESS_REQUEST_ALLOWED\",\"run_id\":\"case-a\",\"details\":{\"evidence_origin\":\"CONTROL_SIMULATION\"}}\n",
+        ),
+        (
+            "foreign case",
+            "{\"event_type\":\"EGRESS_REQUEST_BLOCKED\",\"run_id\":\"case-b\",\"details\":{\"evidence_origin\":\"CONTROL_SIMULATION\"}}\n",
+        ),
+        (
+            "missing case",
+            "{\"event_type\":\"EGRESS_REQUEST_BLOCKED\",\"details\":{\"evidence_origin\":\"CONTROL_SIMULATION\"}}\n",
+        ),
+    ];
+
+    for (label, audit) in invalid_audits {
+        let mut candidate = authority();
+        candidate.bind_audit_log(audit);
+        assert!(
+            candidate.validate_internal("case-a", audit).is_err(),
+            "{label} must not authorize case-a"
         );
     }
 }

@@ -384,7 +384,7 @@ impl EvidenceAuthorityManifest {
             false,
             false,
         )?;
-        validate_control_simulation_audit(audit_log_ndjson)?;
+        validate_control_simulation_audit(audit_log_ndjson, expected_case_id)?;
         Ok(())
     }
 
@@ -649,8 +649,11 @@ fn require_exact_tool_ids<const N: usize>(
     Ok(())
 }
 
-fn validate_control_simulation_audit(audit_log_ndjson: &str) -> Result<(), String> {
-    let mut egress_event_count = 0usize;
+fn validate_control_simulation_audit(
+    audit_log_ndjson: &str,
+    expected_case_id: &str,
+) -> Result<(), String> {
+    let mut blocked_egress_event_count = 0usize;
     for (line_number, line) in audit_log_ndjson.lines().enumerate() {
         if line.trim().is_empty() {
             continue;
@@ -665,11 +668,20 @@ fn validate_control_simulation_audit(audit_log_ndjson: &str) -> Result<(), Strin
             .get("event_type")
             .and_then(serde_json::Value::as_str)
             .unwrap_or_default();
+        let run_id = event
+            .get("run_id")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default();
+        if run_id != expected_case_id {
+            return Err(format!(
+                "control-simulation audit line {} run_id does not match authority case_id",
+                line_number + 1
+            ));
+        }
         if matches!(
             event_type,
             "EGRESS_REQUEST_ALLOWED" | "EGRESS_REQUEST_BLOCKED"
         ) {
-            egress_event_count += 1;
             let origin = event
                 .pointer("/details/evidence_origin")
                 .and_then(serde_json::Value::as_str);
@@ -678,11 +690,18 @@ fn validate_control_simulation_audit(audit_log_ndjson: &str) -> Result<(), Strin
                     "control-simulation authority conflicts with {event_type} audit origin"
                 ));
             }
+            if event_type != "EGRESS_REQUEST_BLOCKED" {
+                return Err(
+                    "control-simulation authority requires blocked, not allowed, egress evidence"
+                        .to_string(),
+                );
+            }
+            blocked_egress_event_count += 1;
         }
     }
-    if egress_event_count == 0 {
+    if blocked_egress_event_count == 0 {
         return Err(
-            "control-simulation authority requires its own control-simulation egress audit event"
+            "control-simulation authority requires a case-local blocked egress audit event"
                 .to_string(),
         );
     }
