@@ -63,14 +63,14 @@ export function App() {
   const [selectedCapability, setSelectedCapability] = useState("ALL");
   const [artifactTitle, setArtifactTitle] = useState("Network policy evidence");
   const [artifactBody, setArtifactBody] = useState(
-    "Audit log excerpt describing a controlled simulation of the offline policy path.",
+    "Audit log excerpt from a controlled offline-policy simulation.",
   );
   const [artifactTags, setArtifactTags] = useState("OPS,NETWORK");
   const [controlFamilies, setControlFamilies] = useState(
     "Auditability,NetworkGovernance,Traceability",
   );
   const [claimText, setClaimText] = useState(
-    "The controlled policy simulation exercised the offline block path; it did not observe live network traffic.",
+    "A controlled simulation exercised the offline block path; no live traffic.",
   );
 
   const [futurePackRunning, setFuturePackRunning] = useState<string | null>(null);
