@@ -3,6 +3,6 @@
   "adapter": "node-ts",
   "branch": "codex/bootstrap-tests-docs-v1",
   "generated_at": "2026-02-17T05:42:28.805Z",
-  "generated_by": "/Users/d/.codex/scripts/bootstrap/global_tests_docs_bootstrap.mjs",
+  "generated_by": "~/.codex/scripts/bootstrap/global_tests_docs_bootstrap.mjs",
   "changed_files": []
 }
