@@ -169,7 +169,7 @@ Purpose: Defines what it means for an Evidence Bundle v1 to be “valid” and e
     {
       "check_id": "CHK.EVAL.REPORT_AND_GATES",
       "severity": "BLOCKER",
-      "description": "Eval report exists, references a registry version, and gate IDs are valid.",
+      "description": "Final eval report is non-empty, registry-bound, policy-complete, and consistent with the run manifest.",
       "validate": {
         "json_path": "eval_report.json",
         "required_fields": [
@@ -177,7 +177,14 @@ Purpose: Defines what it means for an Evidence Bundle v1 to be “valid” and e
           "gates"
         ],
         "gate_ids_must_exist_in_registry": true,
-        "allowed_registry_versions": [
+        "authorizing_registry_version": "gates_registry_v3",
+        "legacy_registry_versions_are_diagnostic_only": true,
+        "gates_must_be_non_empty": true,
+        "v3_applicable_gate_set_must_be_complete": true,
+        "v3_gate_fields_must_match_registry": true,
+        "overall_status_must_match_gate_results": true,
+        "run_manifest_gate_status_must_match_report": true,
+        "diagnostic_registry_versions": [
           "gates_registry_v1",
           "gates_registry_v2"
         ]

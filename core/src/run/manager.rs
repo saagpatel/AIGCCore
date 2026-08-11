@@ -106,7 +106,13 @@ impl RunManager {
 
         let eval_runner = EvalRunner::new_v3()?;
         let gate_results = eval_runner.run_all_for_bundle(&preflight.zip, req.policy_mode)?;
+        let eval_report = eval_runner.report_from_results(
+            &gate_results,
+            req.policy_mode,
+            &bundle_inputs.pack_id,
+        )?;
         let mut blocker_fails = Vec::new();
+        let mut all_fails = Vec::new();
         for g in &gate_results {
             self.audit.append(AuditEvent {
                 ts_utc: now_rfc3339_utc(),
@@ -127,6 +133,9 @@ impl RunManager {
             if g.severity == "BLOCKER" && g.result == "FAIL" {
                 blocker_fails.push(g.gate_id.clone());
             }
+            if g.result == "FAIL" {
+                all_fails.push(g.gate_id.clone());
+            }
         }
         self.audit.append(AuditEvent {
             ts_utc: now_rfc3339_utc(),
@@ -137,28 +146,28 @@ impl RunManager {
             details: serde_json::json!({
                 "gates_executed": gate_results.len(),
                 "gates_failed_blocker": blocker_fails.len(),
-                "gates_failed_total": blocker_fails.len()
+                "gates_failed_total": all_fails.len()
             }),
             prev_event_hash: String::new(),
             event_hash: String::new(),
         })?;
 
         // Policy gate checks from evaluated gates.
-        let citations_ok = gate_results
-            .iter()
-            .find(|g| g.gate_id == "CITATIONS.STRICT_ENFORCED_V1")
-            .map(|g| g.result == "PASS" || g.result == "NOT_APPLICABLE")
-            .unwrap_or(true);
-        let redactions_ok = gate_results
-            .iter()
-            .find(|g| g.gate_id == "REDACTION.REQUIRED_APPLIED_V1")
-            .map(|g| g.result == "PASS" || g.result == "NOT_APPLICABLE")
-            .unwrap_or(true);
-        let determinism_ok = gate_results
-            .iter()
-            .find(|g| g.gate_id == "DETERMINISM.ZIP_PACKAGING_V1")
-            .map(|g| g.result == "PASS" || g.result == "NOT_APPLICABLE")
-            .unwrap_or(true);
+        let citations_ok = eval_runner.gate_satisfied_for_export(
+            &eval_report,
+            "CITATIONS.STRICT_ENFORCED_V1",
+            req.policy_mode,
+        );
+        let redactions_ok = eval_runner.gate_satisfied_for_export(
+            &eval_report,
+            "REDACTION.REQUIRED_APPLIED_V1",
+            req.policy_mode,
+        );
+        let determinism_ok = eval_runner.gate_satisfied_for_export(
+            &eval_report,
+            "DETERMINISM.ZIP_PACKAGING_V1",
+            req.policy_mode,
+        );
 
         if let Err(reason) = evaluate_export_gate(&ExportGateInputs {
             policy_mode: req.policy_mode,
@@ -205,6 +214,8 @@ impl RunManager {
             event_hash: String::new(),
         })?;
         let mut final_bundle_inputs = bundle_inputs.clone();
+        final_bundle_inputs.run_manifest.eval.gate_status = eval_report.overall_status.clone();
+        final_bundle_inputs.eval_report = eval_report;
         final_bundle_inputs.audit_log_ndjson = self.audit.read_all_ndjson()?;
         if let Err(error) = remove_stale_export_on_error(
             bundle_zip,

@@ -75,15 +75,33 @@ fn run_pack_validation_cycle(
     bundle_root_2: &PathBuf,
     bundle_zip: &PathBuf,
     bundle_zip_2: &PathBuf,
-    inputs: EvidenceBundleInputs,
-    inputs_2: EvidenceBundleInputs,
+    mut inputs: EvidenceBundleInputs,
+    mut inputs_2: EvidenceBundleInputs,
     policy: PolicyMode,
 ) -> bool {
+    // Build one non-authorizing preflight bundle so the evaluator can compute the
+    // report that will be embedded in both deterministic final bundles.
     EvidenceBundleBuilder::build_dir(bundle_root, &inputs).expect("build bundle dir");
-    let zip_sha256 = EvidenceBundleBuilder::build_zip(bundle_root, bundle_zip).expect("zip bundle");
-    EvidenceBundleBuilder::build_dir(bundle_root_2, &inputs_2).expect("build bundle dir 2");
+    EvidenceBundleBuilder::build_zip(bundle_root, bundle_zip).expect("zip preflight bundle");
+
+    let eval = EvalRunner::new_v3().expect("registry v3");
+    let gate_results = eval
+        .run_all_for_bundle(bundle_zip, policy)
+        .expect("run gates");
+    let eval_report = eval
+        .report_from_results(&gate_results, policy, &inputs.pack_id)
+        .expect("materialize eval report");
+    inputs.run_manifest.eval.gate_status = eval_report.overall_status.clone();
+    inputs.eval_report = eval_report.clone();
+    inputs_2.run_manifest.eval.gate_status = eval_report.overall_status.clone();
+    inputs_2.eval_report = eval_report;
+
+    EvidenceBundleBuilder::build_dir(bundle_root, &inputs).expect("build final bundle dir");
+    let zip_sha256 = EvidenceBundleBuilder::build_zip(bundle_root, bundle_zip)
+        .expect("zip final bundle");
+    EvidenceBundleBuilder::build_dir(bundle_root_2, &inputs_2).expect("build final bundle dir 2");
     let zip_sha256_2 =
-        EvidenceBundleBuilder::build_zip(bundle_root_2, bundle_zip_2).expect("zip bundle 2");
+        EvidenceBundleBuilder::build_zip(bundle_root_2, bundle_zip_2).expect("zip final bundle 2");
     if zip_sha256 != zip_sha256_2 {
         eprintln!(
             "{} DETERMINISM_EXPORT_BYTE_STABILITY FAIL (sha256 {} != {})",
@@ -104,10 +122,6 @@ fn run_pack_validation_cycle(
         println!("{} CHECK {} {} {}", label, c.check_id, c.result, c.message);
     }
 
-    let eval = EvalRunner::new_v3().expect("registry v3");
-    let gate_results = eval
-        .run_all_for_bundle(bundle_zip, policy)
-        .expect("run gates");
     let mut any_blocker_fail = false;
     for g in &gate_results {
         println!("{} GATE {} {} {}", label, g.gate_id, g.result, g.message);

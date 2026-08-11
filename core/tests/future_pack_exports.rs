@@ -3,6 +3,7 @@ use aigc_core::audit::event::{Actor, AuditEvent};
 use aigc_core::audit::log::AuditLog;
 use aigc_core::determinism::json_canonical;
 use aigc_core::determinism::run_id::sha256_hex;
+use aigc_core::eval::runner::EvalRunner;
 use aigc_core::evidence_bundle::artifact_hashes::{render_artifact_hashes_csv, ArtifactHashRow};
 use aigc_core::evidence_bundle::authority::EvidenceAuthorityManifest;
 use aigc_core::evidence_bundle::schemas::*;
@@ -301,6 +302,31 @@ fn export_bundle(
     let validator = BundleValidator::new_v3();
     let summary = validator.validate_zip(bundle_zip, PolicyMode::STRICT)?;
     assert_eq!(summary.overall, "PASS");
+    let eval_report: EvalReport =
+        serde_json::from_str(&read_zip_entry_text(bundle_zip, "eval_report.json")?)?;
+    let run_manifest: RunManifest =
+        serde_json::from_str(&read_zip_entry_text(bundle_zip, "run_manifest.json")?)?;
+    let registry = EvalRunner::new_v3()?.registry;
+    let mut expected_gate_ids: Vec<String> = registry
+        .gates
+        .into_iter()
+        .filter(|gate| gate.applies_to_policies.iter().any(|policy| policy == "STRICT"))
+        .map(|gate| gate.gate_id)
+        .collect();
+    let mut actual_gate_ids: Vec<String> = eval_report
+        .gates
+        .iter()
+        .map(|gate| gate.gate_id.clone())
+        .collect();
+    expected_gate_ids.sort();
+    actual_gate_ids.sort();
+    assert_eq!(actual_gate_ids, expected_gate_ids);
+    assert_eq!(run_manifest.eval.gate_status, eval_report.overall_status);
+    assert!(eval_report.gates.iter().any(|gate| {
+        gate.gate_id == "OFFLINE_ENFORCEMENT.ALLOWLIST_MATCH_V1"
+            && gate.status == "NOT_APPLICABLE"
+            && gate.message.contains("no live egress observation")
+    }));
     Ok(bundle_sha)
 }
 
