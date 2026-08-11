@@ -9,6 +9,9 @@ use std::io::Read;
 use std::path::Path;
 use zip::ZipArchive;
 
+const UNMAPPED_GATE_MESSAGE_PREFIX: &str =
+    "Applicable gate has no evaluator implementation: ";
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GateRunResult {
     pub gate_id: String,
@@ -73,6 +76,7 @@ fn map_validator_to_gates(
             continue;
         }
         // Minimal mapping based on category/check IDs.
+        let mut severity = g.severity.clone();
         let (result, msg) = match g.gate_id.as_str() {
             "BUNDLE_FORMAT.REQUIRED_FILES_V1" => summary.result_for_checks_prefix("CHK.BUNDLE."),
             "AUDIT_HASH_CHAIN.VERIFY_V1" => {
@@ -101,16 +105,21 @@ fn map_validator_to_gates(
             ),
             "EVIDENCEOS.OUTPUTS_PRESENT_V1" => evidence_outputs_gate.clone(),
             "EVIDENCEOS.MAPPING_REVIEW_PRESENT_V1" => mapping_review_gate.clone(),
-            _ => (
-                "NOT_APPLICABLE".to_string(),
-                "Gate not implemented in Phase 2 runner".to_string(),
-            ),
+            _ => {
+                // An applicable registry entry without an evaluator is a coverage failure,
+                // regardless of the severity declared by the unmapped definition.
+                severity = "BLOCKER".to_string();
+                (
+                    "FAIL".to_string(),
+                    format!("{UNMAPPED_GATE_MESSAGE_PREFIX}{}", g.gate_id),
+                )
+            }
         };
 
         results.push(GateRunResult {
             gate_id: g.gate_id.clone(),
             result,
-            severity: g.severity.clone(),
+            severity,
             message: msg,
             evidence_pointers: g.evidence_required.clone(),
         });
@@ -330,7 +339,132 @@ fn evaluate_offline_allowlist_from_ndjson(ndjson: &str) -> (String, String) {
 
 #[cfg(test)]
 mod tests {
-    use super::evaluate_offline_allowlist_from_ndjson;
+    use super::{
+        evaluate_offline_allowlist_from_ndjson, map_validator_to_gates,
+        UNMAPPED_GATE_MESSAGE_PREFIX,
+    };
+    use crate::eval::registry::{GateDef, GateRegistry};
+    use crate::policy::types::PolicyMode;
+    use crate::validator::ValidationSummary;
+
+    fn map_single_gate(
+        gate_id: &str,
+        severity: &str,
+        applies_to_policies: &[&str],
+        policy: PolicyMode,
+    ) -> Vec<super::GateRunResult> {
+        let summary = ValidationSummary {
+            checklist_version: "test".to_string(),
+            policy: "test".to_string(),
+            overall: "PASS".to_string(),
+            checks: Vec::new(),
+        };
+        let registry = GateRegistry {
+            registry_version: "test".to_string(),
+            gates: vec![GateDef {
+                gate_id: gate_id.to_string(),
+                category: "TEST".to_string(),
+                severity: severity.to_string(),
+                applies_to_policies: applies_to_policies
+                    .iter()
+                    .map(|value| (*value).to_string())
+                    .collect(),
+                pass_criteria: serde_json::Value::Null,
+                evidence_required: Vec::new(),
+            }],
+            generated_at_ms: 0,
+        };
+
+        map_validator_to_gates(
+            &summary,
+            &registry,
+            policy,
+            ("PASS".to_string(), "test".to_string()),
+            ("PASS".to_string(), "test".to_string()),
+            ("PASS".to_string(), "test".to_string()),
+        )
+    }
+
+    #[test]
+    fn applicable_unmapped_gate_fails_as_a_blocker() {
+        let results = map_single_gate(
+            "FUTURE.UNMAPPED_V1",
+            "MAJOR",
+            &["STRICT"],
+            PolicyMode::STRICT,
+        );
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].result, "FAIL");
+        assert_eq!(results[0].severity, "BLOCKER");
+        assert!(results[0].message.contains("FUTURE.UNMAPPED_V1"));
+    }
+
+    #[test]
+    fn explicit_pdf_gate_keeps_its_not_applicable_semantics() {
+        let results = map_single_gate(
+            "DETERMINISM.PDF_CAPABLE_V1",
+            "MAJOR",
+            &["STRICT"],
+            PolicyMode::STRICT,
+        );
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].result, "NOT_APPLICABLE");
+        assert_eq!(results[0].severity, "MAJOR");
+        assert_eq!(results[0].message, "No PDFs in self-audit bundle");
+    }
+
+    #[test]
+    fn unmapped_gate_for_another_policy_is_not_executed() {
+        let results = map_single_gate(
+            "FUTURE.BALANCED_ONLY_V1",
+            "BLOCKER",
+            &["BALANCED"],
+            PolicyMode::STRICT,
+        );
+
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn registry_v3_has_an_explicit_mapping_for_every_applicable_gate() {
+        let summary = ValidationSummary {
+            checklist_version: "test".to_string(),
+            policy: "STRICT".to_string(),
+            overall: "PASS".to_string(),
+            checks: Vec::new(),
+        };
+        let registry = crate::eval::registry::registry_v3().expect("registry v3");
+        let mut unmapped = Vec::new();
+        for policy in [
+            PolicyMode::STRICT,
+            PolicyMode::BALANCED,
+            PolicyMode::DRAFT_ONLY,
+        ] {
+            let results = map_validator_to_gates(
+                &summary,
+                &registry,
+                policy,
+                ("PASS".to_string(), "test".to_string()),
+                ("PASS".to_string(), "test".to_string()),
+                ("PASS".to_string(), "test".to_string()),
+            );
+            unmapped.extend(
+                results
+                    .into_iter()
+                    .filter(|result| result.message.starts_with(UNMAPPED_GATE_MESSAGE_PREFIX))
+                    .map(|result| result.gate_id),
+            );
+        }
+        unmapped.sort();
+        unmapped.dedup();
+
+        assert!(
+            unmapped.is_empty(),
+            "registry v3 contains unmapped gates: {unmapped:?}"
+        );
+    }
 
     #[test]
     fn allowlist_gate_passes_when_runtime_blocked_and_allowlist_events_present() {
