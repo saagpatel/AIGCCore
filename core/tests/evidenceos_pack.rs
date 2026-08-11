@@ -39,13 +39,25 @@ fn evidenceos_bundle_validates_and_is_deterministic() {
     let zip_1 = temp.path().join("bundle_1.zip");
     let zip_2 = temp.path().join("bundle_2.zip");
 
-    let inputs_1 = make_inputs(&bundle_root_1).unwrap();
+    let mut inputs_1 = make_inputs(&bundle_root_1).unwrap();
     let mut inputs_2 = make_inputs(&bundle_root_2).unwrap();
     inputs_2.audit_log_ndjson = inputs_2.audit_log_ndjson.replace('\n', "\r\n");
 
     EvidenceBundleBuilder::build_dir(&bundle_root_1, &inputs_1).unwrap();
-    EvidenceBundleBuilder::build_dir(&bundle_root_2, &inputs_2).unwrap();
+    EvidenceBundleBuilder::build_zip(&bundle_root_1, &zip_1).unwrap();
 
+    let eval = EvalRunner::new_v3().unwrap();
+    let gates = eval.run_all_for_bundle(&zip_1, PolicyMode::STRICT).unwrap();
+    let report = eval
+        .report_from_results(&gates, PolicyMode::STRICT, &inputs_1.pack_id)
+        .unwrap();
+    inputs_1.run_manifest.eval.gate_status = report.overall_status.clone();
+    inputs_1.eval_report = report.clone();
+    inputs_2.run_manifest.eval.gate_status = report.overall_status.clone();
+    inputs_2.eval_report = report;
+
+    EvidenceBundleBuilder::build_dir(&bundle_root_1, &inputs_1).unwrap();
+    EvidenceBundleBuilder::build_dir(&bundle_root_2, &inputs_2).unwrap();
     let hash_1 = EvidenceBundleBuilder::build_zip(&bundle_root_1, &zip_1).unwrap();
     let hash_2 = EvidenceBundleBuilder::build_zip(&bundle_root_2, &zip_2).unwrap();
     assert_eq!(hash_1, hash_2);
@@ -53,15 +65,35 @@ fn evidenceos_bundle_validates_and_is_deterministic() {
     let validator = BundleValidator::new_v3();
     let summary = validator.validate_zip(&zip_1, PolicyMode::STRICT).unwrap();
     assert_eq!(summary.overall, "PASS");
-
-    let eval = EvalRunner::new_v3().unwrap();
-    let gates = eval.run_all_for_bundle(&zip_1, PolicyMode::STRICT).unwrap();
     assert!(gates
         .iter()
         .any(|g| g.gate_id == "EVIDENCEOS.OUTPUTS_PRESENT_V1" && g.result == "PASS"));
     assert!(gates
         .iter()
         .any(|g| g.gate_id == "EVIDENCEOS.MAPPING_REVIEW_PRESENT_V1" && g.result == "PASS"));
+}
+
+#[test]
+fn placeholder_eval_report_is_rejected_by_final_validation() {
+    let temp = tempfile::tempdir().unwrap();
+    let bundle_root = temp.path().join("placeholder_eval_bundle");
+    let bundle_zip = temp.path().join("placeholder_eval_bundle.zip");
+    let inputs = make_inputs(&bundle_root).unwrap();
+
+    EvidenceBundleBuilder::build_dir(&bundle_root, &inputs).unwrap();
+    EvidenceBundleBuilder::build_zip(&bundle_root, &bundle_zip).unwrap();
+
+    let summary = BundleValidator::new_v3()
+        .validate_zip(&bundle_zip, PolicyMode::STRICT)
+        .unwrap();
+    let eval_check = summary
+        .checks
+        .iter()
+        .find(|check| check.check_id == "CHK.EVAL.REPORT_AND_GATES")
+        .expect("eval report check must be present");
+
+    assert_eq!(eval_check.result, "FAIL");
+    assert!(eval_check.message.contains("missing applicable gates"));
 }
 
 #[test]

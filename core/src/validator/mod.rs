@@ -1,11 +1,11 @@
 pub mod checklist;
 
 use crate::error::{CoreError, CoreResult};
-use crate::evidence_bundle::schemas::{BundleInfo, RunManifest};
+use crate::evidence_bundle::schemas::{BundleInfo, EvalGateResult, EvalReport, RunManifest};
 use crate::policy::types::PolicyMode;
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
 use std::io::{Read, Seek};
 use std::path::Path;
@@ -41,13 +41,22 @@ impl ValidationSummary {
     }
 
     pub fn result_for_checks_prefix(&self, prefix: &str) -> (String, String) {
+        let mut any_match = false;
         let mut any_fail = false;
         for c in &self.checks {
-            if c.check_id.starts_with(prefix) && c.result != "PASS" {
-                any_fail = true;
+            if c.check_id.starts_with(prefix) {
+                any_match = true;
+                if c.result != "PASS" {
+                    any_fail = true;
+                }
             }
         }
-        if any_fail {
+        if !any_match {
+            (
+                "FAIL".to_string(),
+                format!("missing check results for prefix {}", prefix),
+            )
+        } else if any_fail {
             (
                 "FAIL".to_string(),
                 format!("one or more {} checks failed", prefix),
@@ -71,6 +80,12 @@ pub struct BundleValidator {
     checklist: checklist::Checklist,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ValidationMode {
+    Final,
+    EvaluationPreflight,
+}
+
 impl BundleValidator {
     pub fn new_v3() -> Self {
         let checklist = checklist::checklist_v3();
@@ -81,6 +96,25 @@ impl BundleValidator {
         &self,
         bundle_zip: &Path,
         policy: PolicyMode,
+    ) -> CoreResult<ValidationSummary> {
+        self.validate_zip_with_mode(bundle_zip, policy, ValidationMode::Final)
+    }
+
+    /// Internal, non-authorizing validation used only to compute gate results before
+    /// an eval report exists. Every exported bundle must subsequently pass `validate_zip`.
+    pub(crate) fn validate_zip_for_evaluation_preflight(
+        &self,
+        bundle_zip: &Path,
+        policy: PolicyMode,
+    ) -> CoreResult<ValidationSummary> {
+        self.validate_zip_with_mode(bundle_zip, policy, ValidationMode::EvaluationPreflight)
+    }
+
+    fn validate_zip_with_mode(
+        &self,
+        bundle_zip: &Path,
+        policy: PolicyMode,
+        mode: ValidationMode,
     ) -> CoreResult<ValidationSummary> {
         let policy_s = match policy {
             PolicyMode::STRICT => "STRICT",
@@ -138,7 +172,10 @@ impl BundleValidator {
         checks_out.push(check_redaction_policy_gate(&mut zip, &paths, policy));
 
         // CHK.EVAL.REPORT_AND_GATES
-        checks_out.push(check_eval_report(&mut zip));
+        checks_out.push(match mode {
+            ValidationMode::Final => check_eval_report(&mut zip, policy),
+            ValidationMode::EvaluationPreflight => check_eval_report_preflight(&mut zip),
+        });
 
         // CHK.DETERMINISM.ZIP_RULES (major, conditional)
         checks_out.push(check_zip_determinism(&mut zip));
@@ -253,9 +290,7 @@ fn read_zip_entry_json<R: Read + Seek>(
     Ok(serde_json::from_slice(&bytes)?)
 }
 
-fn check_evidence_authority_contract<R: Read + Seek>(
-    zip: &mut ZipArchive<R>,
-) -> CheckResult {
+fn check_evidence_authority_contract<R: Read + Seek>(zip: &mut ZipArchive<R>) -> CheckResult {
     let fail = |message: String| CheckResult {
         check_id: "CHK.EVIDENCE.AUTHORITY_CONTRACT".to_string(),
         severity: "BLOCKER".to_string(),
@@ -292,9 +327,9 @@ fn check_evidence_authority_contract<R: Read + Seek>(
     if bundle_info.run_id != run_manifest.run_id {
         return fail("BUNDLE_INFO run_id does not match run_manifest run_id".to_string());
     }
-    let audit_log = match read_zip_entry_bytes(zip, "audit_log.ndjson")
-        .and_then(|bytes| String::from_utf8(bytes).map_err(|error| CoreError::InvalidInput(error.to_string())))
-    {
+    let audit_log = match read_zip_entry_bytes(zip, "audit_log.ndjson").and_then(|bytes| {
+        String::from_utf8(bytes).map_err(|error| CoreError::InvalidInput(error.to_string()))
+    }) {
         Ok(value) => value,
         Err(error) => return fail(format!("failed to read audit_log.ndjson: {error}")),
     };
@@ -953,54 +988,249 @@ fn bbox_contains(outer: &serde_json::Value, inner: &serde_json::Value) -> bool {
     ox <= ix && oy <= iy && orx >= irx && ory >= iry
 }
 
-fn check_eval_report<R: Read + Seek>(zip: &mut ZipArchive<R>) -> CheckResult {
-    let v = match read_zip_entry_json(zip, "eval_report.json") {
-        Ok(v) => v,
-        Err(e) => {
+fn check_eval_report<R: Read + Seek>(zip: &mut ZipArchive<R>, policy: PolicyMode) -> CheckResult {
+    let report: EvalReport = match read_zip_entry_json(zip, "eval_report.json")
+        .and_then(|value| serde_json::from_value(value).map_err(CoreError::from))
+    {
+        Ok(report) => report,
+        Err(error) => {
             return fail(
                 "CHK.EVAL.REPORT_AND_GATES",
-                format!("failed to read eval_report.json: {}", e),
+                format!("failed to read eval_report.json: {}", error),
             )
         }
     };
-    if v.get("overall_status").is_none() || v.get("gates").is_none() {
+    let manifest = match read_zip_entry_json(zip, "run_manifest.json") {
+        Ok(manifest) => manifest,
+        Err(error) => {
+            return fail(
+                "CHK.EVAL.REPORT_AND_GATES",
+                format!("failed to read run_manifest.json: {}", error),
+            )
+        }
+    };
+    let manifest_gate_status = match manifest.pointer("/eval/gate_status").and_then(|v| v.as_str()) {
+        Some(status) => status,
+        None => {
+            return fail(
+                "CHK.EVAL.REPORT_AND_GATES",
+                "run_manifest.json is missing string eval.gate_status".to_string(),
+            )
+        }
+    };
+    let bundle_info = match read_zip_entry_json(zip, "BUNDLE_INFO.json") {
+        Ok(bundle_info) => bundle_info,
+        Err(error) => {
+            return fail(
+                "CHK.EVAL.REPORT_AND_GATES",
+                format!("failed to read BUNDLE_INFO.json: {}", error),
+            )
+        }
+    };
+    let pack_id = match bundle_info.get("pack_id").and_then(|v| v.as_str()) {
+        Some(pack_id) if !pack_id.is_empty() => pack_id,
+        _ => {
+            return fail(
+                "CHK.EVAL.REPORT_AND_GATES",
+                "BUNDLE_INFO.json is missing string pack_id".to_string(),
+            )
+        }
+    };
+
+    match validate_eval_report(&report, manifest_gate_status, policy, pack_id) {
+        Ok(()) => pass("CHK.EVAL.REPORT_AND_GATES"),
+        Err(message) => fail("CHK.EVAL.REPORT_AND_GATES", message),
+    }
+}
+
+fn check_eval_report_preflight<R: Read + Seek>(zip: &mut ZipArchive<R>) -> CheckResult {
+    let report: EvalReport = match read_zip_entry_json(zip, "eval_report.json")
+        .and_then(|value| serde_json::from_value(value).map_err(CoreError::from))
+    {
+        Ok(report) => report,
+        Err(error) => {
+            return fail(
+                "CHK.EVAL.REPORT_AND_GATES",
+                format!("failed to read preflight eval_report.json: {}", error),
+            )
+        }
+    };
+    if report.registry_version != "gates_registry_v3" {
         return fail(
             "CHK.EVAL.REPORT_AND_GATES",
-            "missing required fields".to_string(),
+            format!(
+                "evaluation preflight requires gates_registry_v3, found {}",
+                report.registry_version
+            ),
         );
     }
-    let reg = v
-        .get("registry_version")
-        .and_then(|x| x.as_str())
-        .unwrap_or("");
-    // Packet precedence: accept v3 (and v1/v2 for backwards compatibility).
-    if reg != "gates_registry_v3" && reg != "gates_registry_v2" && reg != "gates_registry_v1" {
-        return fail(
-            "CHK.EVAL.REPORT_AND_GATES",
-            format!("unsupported registry_version {}", reg),
-        );
+    CheckResult {
+        check_id: "CHK.EVAL.REPORT_AND_GATES".to_string(),
+        severity: "BLOCKER".to_string(),
+        result: "PASS".to_string(),
+        message: "deferred during non-authorizing evaluation preflight".to_string(),
     }
-    // Validate gate IDs are present in registry v3.
-    let gates = v
-        .get("gates")
-        .and_then(|x| x.as_array())
-        .cloned()
-        .unwrap_or_default();
-    let reg_v3 = crate::eval::registry::registry_v3();
-    if let Ok(registry) = reg_v3 {
-        let known: std::collections::BTreeSet<String> =
-            registry.gates.iter().map(|g| g.gate_id.clone()).collect();
-        for g in gates {
-            let gid = g.get("gate_id").and_then(|x| x.as_str()).unwrap_or("");
-            if !gid.is_empty() && !known.contains(gid) {
-                return fail(
-                    "CHK.EVAL.REPORT_AND_GATES",
-                    format!("unknown gate_id in eval_report: {}", gid),
-                );
-            }
+}
+
+fn validate_eval_report(
+    report: &EvalReport,
+    manifest_gate_status: &str,
+    policy: PolicyMode,
+    pack_id: &str,
+) -> Result<(), String> {
+    match report.registry_version.as_str() {
+        "gates_registry_v3" => {}
+        "gates_registry_v1" | "gates_registry_v2" => {
+            return Err(format!(
+                "legacy {} is inspectable but non-authorizing; re-evaluate with gates_registry_v3",
+                report.registry_version
+            ))
+        }
+        other => return Err(format!("unsupported registry_version {}", other)),
+    }
+    if !matches!(report.overall_status.as_str(), "PASS" | "FAIL" | "WARN") {
+        return Err(format!("invalid overall_status {}", report.overall_status));
+    }
+    if report.gates.is_empty() {
+        return Err("missing applicable gates: eval report gate set is empty".to_string());
+    }
+
+    let registry = crate::eval::registry::registry_v3()
+        .map_err(|error| format!("failed to load gate registry: {}", error))?;
+    let known: BTreeMap<&str, _> = registry
+        .gates
+        .iter()
+        .map(|gate| (gate.gate_id.as_str(), gate))
+        .collect();
+    let mut actual = BTreeSet::new();
+
+    for gate in &report.gates {
+        if gate.gate_id.trim().is_empty() {
+            return Err("eval report contains an empty gate_id".to_string());
+        }
+        if !actual.insert(gate.gate_id.as_str()) {
+            return Err(format!(
+                "duplicate gate_id in eval report: {}",
+                gate.gate_id
+            ));
+        }
+        let definition = known
+            .get(gate.gate_id.as_str())
+            .ok_or_else(|| format!("unknown gate_id in eval_report: {}", gate.gate_id))?;
+        let valid_status = matches!(gate.status.as_str(), "PASS" | "FAIL" | "NOT_APPLICABLE");
+        if !valid_status {
+            return Err(format!(
+                "invalid status {} for gate {}",
+                gate.status, gate.gate_id
+            ));
+        }
+        if gate.status == "NOT_APPLICABLE"
+            && !crate::eval::registry::not_applicable_allowed(&gate.gate_id, Some(pack_id))
+        {
+            return Err(format!(
+                "NOT_APPLICABLE is not allowed for gate {} in pack {}",
+                gate.gate_id, pack_id
+            ));
+        }
+        let reported_rank = eval_severity_rank(&gate.severity).ok_or_else(|| {
+            format!(
+                "invalid severity {} for gate {}",
+                gate.severity, gate.gate_id
+            )
+        })?;
+
+        let registry_rank = eval_severity_rank(&definition.severity).ok_or_else(|| {
+            format!(
+                "invalid registry severity {} for gate {}",
+                definition.severity, definition.gate_id
+            )
+        })?;
+        if gate.category != definition.category {
+            return Err(format!(
+                "category mismatch for gate {}: {} != {}",
+                gate.gate_id, gate.category, definition.category
+            ));
+        }
+        if reported_rank < registry_rank {
+            return Err(format!(
+                "severity downgrade for gate {}: {} below {}",
+                gate.gate_id, gate.severity, definition.severity
+            ));
+        }
+        let mut reported_evidence = gate.evidence_pointers.clone();
+        let mut registry_evidence = definition.evidence_required.clone();
+        reported_evidence.sort();
+        registry_evidence.sort();
+        if reported_evidence != registry_evidence {
+            return Err(format!(
+                "evidence pointers do not match registry for gate {}",
+                gate.gate_id
+            ));
         }
     }
-    pass("CHK.EVAL.REPORT_AND_GATES")
+
+    let policy_name = format!("{policy:?}");
+    let expected: BTreeSet<&str> = registry
+        .gates
+        .iter()
+        .filter(|gate| gate.applies_to_policies.contains(&policy_name))
+        .map(|gate| gate.gate_id.as_str())
+        .collect();
+    let missing: Vec<&str> = expected.difference(&actual).copied().collect();
+    if !missing.is_empty() {
+        return Err(format!("missing applicable gates: {}", missing.join(", ")));
+    }
+    let unexpected: Vec<&str> = actual.difference(&expected).copied().collect();
+    if !unexpected.is_empty() {
+        return Err(format!(
+            "gates not applicable to {}: {}",
+            policy_name,
+            unexpected.join(", ")
+        ));
+    }
+
+    let expected_overall = eval_overall_status(&report.gates);
+    if report.overall_status != expected_overall {
+        return Err(format!(
+            "overall_status {} does not match gate results {}",
+            report.overall_status, expected_overall
+        ));
+    }
+    if manifest_gate_status != report.overall_status {
+        return Err(format!(
+            "run_manifest eval.gate_status {} does not match eval report {}",
+            manifest_gate_status, report.overall_status
+        ));
+    }
+    if report.overall_status == "FAIL" {
+        return Err("eval report contains blocker gate failures".to_string());
+    }
+    Ok(())
+}
+
+fn eval_severity_rank(severity: &str) -> Option<u8> {
+    match severity {
+        "MINOR" => Some(1),
+        "MAJOR" => Some(2),
+        "BLOCKER" => Some(3),
+        _ => None,
+    }
+}
+
+fn eval_overall_status(gates: &[EvalGateResult]) -> &'static str {
+    if gates
+        .iter()
+        .any(|gate| gate.status == "FAIL" && gate.severity == "BLOCKER")
+    {
+        "FAIL"
+    } else if gates
+        .iter()
+        .any(|gate| matches!(gate.status.as_str(), "FAIL" | "WARN"))
+    {
+        "WARN"
+    } else {
+        "PASS"
+    }
 }
 
 fn check_zip_determinism<R: Read + Seek>(zip: &mut ZipArchive<R>) -> CheckResult {
@@ -1189,5 +1419,184 @@ fn fail(check_id: &str, msg: String) -> CheckResult {
         severity: "BLOCKER".to_string(),
         result: "FAIL".to_string(),
         message: msg,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{validate_eval_report, ValidationSummary};
+    use crate::evidence_bundle::schemas::{EvalGateResult, EvalReport};
+    use crate::policy::types::PolicyMode;
+
+    fn complete_v3_report(policy: PolicyMode) -> EvalReport {
+        let policy_name = format!("{policy:?}");
+        let registry = crate::eval::registry::registry_v3().expect("registry");
+        let gates = registry
+            .gates
+            .into_iter()
+            .filter(|gate| gate.applies_to_policies.contains(&policy_name))
+            .map(|gate| EvalGateResult {
+                gate_id: gate.gate_id,
+                category: gate.category,
+                status: "PASS".to_string(),
+                severity: gate.severity,
+                message: "test result".to_string(),
+                evidence_pointers: gate.evidence_required,
+            })
+            .collect();
+        EvalReport {
+            overall_status: "PASS".to_string(),
+            tests: Vec::new(),
+            gates,
+            registry_version: "gates_registry_v3".to_string(),
+        }
+    }
+
+    #[test]
+    fn checks_prefix_fails_when_no_check_results_match() {
+        let summary = ValidationSummary {
+            checklist_version: "test".to_string(),
+            policy: "STRICT".to_string(),
+            overall: "PASS".to_string(),
+            checks: Vec::new(),
+        };
+
+        let (result, message) = summary.result_for_checks_prefix("CHK.BUNDLE.");
+
+        assert_eq!(result, "FAIL");
+        assert!(message.contains("missing check results"));
+    }
+
+    #[test]
+    fn complete_v3_eval_report_matches_policy_and_manifest() {
+        let report = complete_v3_report(PolicyMode::STRICT);
+
+        validate_eval_report(&report, "PASS", PolicyMode::STRICT, "evidenceos")
+            .expect("complete registry-bound report");
+    }
+
+    #[test]
+    fn v3_eval_report_rejects_missing_and_duplicate_gates() {
+        let mut missing = complete_v3_report(PolicyMode::STRICT);
+        let missing_id = missing.gates.pop().expect("applicable gate").gate_id;
+        let missing_error =
+            validate_eval_report(&missing, "PASS", PolicyMode::STRICT, "evidenceos")
+            .expect_err("missing gate must fail");
+        assert!(missing_error.contains("missing applicable gates"));
+        assert!(missing_error.contains(&missing_id));
+
+        let mut duplicate = complete_v3_report(PolicyMode::STRICT);
+        duplicate.gates.push(duplicate.gates[0].clone());
+        let duplicate_error =
+            validate_eval_report(&duplicate, "PASS", PolicyMode::STRICT, "evidenceos")
+                .expect_err("duplicate gate must fail");
+        assert!(duplicate_error.contains("duplicate gate_id"));
+    }
+
+    #[test]
+    fn v3_eval_report_rejects_invalid_status_and_summary_mismatches() {
+        let mut invalid = complete_v3_report(PolicyMode::STRICT);
+        invalid.gates[0].status = "UNKNOWN".to_string();
+        let invalid_error =
+            validate_eval_report(&invalid, "PASS", PolicyMode::STRICT, "evidenceos")
+                .expect_err("invalid gate status must fail");
+        assert!(invalid_error.contains("invalid status UNKNOWN"));
+
+        let mut overall_mismatch = complete_v3_report(PolicyMode::STRICT);
+        overall_mismatch.overall_status = "WARN".to_string();
+        let overall_error = validate_eval_report(
+            &overall_mismatch,
+            "WARN",
+            PolicyMode::STRICT,
+            "evidenceos",
+        )
+        .expect_err("derived overall mismatch must fail");
+        assert!(overall_error.contains("does not match gate results"));
+
+        let report = complete_v3_report(PolicyMode::STRICT);
+        let manifest_error =
+            validate_eval_report(&report, "WARN", PolicyMode::STRICT, "evidenceos")
+                .expect_err("manifest/report mismatch must fail");
+        assert!(manifest_error.contains("run_manifest eval.gate_status"));
+    }
+
+    #[test]
+    fn v3_eval_report_rejects_registry_metadata_drift() {
+        let mut category_drift = complete_v3_report(PolicyMode::STRICT);
+        category_drift.gates[0].category = "OTHER".to_string();
+        let category_error = validate_eval_report(
+            &category_drift,
+            "PASS",
+            PolicyMode::STRICT,
+            "evidenceos",
+        )
+        .expect_err("category drift must fail");
+        assert!(category_error.contains("category mismatch"));
+
+        let mut severity_drift = complete_v3_report(PolicyMode::STRICT);
+        severity_drift.gates[0].severity = "MAJOR".to_string();
+        let severity_error = validate_eval_report(
+            &severity_drift,
+            "PASS",
+            PolicyMode::STRICT,
+            "evidenceos",
+        )
+        .expect_err("severity downgrade must fail");
+        assert!(severity_error.contains("severity downgrade"));
+
+        let mut evidence_drift = complete_v3_report(PolicyMode::STRICT);
+        evidence_drift.gates[0].evidence_pointers.clear();
+        let evidence_error = validate_eval_report(
+            &evidence_drift,
+            "PASS",
+            PolicyMode::STRICT,
+            "evidenceos",
+        )
+        .expect_err("evidence pointer drift must fail");
+        assert!(evidence_error.contains("evidence pointers do not match registry"));
+    }
+
+    #[test]
+    fn legacy_registry_label_cannot_bypass_v3_completeness() {
+        let mut report = complete_v3_report(PolicyMode::STRICT);
+        report.registry_version = "gates_registry_v2".to_string();
+        report.gates.truncate(1);
+
+        let error = validate_eval_report(&report, "PASS", PolicyMode::STRICT, "evidenceos")
+            .expect_err("legacy reports are diagnostic-only");
+
+        assert!(error.contains("inspectable but non-authorizing"));
+        assert!(error.contains("gates_registry_v3"));
+    }
+
+    #[test]
+    fn final_report_rejects_unapproved_not_applicable_and_blocker_failures() {
+        let mut not_applicable = complete_v3_report(PolicyMode::STRICT);
+        let audit_gate = not_applicable
+            .gates
+            .iter_mut()
+            .find(|gate| gate.gate_id == "AUDIT_HASH_CHAIN.VERIFY_V1")
+            .expect("audit gate");
+        audit_gate.status = "NOT_APPLICABLE".to_string();
+        let not_applicable_error = validate_eval_report(
+            &not_applicable,
+            "PASS",
+            PolicyMode::STRICT,
+            "evidenceos",
+        )
+        .expect_err("unapproved NOT_APPLICABLE must fail");
+        assert!(not_applicable_error.contains("NOT_APPLICABLE is not allowed"));
+
+        let mut blocker_failure = complete_v3_report(PolicyMode::STRICT);
+        blocker_failure.gates[0].status = "FAIL".to_string();
+        blocker_failure.overall_status = "FAIL".to_string();
+        let blocker_error = validate_eval_report(
+            &blocker_failure,
+            "FAIL",
+            PolicyMode::STRICT,
+            "evidenceos",
+        )
+        .expect_err("blocker failure cannot validate final bytes");
+        assert!(blocker_error.contains("blocker gate failures"));
     }
 }

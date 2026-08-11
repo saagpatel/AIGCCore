@@ -1,16 +1,17 @@
 use crate::error::CoreResult;
-use crate::eval::registry::{registry_v3, GateRegistry};
+use crate::eval::registry::{not_applicable_allowed, registry_v3, GateRegistry};
+use crate::evidence_bundle::schemas::{EvalGateResult, EvalReport};
 use crate::policy::types::PolicyMode;
 use crate::validator::{BundleValidator, ValidationSummary};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 use zip::ZipArchive;
 
-const UNMAPPED_GATE_MESSAGE_PREFIX: &str =
-    "Applicable gate has no evaluator implementation: ";
+const UNMAPPED_GATE_MESSAGE_PREFIX: &str = "Applicable gate has no evaluator implementation: ";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GateRunResult {
@@ -39,7 +40,8 @@ impl EvalRunner {
     ) -> CoreResult<Vec<GateRunResult>> {
         // Phase 2: gates are currently implemented by reusing the bundle validator and mapping to gate IDs.
         // This keeps gate outputs stable and enforces the checklist semantics.
-        let summary = BundleValidator::new_v3().validate_zip(bundle_zip, policy)?;
+        let summary =
+            BundleValidator::new_v3().validate_zip_for_evaluation_preflight(bundle_zip, policy)?;
         let (allowlist_result, allowlist_msg) = evaluate_offline_allowlist_gate(bundle_zip)?;
         let (evidence_outputs_result, evidence_outputs_msg) =
             evaluate_evidenceos_outputs_gate(bundle_zip)?;
@@ -53,6 +55,183 @@ impl EvalRunner {
             (evidence_outputs_result, evidence_outputs_msg),
             (mapping_review_result, mapping_review_msg),
         ))
+    }
+
+    /// Materialize the authoritative v3 eval report from one complete evaluator run.
+    ///
+    /// This rejects missing, duplicate, unexpected, malformed, or severity-downgraded
+    /// results so callers cannot serialize a partial result set as a successful report.
+    pub fn report_from_results(
+        &self,
+        gate_results: &[GateRunResult],
+        policy: PolicyMode,
+        pack_id: &str,
+    ) -> CoreResult<EvalReport> {
+        if pack_id.trim().is_empty() {
+            return Err(crate::error::CoreError::InvalidInput(
+                "pack_id is required to materialize an eval report".to_string(),
+            ));
+        }
+        let policy_str = policy_name(policy);
+        let applicable: BTreeMap<&str, _> = self
+            .registry
+            .gates
+            .iter()
+            .filter(|gate| gate.applies_to_policies.iter().any(|p| p == policy_str))
+            .map(|gate| (gate.gate_id.as_str(), gate))
+            .collect();
+        let mut by_id: BTreeMap<&str, &GateRunResult> = BTreeMap::new();
+
+        for result in gate_results {
+            let gate = applicable.get(result.gate_id.as_str()).ok_or_else(|| {
+                crate::error::CoreError::InvalidInput(format!(
+                    "unexpected or inapplicable gate result {} for {}",
+                    result.gate_id, policy_str
+                ))
+            })?;
+            if by_id.insert(result.gate_id.as_str(), result).is_some() {
+                return Err(crate::error::CoreError::InvalidInput(format!(
+                    "duplicate gate result {}",
+                    result.gate_id
+                )));
+            }
+            if !matches!(result.result.as_str(), "PASS" | "FAIL" | "NOT_APPLICABLE") {
+                return Err(crate::error::CoreError::InvalidInput(format!(
+                    "invalid result {} for gate {}",
+                    result.result, result.gate_id
+                )));
+            }
+            if result.result == "NOT_APPLICABLE"
+                && !not_applicable_allowed(&result.gate_id, Some(pack_id))
+            {
+                return Err(crate::error::CoreError::InvalidInput(format!(
+                    "NOT_APPLICABLE is not allowed for gate {}",
+                    result.gate_id
+                )));
+            }
+            let reported_rank = severity_rank(&result.severity).ok_or_else(|| {
+                crate::error::CoreError::InvalidInput(format!(
+                    "invalid severity {} for gate {}",
+                    result.severity, result.gate_id
+                ))
+            })?;
+            let registry_rank = severity_rank(&gate.severity).ok_or_else(|| {
+                crate::error::CoreError::InvalidInput(format!(
+                    "invalid registry severity {} for gate {}",
+                    gate.severity, gate.gate_id
+                ))
+            })?;
+            if reported_rank < registry_rank {
+                return Err(crate::error::CoreError::InvalidInput(format!(
+                    "severity downgrade for gate {}: {} below {}",
+                    result.gate_id, result.severity, gate.severity
+                )));
+            }
+            let mut reported_evidence = result.evidence_pointers.clone();
+            let mut registry_evidence = gate.evidence_required.clone();
+            reported_evidence.sort();
+            registry_evidence.sort();
+            if reported_evidence != registry_evidence {
+                return Err(crate::error::CoreError::InvalidInput(format!(
+                    "evidence pointers do not match registry for gate {}",
+                    result.gate_id
+                )));
+            }
+        }
+
+        let present: BTreeSet<&str> = by_id.keys().copied().collect();
+        let expected: BTreeSet<&str> = applicable.keys().copied().collect();
+        let missing: Vec<&str> = expected.difference(&present).copied().collect();
+        if !missing.is_empty() {
+            return Err(crate::error::CoreError::InvalidInput(format!(
+                "missing applicable gate results: {}",
+                missing.join(", ")
+            )));
+        }
+
+        let gates: Vec<EvalGateResult> = applicable
+            .into_iter()
+            .map(|(gate_id, gate)| {
+                let result = by_id
+                    .get(gate_id)
+                    .expect("applicable gate presence checked above");
+                EvalGateResult {
+                    gate_id: result.gate_id.clone(),
+                    category: gate.category.clone(),
+                    status: result.result.clone(),
+                    severity: result.severity.clone(),
+                    message: result.message.clone(),
+                    evidence_pointers: result.evidence_pointers.clone(),
+                }
+            })
+            .collect();
+
+        Ok(EvalReport {
+            overall_status: overall_status_for_gates(&gates),
+            tests: Vec::new(),
+            gates,
+            registry_version: self.registry.registry_version.clone(),
+        })
+    }
+
+    /// Resolve a policy gate without treating missing applicable evidence as success.
+    pub fn gate_satisfied_for_export(
+        &self,
+        report: &EvalReport,
+        gate_id: &str,
+        policy: PolicyMode,
+    ) -> bool {
+        let Some(definition) = self
+            .registry
+            .gates
+            .iter()
+            .find(|gate| gate.gate_id == gate_id)
+        else {
+            return false;
+        };
+        if !definition
+            .applies_to_policies
+            .iter()
+            .any(|p| p == policy_name(policy))
+        {
+            return true;
+        }
+        let matches: Vec<&EvalGateResult> = report
+            .gates
+            .iter()
+            .filter(|gate| gate.gate_id == gate_id)
+            .collect();
+        matches.len() == 1 && matches!(matches[0].status.as_str(), "PASS" | "NOT_APPLICABLE")
+    }
+}
+
+fn policy_name(policy: PolicyMode) -> &'static str {
+    match policy {
+        PolicyMode::STRICT => "STRICT",
+        PolicyMode::BALANCED => "BALANCED",
+        PolicyMode::DRAFT_ONLY => "DRAFT_ONLY",
+    }
+}
+
+fn severity_rank(severity: &str) -> Option<u8> {
+    match severity {
+        "MINOR" => Some(1),
+        "MAJOR" => Some(2),
+        "BLOCKER" => Some(3),
+        _ => None,
+    }
+}
+
+fn overall_status_for_gates(gates: &[EvalGateResult]) -> String {
+    if gates
+        .iter()
+        .any(|gate| gate.status == "FAIL" && gate.severity == "BLOCKER")
+    {
+        "FAIL".to_string()
+    } else if gates.iter().any(|gate| gate.status == "FAIL") {
+        "WARN".to_string()
+    } else {
+        "PASS".to_string()
     }
 }
 
@@ -116,12 +295,14 @@ fn map_validator_to_gates(
             }
         };
 
+        let mut evidence_pointers = g.evidence_required.clone();
+        evidence_pointers.sort();
         results.push(GateRunResult {
             gate_id: g.gate_id.clone(),
             result,
             severity,
             message: msg,
-            evidence_pointers: g.evidence_required.clone(),
+            evidence_pointers,
         });
     }
     results.sort_by(|a, b| a.gate_id.cmp(&b.gate_id));
@@ -150,7 +331,10 @@ fn evaluate_evidenceos_outputs_gate(bundle_zip: &Path) -> CoreResult<(String, St
     let file = File::open(bundle_zip)?;
     let mut zip = ZipArchive::new(file).map_err(|e| crate::error::CoreError::Zip(e.to_string()))?;
     if !is_evidenceos_pack(&mut zip) {
-        return Ok(("NOT_APPLICABLE".to_string(), "not evidenceos pack".to_string()));
+        return Ok((
+            "NOT_APPLICABLE".to_string(),
+            "not evidenceos pack".to_string(),
+        ));
     }
     for path in required {
         if zip.by_name(path).is_err() {
@@ -168,7 +352,10 @@ fn evaluate_evidenceos_mapping_review_gate(bundle_zip: &Path) -> CoreResult<(Str
     let file = File::open(bundle_zip)?;
     let mut zip = ZipArchive::new(file).map_err(|e| crate::error::CoreError::Zip(e.to_string()))?;
     if !is_evidenceos_pack(&mut zip) {
-        return Ok(("NOT_APPLICABLE".to_string(), "not evidenceos pack".to_string()));
+        return Ok((
+            "NOT_APPLICABLE".to_string(),
+            "not evidenceos pack".to_string(),
+        ));
     }
     let mut f = match zip.by_name(path) {
         Ok(v) => v,
@@ -340,7 +527,7 @@ fn evaluate_offline_allowlist_from_ndjson(ndjson: &str) -> (String, String) {
 #[cfg(test)]
 mod tests {
     use super::{
-        evaluate_offline_allowlist_from_ndjson, map_validator_to_gates,
+        evaluate_offline_allowlist_from_ndjson, map_validator_to_gates, EvalRunner, GateRunResult,
         UNMAPPED_GATE_MESSAGE_PREFIX,
     };
     use crate::eval::registry::{GateDef, GateRegistry};
@@ -383,6 +570,156 @@ mod tests {
             ("PASS".to_string(), "test".to_string()),
             ("PASS".to_string(), "test".to_string()),
         )
+    }
+
+    fn complete_results(runner: &EvalRunner, policy: PolicyMode) -> Vec<GateRunResult> {
+        let policy_name = format!("{policy:?}");
+        runner
+            .registry
+            .gates
+            .iter()
+            .filter(|gate| gate.applies_to_policies.contains(&policy_name))
+            .map(|gate| {
+                let mut evidence_pointers = gate.evidence_required.clone();
+                evidence_pointers.sort();
+                GateRunResult {
+                    gate_id: gate.gate_id.clone(),
+                    result: if gate.gate_id == "OFFLINE_ENFORCEMENT.ALLOWLIST_MATCH_V1" {
+                        "NOT_APPLICABLE".to_string()
+                    } else {
+                        "PASS".to_string()
+                    },
+                    severity: gate.severity.clone(),
+                    message: "test result".to_string(),
+                    evidence_pointers,
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn complete_results_materialize_a_registry_bound_report() {
+        let runner = EvalRunner::new_v3().expect("runner");
+        let results = complete_results(&runner, PolicyMode::STRICT);
+
+        let report = runner
+            .report_from_results(&results, PolicyMode::STRICT, "self_audit")
+            .expect("complete report");
+
+        assert_eq!(report.registry_version, "gates_registry_v3");
+        assert_eq!(report.gates.len(), results.len());
+        assert_eq!(report.overall_status, "PASS");
+        assert!(report.gates.iter().any(|gate| {
+            gate.gate_id == "OFFLINE_ENFORCEMENT.ALLOWLIST_MATCH_V1"
+                && gate.status == "NOT_APPLICABLE"
+        }));
+    }
+
+    #[test]
+    fn report_materialization_rejects_a_missing_applicable_gate() {
+        let runner = EvalRunner::new_v3().expect("runner");
+        let mut results = complete_results(&runner, PolicyMode::STRICT);
+        let missing = results.pop().expect("at least one applicable gate").gate_id;
+
+        let error = runner
+            .report_from_results(&results, PolicyMode::STRICT, "self_audit")
+            .expect_err("partial results must fail closed");
+
+        assert!(error
+            .to_string()
+            .contains("missing applicable gate results"));
+        assert!(error.to_string().contains(&missing));
+    }
+
+    #[test]
+    fn report_materialization_rejects_duplicate_and_invalid_results() {
+        let runner = EvalRunner::new_v3().expect("runner");
+        let mut duplicate_results = complete_results(&runner, PolicyMode::STRICT);
+        duplicate_results.push(duplicate_results[0].clone());
+        let duplicate_error = runner
+            .report_from_results(&duplicate_results, PolicyMode::STRICT, "self_audit")
+            .expect_err("duplicate results must fail closed");
+        assert!(duplicate_error
+            .to_string()
+            .contains("duplicate gate result"));
+
+        let mut invalid_results = complete_results(&runner, PolicyMode::STRICT);
+        invalid_results[0].result = "UNKNOWN".to_string();
+        let invalid_error = runner
+            .report_from_results(&invalid_results, PolicyMode::STRICT, "self_audit")
+            .expect_err("invalid status must fail closed");
+        assert!(invalid_error.to_string().contains("invalid result UNKNOWN"));
+
+        let mut missing_evidence = complete_results(&runner, PolicyMode::STRICT);
+        missing_evidence[0].evidence_pointers.clear();
+        let evidence_error = runner
+            .report_from_results(&missing_evidence, PolicyMode::STRICT, "self_audit")
+            .expect_err("registry evidence pointers must remain bound");
+        assert!(evidence_error
+            .to_string()
+            .contains("evidence pointers do not match registry"));
+
+        let mut unapproved_not_applicable = complete_results(&runner, PolicyMode::STRICT);
+        let audit_gate = unapproved_not_applicable
+            .iter_mut()
+            .find(|gate| gate.gate_id == "AUDIT_HASH_CHAIN.VERIFY_V1")
+            .expect("audit gate");
+        audit_gate.result = "NOT_APPLICABLE".to_string();
+        let not_applicable_error = runner
+            .report_from_results(
+                &unapproved_not_applicable,
+                PolicyMode::STRICT,
+                "self_audit",
+            )
+            .expect_err("NOT_APPLICABLE must be gate-specific");
+        assert!(not_applicable_error
+            .to_string()
+            .contains("NOT_APPLICABLE is not allowed"));
+
+        let mut pack_sensitive = complete_results(&runner, PolicyMode::STRICT);
+        let evidenceos_gate = pack_sensitive
+            .iter_mut()
+            .find(|gate| gate.gate_id == "EVIDENCEOS.OUTPUTS_PRESENT_V1")
+            .expect("EvidenceOS gate");
+        evidenceos_gate.result = "NOT_APPLICABLE".to_string();
+        let pack_error = runner
+            .report_from_results(&pack_sensitive, PolicyMode::STRICT, "evidenceos")
+            .expect_err("EvidenceOS pack cannot omit its own output gate");
+        assert!(pack_error
+            .to_string()
+            .contains("NOT_APPLICABLE is not allowed"));
+
+        let missing_pack_error = runner
+            .report_from_results(
+                &complete_results(&runner, PolicyMode::STRICT),
+                PolicyMode::STRICT,
+                "",
+            )
+            .expect_err("pack identity is required");
+        assert!(missing_pack_error.to_string().contains("pack_id is required"));
+    }
+
+    #[test]
+    fn export_gate_lookup_fails_closed_for_missing_applicable_evidence() {
+        let runner = EvalRunner::new_v3().expect("runner");
+        let results = complete_results(&runner, PolicyMode::STRICT);
+        let mut report = runner
+            .report_from_results(&results, PolicyMode::STRICT, "self_audit")
+            .expect("complete report");
+        report
+            .gates
+            .retain(|gate| gate.gate_id != "CITATIONS.STRICT_ENFORCED_V1");
+
+        assert!(!runner.gate_satisfied_for_export(
+            &report,
+            "CITATIONS.STRICT_ENFORCED_V1",
+            PolicyMode::STRICT,
+        ));
+        assert!(runner.gate_satisfied_for_export(
+            &report,
+            "CITATIONS.STRICT_ENFORCED_V1",
+            PolicyMode::BALANCED,
+        ));
     }
 
     #[test]
