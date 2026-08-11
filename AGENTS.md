@@ -4,7 +4,7 @@
 
 ## Communication Contract (Global)
 
-- Inherit global Codex communication and reporting rules from `/Users/d/.codex/AGENTS.override.md` and `/Users/d/.codex/policies/communication/BigPictureReportingV1.md`.
+- Inherit global Codex communication and reporting rules from `~/.codex/AGENTS.override.md` and `~/.codex/policies/communication/BigPictureReportingV1.md`.
 - Repo-specific instructions below add project constraints only; do not restate global voice or status-reporting rules here.
 - Honor toggles literally: `simple mode`, `show receipts`, `tech mode`, `debug mode`.
 <!-- comm-contract:end -->
@@ -13,11 +13,11 @@ This file defines canonical project commands, paths, and repo-specific conventio
 
 ## Canonical Paths
 
-- Rust domain core: `/Users/d/Projects/MoneyPRJsViaGPT/AIGCCore/core`
-- Tauri shell + command handlers: `/Users/d/Projects/MoneyPRJsViaGPT/AIGCCore/src-tauri`
-- React UI: `/Users/d/Projects/MoneyPRJsViaGPT/AIGCCore/src`
-- Local validator CLI(s): `/Users/d/Projects/MoneyPRJsViaGPT/AIGCCore/tools`
-- Packet-driven docs created in-repo: `/Users/d/Projects/MoneyPRJsViaGPT/AIGCCore/docs`
+- Rust domain core: `~/Projects/MoneyPRJsViaGPT/AIGCCore/core`
+- Tauri shell + command handlers: `~/Projects/MoneyPRJsViaGPT/AIGCCore/src-tauri`
+- React UI: `~/Projects/MoneyPRJsViaGPT/AIGCCore/src`
+- Local validator CLI(s): `~/Projects/MoneyPRJsViaGPT/AIGCCore/tools`
+- Packet-driven docs created in-repo: `~/Projects/MoneyPRJsViaGPT/AIGCCore/docs`
 
 ## Canonical Commands
 
@@ -29,7 +29,7 @@ Primary runner is `pnpm` and Rust `cargo`.
 - Run all eval gates locally: `pnpm gate:all`
 - Rust tests: `cargo test --workspace`
 
-Source of truth for scripts is `/Users/d/Projects/MoneyPRJsViaGPT/AIGCCore/package.json`.
+Source of truth for scripts is `~/Projects/MoneyPRJsViaGPT/AIGCCore/package.json`.
 
 ## Hard Rules (Packet-Aligned)
 
@@ -67,7 +67,7 @@ Source: `.codex/verify.commands` (derived from `AGENTS.md` and `package.json`)
 
 ## UI Hard Gates (Required for frontend/UI changes)
 
-1. Read-only reviewer outputs `UIFindingV1[]` (`/Users/d/.codex/contracts/UIFindingV1.schema.json`).
+1. Read-only reviewer outputs `UIFindingV1[]` (`~/.codex/contracts/UIFindingV1.schema.json`).
 2. Fixer applies accepted findings in severity order: `P0 -> P1 -> P2 -> P3`.
 3. Required state coverage per changed UI surface: loading, empty, error, success, disabled, focus-visible.
 4. Required pre-done gates:
