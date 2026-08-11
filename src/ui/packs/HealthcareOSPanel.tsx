@@ -1,4 +1,6 @@
 import type { PackCommandStatus } from "./types";
+import { StatusBadge } from "../StatusBadge";
+import { EvidenceAuthorityNotice } from "./EvidenceAuthorityNotice";
 
 type Props = {
   running: boolean;
@@ -58,13 +60,16 @@ export function HealthcareOSPanel({
       {error && <p className="error">{error}</p>}
       {result && (
         <div className="result">
-          <p>Status: {result.status}</p>
+          <p>
+            Status: <StatusBadge status={result.status} />
+          </p>
           <p>{result.message}</p>
           {result.error_code && <p>Error code: {result.error_code}</p>}
           {result.run_id && <p>Run ID: {result.run_id}</p>}
           {result.audit_path && <p>Audit path: {result.audit_path}</p>}
           {result.bundle_path && <p>Bundle path: {result.bundle_path}</p>}
           {result.bundle_sha256 && <p>Bundle SHA-256: {result.bundle_sha256}</p>}
+          <EvidenceAuthorityNotice authority={result.evidence_authority} />
         </div>
       )}
     </section>

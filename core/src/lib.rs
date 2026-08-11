@@ -4,6 +4,7 @@ pub mod determinism;
 pub mod eval;
 pub mod evidence_bundle;
 pub mod evidenceos;
+pub mod execution;
 pub mod financeos;
 pub mod healthcareos;
 pub mod incidentos;

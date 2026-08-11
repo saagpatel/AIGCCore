@@ -27,7 +27,14 @@ This runbook covers local operator actions for diagnosing failed pack runs and r
    - `BUNDLE_VALIDATION_RESULT`
    - `EGRESS_REQUEST_BLOCKED` `details.evidence_origin`:
      - `CONTROL_SIMULATION` => policy-proof synthetic event
-     - absent/other => inspect as real runtime network attempt
+     - `RUNTIME_OBSERVATION` => actual runtime egress decision
+     - absent/other => malformed or ambiguous; fail closed and do not infer live execution
+   - `run_manifest.json:evidence_authority`:
+     - confirm `RUN_MANIFEST_V2` / `EVIDENCE_AUTHORITY_V1`
+     - confirm source, executable, arguments, environment, and audit digests match the case
+     - confirm `valid_until_utc` is current for any current-capability claim
+     - confirm the requested downstream claim is explicitly in `may_satisfy`
+     - never use `CONTROL_SIMULATION` for a claim listed in `must_not_satisfy`
 4. Determine failure class:
    - Input payload issue (malformed/missing artifact payload)
    - Policy block (citations/redactions/determinism gate)

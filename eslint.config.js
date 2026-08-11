@@ -29,6 +29,19 @@ export default [
     },
   },
   {
+    files: ["src-tauri/src/local_execution/fixture.js"],
+    languageOptions: {
+      globals: {
+        Buffer: "readonly",
+        clearTimeout: "readonly",
+        process: "readonly",
+        require: "readonly",
+        setInterval: "readonly",
+        setTimeout: "readonly",
+      },
+    },
+  },
+  {
     files: ["tests/perf/**/*.js"],
     languageOptions: {
       globals: {

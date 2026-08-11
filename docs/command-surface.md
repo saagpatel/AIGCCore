@@ -2,13 +2,40 @@
 
 This project does not expose an external HTTP API. The primary runtime interface is the local Tauri command surface.
 
+## Experimental qualification binary
+
+`aigc_local_execution_qualify` is available only when the Tauri crate is built
+with `local-execution-backend-v1`. It runs the embedded
+`AIGC_LOCAL_EXECUTION_FIXTURE_V1` and writes an
+`AIGC_EXECUTION_RECEIPT_V1`.
+
+It is deliberately not registered in the Tauri invoke handler and cannot accept
+an arbitrary repository, command, environment, mount, image, network
+destination, or credential. The portable backend interface returns
+`PolicyBlocked` for every request except the exact prepared embedded
+qualification fixture and input; the qualification binary itself routes
+through that interface. See
+`docs/local-execution-v1-qualification.md`.
+
 ## Contract Notes (Phase 5)
 
 - Command names and request/response schema remain backward-compatible.
 - Runtime export directories are permission-hardened on Unix (`0o700`).
 - Healthcare run fingerprinting is based on sorted input artifact descriptors.
 - Bundled `audit_log.ndjson` now includes final validation lifecycle evidence before export result is returned.
-- Offline proof events in audit logs may include synthetic control simulation markers (`details.evidence_origin = CONTROL_SIMULATION`) to distinguish policy proof from live traffic.
+- Evidence Bundle bytes are validated again after the last audit-log rewrite;
+  a final validation error or failure removes the ZIP and returns no export
+  path or digest.
+- Egress decision events require an explicit origin. Synthetic policy-path events use
+  `details.evidence_origin = CONTROL_SIMULATION`; actual policy-client decisions use
+  `RUNTIME_OBSERVATION`.
+- Every successful pack result includes `evidence_authority` (`EVIDENCE_AUTHORITY_V1`). Treat
+  `CONTROL_SIMULATION` as controlled policy-path evidence only. It is not proof of live traffic,
+  production authority, external mutation, deployability, or real-user success.
+- Evidence authority is case-local, hash-bound to source/executable/arguments/environment/audit
+  inputs, and expiring. Missing, stale, malformed, or mismatched authority is non-authorizing.
+- `RUNTIME_OBSERVATION`, `FIXTURE`, and `REPLAY` authority manifests are reserved and
+  non-authorizing until their explicit manifest and audit-evidence contracts are implemented.
 
 ## Command: `run_redlineos`
 
@@ -48,7 +75,18 @@ Response shape:
   "run_id": "optional-run-id",
   "audit_path": "optional-audit-log-path",
   "bundle_path": "/tmp/.../evidence_bundle_redlineos_v1.zip",
-  "bundle_sha256": "hex-sha256"
+  "bundle_sha256": "hex-sha256",
+  "evidence_authority": {
+    "schema_version": "EVIDENCE_AUTHORITY_V1",
+    "observed_execution_class": "CONTROLLED",
+    "evidence_origin": "CONTROL_SIMULATION",
+    "production_equivalent": false,
+    "valid_until_utc": "RFC3339 timestamp",
+    "downstream_claims": {
+      "may_satisfy": ["LOCAL_CONTROLLED_EXECUTION", "BUNDLE_INTEGRITY"],
+      "must_not_satisfy": ["LIVE_EXECUTION", "PRODUCTION_AUTHORITY", "EXTERNAL_MUTATION"]
+    }
+  }
 }
 ```
 
@@ -196,4 +234,39 @@ Validation notes:
 
 Purpose: Run Phase 3 EvidenceOS capability mapping + strict citation export.
 
-Request and response are unchanged from prior implementation and remain exposed in `src-tauri/src/main.rs`.
+Request and response are unchanged from prior implementation and remain exposed in `src-tauri/src/lib.rs`.
+
+## Test-only command: `authority_integrity_probe_adapter`
+
+Purpose: Exercise the source-owned Tauri IPC dispatcher through the production
+loopback adapter policy to a run-owned socket-attempt sensor.
+
+Availability: The command is registered only when the
+`authority-integrity-test-hooks` Cargo feature is enabled. Production builds do
+not enable the feature or expose this command.
+
+Request:
+
+```json
+{
+  "input": {
+    "endpoint": "http://127.0.0.1:<run-owned-port>"
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "adapter_id": "authority-integrity-probe",
+  "endpoint": "http://127.0.0.1:<run-owned-port>",
+  "dependency_path_reached": true
+}
+```
+
+The feature-enabled Rust test proves the Tauri IPC-to-adapter-dependency path.
+The TypeScript invocation envelope is covered separately by
+`src/ui/authorityIntegrity.spec.ts`; there is no single cross-language test from
+executing frontend code through the dependency sensor, so this evidence does
+not claim a frontend-to-dependency `FULL_PATH` result.

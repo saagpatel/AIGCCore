@@ -6,7 +6,7 @@
 /core/src/policy/ @saagar210 @gemini-code-assist
 /core/src/run/ @saagar210 @gemini-code-assist
 /core/src/storage/ @saagar210 @gemini-code-assist
-/src-tauri/src/main.rs @saagar210 @gemini-code-assist
+/src-tauri/src/ @saagar210 @gemini-code-assist
 /tools/gates/ @saagar210 @gemini-code-assist
 
 # CI and release controls

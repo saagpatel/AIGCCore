@@ -5,6 +5,48 @@ import { App } from "./App";
 
 const invokeMock = vi.fn();
 
+const controlledAuthority = {
+  schema_version: "EVIDENCE_AUTHORITY_V1",
+  case_id: "r_test",
+  requested_execution_class: "CONTROLLED",
+  observed_execution_class: "CONTROLLED",
+  evidence_origin: "CONTROL_SIMULATION",
+  production_equivalent: false,
+  generated_at_utc: "2026-07-20T12:00:00Z",
+  valid_until_utc: "2026-07-21T12:00:00Z",
+  source: {
+    producer: "aigccore-tauri:generate_evidenceos_bundle",
+    source_revision: "test-revision",
+    executable: "/tmp/aigccore",
+    executable_sha256: "a".repeat(64),
+    arguments_sha256: "b".repeat(64),
+    environment_sha256: "c".repeat(64),
+    audit_log_sha256: "d".repeat(64),
+  },
+  allowed_effects: ["LOCAL_EVIDENCE_BUNDLE_WRITE"],
+  observed_effects: ["LOCAL_EVIDENCE_BUNDLE_WRITE"],
+  credential_availability: "NOT_REQUESTED",
+  tools: [
+    {
+      tool_id: "LOCAL_EVIDENCE_BUNDLE_EXPORT",
+      declared_available: true,
+      observed_used: true,
+      external_mutation_allowed: false,
+    },
+  ],
+  state_scope: {
+    cache_scope: "CASE_LOCAL",
+    prior_approval_reused: false,
+    credential_state_reused: false,
+    mutable_cache_reused: false,
+  },
+  downstream_claims: {
+    may_satisfy: ["LOCAL_CONTROLLED_EXECUTION", "BUNDLE_INTEGRITY"],
+    must_not_satisfy: ["LIVE_EXECUTION", "PRODUCTION_AUTHORITY", "EXTERNAL_MUTATION"],
+  },
+  limitations: ["Blocked-egress evidence is simulated, not live traffic."],
+};
+
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (...args: unknown[]) => invokeMock(...args),
 }));
@@ -40,6 +82,7 @@ describe("App", () => {
             bundle_path: "/tmp/evidence.zip",
             bundle_sha256: "abc123",
             missing_control_ids: ["CTRL-9"],
+            evidence_authority: controlledAuthority,
           };
         case "run_redlineos":
           return {
@@ -90,13 +133,20 @@ describe("App", () => {
       expect(invokeMock).toHaveBeenCalledWith("generate_evidenceos_bundle", expect.any(Object));
     });
     await screen.findByText("Missing controls: CTRL-9");
+    await screen.findByText("CONTROLLED / CONTROL_SIMULATION");
+    await screen.findByText(
+      "Must not satisfy: LIVE_EXECUTION, PRODUCTION_AUTHORITY, EXTERNAL_MUTATION",
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Load RedlineOS sample data" }));
     fireEvent.click(screen.getByRole("button", { name: "Generate Risk Assessment" }));
     await waitFor(() => {
       expect(invokeMock).toHaveBeenCalledWith("run_redlineos", expect.any(Object));
     });
-    await screen.findByText("Bundle path: /tmp/redline.zip");
+    const redlineBundlePath = await screen.findByText("Bundle path: /tmp/redline.zip");
+    const redlineResult = redlineBundlePath.closest(".result");
+    expect(redlineResult?.textContent).toContain("Evidence authority: UNKNOWN");
+    expect(redlineResult?.textContent).toContain("This result is non-authorizing");
 
     fireEvent.click(screen.getByRole("button", { name: "Load IncidentOS sample data" }));
     fireEvent.click(screen.getByRole("button", { name: "Run IncidentOS Export" }));
@@ -212,6 +262,33 @@ describe("App", () => {
     });
   });
 
+  it("reports the network state as unresolved instead of fabricating OFFLINE_STRICT", async () => {
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === "get_network_snapshot") {
+        throw new Error("ipc unavailable");
+      }
+      if (command === "list_control_library") {
+        return [];
+      }
+      return { status: "SUCCESS", message: `${command} complete` };
+    });
+
+    render(<App />);
+    await screen.findByRole("heading", { level: 1, name: "AIGC Core" });
+
+    const networkBadge = await screen.findByTestId("network-status");
+    await waitFor(() => {
+      expect(networkBadge.textContent).toContain("UNKNOWN");
+    });
+
+    expect(networkBadge.textContent).not.toContain("OFFLINE_STRICT");
+    expect(networkBadge.textContent).not.toContain("OFFLINE");
+    expect(networkBadge.textContent).toContain("Enforcement layer unreachable");
+    expect(networkBadge.querySelector("[data-status]")?.getAttribute("data-status")).toBe(
+      "UNKNOWN",
+    );
+  });
+
   it("maps invoke runtime exceptions to failed pack status metadata", async () => {
     invokeMock.mockImplementation(async (command: string) => {
       if (command === "get_network_snapshot") {
@@ -236,7 +313,8 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Load HealthcareOS sample data" }));
     fireEvent.click(screen.getByRole("button", { name: "Run HealthcareOS Export" }));
     await waitFor(() => {
-      expect(screen.getByText("Status: FAILED")).toBeTruthy();
+      const failedWord = screen.getByText("FAILED");
+      expect(failedWord.closest(".status-badge")?.getAttribute("data-tone")).toBe("bad");
       expect(screen.getByText("Error code: INVOKE_RUNTIME_ERROR")).toBeTruthy();
       expect(screen.getAllByText("Error: invoke exploded").length).toBeGreaterThanOrEqual(1);
     });
