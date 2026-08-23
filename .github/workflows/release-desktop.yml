@@ -140,7 +140,9 @@ jobs:
         if: runner.os != 'Windows'
         shell: bash
         run: |
-          if [[ -d "target/release/bundle" ]]; then
+          if [[ -n "${BUNDLE_DIR:-}" && -d "$BUNDLE_DIR" ]]; then
+            echo "BUNDLE_DIR=$BUNDLE_DIR" >> "$GITHUB_ENV"
+          elif [[ -d "target/release/bundle" ]]; then
             echo "BUNDLE_DIR=target/release/bundle" >> "$GITHUB_ENV"
           elif [[ -d "src-tauri/target/release/bundle" ]]; then
             echo "BUNDLE_DIR=src-tauri/target/release/bundle" >> "$GITHUB_ENV"
