@@ -4,8 +4,8 @@ import { EvidenceAuthorityNotice } from "./EvidenceAuthorityNotice";
 
 type Props = {
   running: boolean;
+  operationDisabled: boolean;
   result: PackCommandStatus | null;
-  error: string | null;
   transcriptText: string;
   consentText: string;
   onTranscriptChange: (value: string) => void;
@@ -16,8 +16,8 @@ type Props = {
 
 export function HealthcareOSPanel({
   running,
+  operationDisabled,
   result,
-  error,
   transcriptText,
   consentText,
   onTranscriptChange,
@@ -51,15 +51,19 @@ export function HealthcareOSPanel({
       <button type="button" onClick={onLoadSample}>
         Load HealthcareOS sample data
       </button>
-      <button type="button" disabled={running || !canRun} onClick={() => void onRun()}>
+      <button
+        type="button"
+        disabled={running || operationDisabled || !canRun}
+        aria-describedby={operationDisabled ? "write-readiness" : undefined}
+        onClick={() => void onRun()}
+      >
         {running ? "Running HealthcareOS..." : "Run HealthcareOS Export"}
       </button>
       {!canRun && (
         <p className="meta">Provide transcript and consent payloads or load sample data.</p>
       )}
-      {error && <p className="error">{error}</p>}
       {result && (
-        <div className="result">
+        <div className="result" role="status" aria-live="polite" aria-atomic="true">
           <p>
             Status: <StatusBadge status={result.status} />
           </p>

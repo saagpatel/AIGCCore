@@ -4,8 +4,8 @@ import { EvidenceAuthorityNotice } from "./EvidenceAuthorityNotice";
 
 type Props = {
   running: boolean;
+  operationDisabled: boolean;
   result: PackCommandStatus | null;
-  error: string | null;
   payloadText: string;
   onPayloadChange: (value: string) => void;
   onLoadSample: () => void;
@@ -14,8 +14,8 @@ type Props = {
 
 export function FinanceOSPanel({
   running,
+  operationDisabled,
   result,
-  error,
   payloadText,
   onPayloadChange,
   onLoadSample,
@@ -39,13 +39,17 @@ export function FinanceOSPanel({
       <button type="button" onClick={onLoadSample}>
         Load FinanceOS sample data
       </button>
-      <button type="button" disabled={running || !canRun} onClick={() => void onRun()}>
+      <button
+        type="button"
+        disabled={running || operationDisabled || !canRun}
+        aria-describedby={operationDisabled ? "write-readiness" : undefined}
+        onClick={() => void onRun()}
+      >
         {running ? "Running FinanceOS..." : "Run FinanceOS Export"}
       </button>
       {!canRun && <p className="meta">Provide statement JSON or load sample data.</p>}
-      {error && <p className="error">{error}</p>}
       {result && (
-        <div className="result">
+        <div className="result" role="status" aria-live="polite" aria-atomic="true">
           <p>
             Status: <StatusBadge status={result.status} />
           </p>

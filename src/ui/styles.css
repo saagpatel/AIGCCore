@@ -140,6 +140,7 @@ body {
 
 .main {
   flex: 1;
+  min-width: 0;
   padding: 28px 20px;
   display: grid;
   gap: 18px;
@@ -147,6 +148,7 @@ body {
 }
 
 .card {
+  min-width: 0;
   width: min(900px, 100%);
   border-radius: 16px;
   border: 1px solid var(--border);
@@ -161,7 +163,7 @@ body {
 
 .card ul {
   margin: 0;
-  padding-left: 18px;
+  padding-inline-start: 18px;
   color: var(--muted);
   line-height: 1.55;
 }
@@ -184,6 +186,8 @@ body {
 }
 
 .row select {
+  min-width: 0;
+  max-width: 100%;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: rgba(0, 0, 0, 0.25);
@@ -205,6 +209,9 @@ body {
 
 .form-grid input,
 .form-grid textarea {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: rgba(0, 0, 0, 0.25);
@@ -220,6 +227,7 @@ body {
 }
 
 .control-card {
+  min-width: 0;
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 10px;
@@ -259,17 +267,41 @@ button:disabled {
   cursor: wait;
 }
 
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid var(--warn);
+  outline-offset: 3px;
+}
+
 .error {
   color: var(--bad);
   margin-top: 10px;
+  overflow-wrap: anywhere;
 }
 
 .result {
+  min-width: 0;
   margin-top: 12px;
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 10px;
   background: rgba(0, 0, 0, 0.2);
+  overflow-wrap: anywhere;
+}
+
+.readiness {
+  width: min(900px, 100%);
+  min-width: 0;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.readiness[data-state="error"] {
+  color: var(--bad);
 }
 
 .authority-notice {

@@ -1,5 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const chromiumExecutablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
+
 export default defineConfig({
   testDir: "./tests/ui",
   fullyParallel: false,
@@ -20,6 +22,7 @@ export default defineConfig({
     timezoneId: "UTC",
     locale: "en-US",
     colorScheme: "light",
+    launchOptions: chromiumExecutablePath ? { executablePath: chromiumExecutablePath } : undefined,
   },
   expect: {
     toHaveScreenshot: { maxDiffPixelRatio: 0.002, threshold: 0.2 },
