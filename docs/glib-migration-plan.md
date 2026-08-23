@@ -70,7 +70,9 @@ Canonical verification baseline on current stack:
    - dependency diff summary
    - gate evidence table
    - rollback instructions
-2. Run release workflow for signed desktop artifacts.
+2. Run the release workflow for platform artifacts; require Developer ID and
+   notarization proof for macOS, and claim Windows/Linux signing only when
+   separately configured and evidenced.
 3. Publish release evidence update with post-migration checksums.
 
 ## Risk Register

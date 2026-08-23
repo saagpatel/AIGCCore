@@ -15,15 +15,12 @@ permissions:
   contents: read
 
 jobs:
-  build_signed_artifacts:
+  build_release_artifacts:
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-22.04, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    env:
-      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -93,19 +90,51 @@ jobs:
             fi
           done
 
-      - name: Verify signing prerequisites
+      - name: Verify macOS signing and notarization prerequisites
+        if: runner.os == 'macOS'
         shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          if [[ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" || -z "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}" ]]; then
-            echo "Missing TAURI signing secrets. Refusing to build unsigned release artifacts."
-            exit 1
-          fi
+          for REQUIRED_VAR in \
+            APPLE_CERTIFICATE \
+            APPLE_CERTIFICATE_PASSWORD \
+            APPLE_SIGNING_IDENTITY \
+            APPLE_ID \
+            APPLE_PASSWORD \
+            APPLE_TEAM_ID; do
+              if [[ -z "${!REQUIRED_VAR:-}" ]]; then
+                echo "Missing $REQUIRED_VAR. Refusing to build an unnotarized macOS release."
+                exit 1
+              fi
+            done
+
+      - name: Test macOS packaging contract
+        if: runner.os == 'macOS'
+        run: pnpm test:release:macos
 
       - name: Run canonical verification
         run: bash .codex/scripts/run_verify_commands.sh
 
-      - name: Build signed desktop artifacts
+      - name: Build Linux and Windows release artifacts
+        if: runner.os != 'macOS'
         run: pnpm build
+
+      - name: Build and verify Developer ID macOS release artifacts
+        if: runner.os == 'macOS'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: pnpm release:macos
 
       - name: Resolve bundle directory (unix)
         if: runner.os != 'Windows'

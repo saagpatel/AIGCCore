@@ -93,7 +93,9 @@ This runbook covers local operator actions for diagnosing failed pack runs and r
 
 - Re-run `pnpm build`.
 - Re-run `cargo check -p aigc_core_tauri`.
-- Confirm signing secrets are available before release workflow.
+- For macOS, confirm Developer ID certificate and notarization credentials are
+  available before the release workflow. Do not substitute Tauri updater keys
+  for application signing.
 
 ## Rollback Procedure
 
@@ -121,7 +123,7 @@ This runbook covers local operator actions for diagnosing failed pack runs and r
 | Runtime command failures (`run_*`) | Core runtime owner   | QA owner           | `FAILED` status on required command path                  |
 | Ingestion contract failures        | Data ingestion owner | Core runtime owner | repeated `BLOCKED` with same `error_code` after input fix |
 | CI/gate pipeline failures          | Release owner        | Core runtime owner | required CI check red for release branch                  |
-| Release packaging/signing failures | Release owner        | Repo admin         | release workflow fails to produce signed artifacts        |
+| Release packaging/signing failures | Release owner        | Repo admin         | release workflow fails its platform-specific artifact gates |
 | Security/compliance incidents      | Security owner       | Repo admin         | policy/gate bypass, audit-chain anomaly, secret leak risk |
 
 If role assignment is not staffed, treat owner as `Unknown` and escalate directly to repo admin.

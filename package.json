@@ -7,6 +7,7 @@
   "scripts": {
     "dev:ui": "vite",
     "build:ui": "vite build",
+    "release:macos": "./scripts/release-macos.sh",
     "preview:ui": "vite preview --host 127.0.0.1 --port 4102",
     "dev": "tauri dev",
     "lean:dev": "bash tools/dev/lean-dev.sh",
@@ -25,6 +26,7 @@
     "test:unit": "vitest run --config vitest.config.ts",
     "test:unit:coverage": "vitest run --config vitest.config.ts --coverage",
     "test:e2e": "playwright test tests/ui",
+    "test:release:macos": "bash scripts/test-release-macos-scripts.sh",
     "gate:all": "node tools/gates/run-all.mjs",
     "ui:test:visual:update": "playwright test tests/ui --grep @visual --update-snapshots",
     "prepare": "husky",
