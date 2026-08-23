@@ -3,6 +3,16 @@
 Date: 2026-03-01
 Status: Complete
 
+## Lifecycle Qualification Correction (2026-08-23)
+
+This document is a historical ceremony record, not current release-readiness
+proof. The workflow used `TAURI_SIGNING_PRIVATE_KEY`, which signs updater
+artifacts and did not establish Developer ID signing or notarization for the
+macOS application. Matrix success also did not by itself exercise installer
+installation. The prior cross-platform "signed" and installer-validation
+claims are therefore reclassified as `UNKNOWN` at those boundaries. The
+current workflow and checklist supersede those mechanics for future releases.
+
 ## Scope
 
 Formal release ceremony for `0.1.0` using the release workflow with verification, signing checks, and artifact checksum capture.
@@ -27,8 +37,10 @@ Formal release ceremony for `0.1.0` using the release workflow with verification
 ## Checklist
 
 - [x] Metadata version alignment validated in workflow
-- [x] Signing prerequisites enforced in workflow
-- [x] Multi-platform signed artifact jobs completed
+- [x] Then-configured signing prerequisites enforced in workflow (insufficient
+  for current Developer ID/notarization qualification; see correction above)
+- [x] Multi-platform artifact jobs completed (historical signing status is
+  `UNKNOWN`; see correction above)
 - [x] Artifact checksums captured in release evidence packet
 - [x] Distribution publication evidence captured
 - [x] Final signoff status set to `Complete`
@@ -37,7 +49,8 @@ Formal release ceremony for `0.1.0` using the release workflow with verification
 
 - GitHub Release object: `https://github.com/saagar210/AIGCCore/releases/tag/v0.1.0-week1-stable`
 - External store upload evidence: `N/A` (distribution channel for this release is GitHub Releases)
-- Installer validation evidence: `Pass` (release workflow matrix success on Windows/macOS/Linux)
+- Installer validation evidence: `UNKNOWN` (workflow matrix success is build
+  evidence, not installation evidence)
 
 ## Go/No-Go
 

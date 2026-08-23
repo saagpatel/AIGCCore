@@ -3,6 +3,16 @@
 Date: 2026-03-01
 Status: Final
 
+## Lifecycle Qualification Correction (2026-08-23)
+
+This packet remains a historical checksum and workflow record. It does not
+prove current Developer ID signing, notarization, installation, Gatekeeper
+acceptance, or embedded-DMG payload validity. The workflow's former Tauri key
+gate covered updater signing keys even though no updater artifact path was
+configured. Historical macOS notarization and platform installation state are
+therefore `UNKNOWN`; future releases must use the corrected release workflow
+and retain the new artifact-level receipts.
+
 ## Release Identity
 
 - Target version: `0.1.0`
@@ -67,5 +77,7 @@ For SHA `85538d2155ef528444b52e6f47493eb25b39e929`:
 
 ## Smoke Test Outcomes
 
-- Desktop bundle launch smoke: `PASS` (local runtime launch smoke on built binary; process started and was cleanly terminated after health interval)
+- Desktop bundle launch smoke: `PASS` at the historical local binary-process
+  boundary only; packaged installation and current-artifact launch remain
+  `UNKNOWN` until re-exercised.
 - Canonical command invoke smoke (`run_*` pack paths): covered by release job `Run canonical verification` on all three runners
