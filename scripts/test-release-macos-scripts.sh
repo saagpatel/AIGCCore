@@ -17,6 +17,14 @@ WORKFLOW="$REPO_ROOT/.github/workflows/release-desktop.yml"
 grep -Fq 'security import "$CERTIFICATE_PATH"' "$WORKFLOW"
 grep -Fq 'security set-key-partition-list' "$WORKFLOW"
 grep -Fq 'grep -F "\"$APPLE_SIGNING_IDENTITY\""' "$WORKFLOW"
+grep -Fq 'cd "$BUNDLE_DIR"' "$WORKFLOW"
+grep -Fq "find . -type f ! -path './SHA256SUMS.txt' -print0" "$WORKFLOW"
+grep -Fq '> SHA256SUMS.txt' "$WORKFLOW"
+grep -Fq '[System.IO.Path]::GetRelativePath($bundleRoot, $_.FullName)' "$WORKFLOW"
+if grep -Fq 'shasum -a 256 > "${BUNDLE_DIR}/SHA256SUMS.txt"' "$WORKFLOW"; then
+  echo "error: checksum manifests must not embed the runner's absolute bundle path" >&2
+  exit 1
+fi
 
 mkdir -p "$FIXTURE_APP/Contents/MacOS"
 cp /usr/bin/true "$FIXTURE_APP/Contents/MacOS/fixture-release"

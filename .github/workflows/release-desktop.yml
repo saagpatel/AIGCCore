@@ -204,19 +204,28 @@ jobs:
         if: runner.os != 'Windows'
         shell: bash
         run: |
-          find "${BUNDLE_DIR}" -type f -print0 | xargs -0 shasum -a 256 > "${BUNDLE_DIR}/SHA256SUMS.txt"
+          (
+            cd "$BUNDLE_DIR"
+            find . -type f ! -path './SHA256SUMS.txt' -print0 \
+              | xargs -0 shasum -a 256 > SHA256SUMS.txt
+          )
 
       - name: Generate SHA-256 checksums (windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $checksumPath = Join-Path $env:BUNDLE_DIR "SHA256SUMS.txt"
-          $files = Get-ChildItem -Path $env:BUNDLE_DIR -File -Recurse |
+          $bundleRoot = (Resolve-Path $env:BUNDLE_DIR).Path
+          $checksumPath = Join-Path $bundleRoot "SHA256SUMS.txt"
+          $files = Get-ChildItem -Path $bundleRoot -File -Recurse |
             Where-Object { $_.FullName -ne $checksumPath }
 
           $files |
-            Get-FileHash -Algorithm SHA256 |
-            ForEach-Object { "$($_.Hash.ToLower())  $($_.Path)" } |
+            Sort-Object FullName |
+            ForEach-Object {
+              $hash = (Get-FileHash -Algorithm SHA256 -Path $_.FullName).Hash.ToLower()
+              $relativePath = [System.IO.Path]::GetRelativePath($bundleRoot, $_.FullName).Replace('\', '/')
+              "$hash  $relativePath"
+            } |
             Out-File -Encoding utf8 $checksumPath
 
       - name: Upload release bundle
