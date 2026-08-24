@@ -8,10 +8,35 @@ const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 export const repositoryRoot = resolve(scriptDirectory, "..");
 
 export const FAST_COMMANDS = Object.freeze([
-  Object.freeze(["pnpm", "ui:lint"]),
-  Object.freeze(["pnpm", "ui:typecheck"]),
-  Object.freeze(["pnpm", "test"]),
-  Object.freeze(["pnpm", "test:build:desktop"]),
+  Object.freeze([
+    process.execPath,
+    resolve(repositoryRoot, "node_modules/eslint/bin/eslint.js"),
+    ".",
+  ]),
+  Object.freeze([
+    process.execPath,
+    resolve(repositoryRoot, "node_modules/stylelint/bin/stylelint.mjs"),
+    "src/**/*.{css,scss}",
+    "--allow-empty-input",
+  ]),
+  Object.freeze([
+    process.execPath,
+    resolve(repositoryRoot, "node_modules/typescript/bin/tsc"),
+    "--noEmit",
+  ]),
+  Object.freeze([
+    process.execPath,
+    resolve(repositoryRoot, "node_modules/vitest/vitest.mjs"),
+    "run",
+    "--config",
+    "vitest.config.ts",
+  ]),
+  Object.freeze([
+    process.execPath,
+    "--test",
+    "scripts/local-build.test.mjs",
+    "scripts/build-desktop.test.mjs",
+  ]),
 ]);
 
 export function parseVerifyCommands(source) {
@@ -40,8 +65,8 @@ function runPnpmScript(script) {
 }
 
 function runFast() {
-  for (const [command, script] of FAST_COMMANDS) {
-    const status = run(command, [script]);
+  for (const [command, ...args] of FAST_COMMANDS) {
+    const status = run(command, args);
     if (status !== 0) return status;
   }
   return 0;

@@ -30,7 +30,7 @@ For an interactive Tauri session, use `pnpm dev` only when an operator is prepar
 pnpm local:fast
 ```
 
-This runs ESLint and Stylelint once, TypeScript checking, the unit suite, repository local-build contract tests, and desktop-build contract tests. It stops on the first failure and preserves the original exit code.
+This invokes the lockfile-installed ESLint, Stylelint, TypeScript, Vitest, and Node test entrypoints directly. It retains the package-script coverage while avoiding duplicate lint and nested package-runner startup. It stops on the first failure and preserves the original exit code.
 
 ## Full Check and CI Parity
 

@@ -1,16 +1,28 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { FAST_COMMANDS, parseVerifyCommands } from "./local-build.mjs";
+import { FAST_COMMANDS, parseVerifyCommands, repositoryRoot } from "./local-build.mjs";
 import { parseAvailableKibibytes } from "./local-doctor.mjs";
 import { ROLLBACK_SEQUENCE } from "./local-rollback.mjs";
 
 test("fast command plan keeps UI coverage without duplicated lint", () => {
   assert.deepEqual(FAST_COMMANDS, [
-    ["pnpm", "ui:lint"],
-    ["pnpm", "ui:typecheck"],
-    ["pnpm", "test"],
-    ["pnpm", "test:build:desktop"],
+    [process.execPath, `${repositoryRoot}/node_modules/eslint/bin/eslint.js`, "."],
+    [
+      process.execPath,
+      `${repositoryRoot}/node_modules/stylelint/bin/stylelint.mjs`,
+      "src/**/*.{css,scss}",
+      "--allow-empty-input",
+    ],
+    [process.execPath, `${repositoryRoot}/node_modules/typescript/bin/tsc`, "--noEmit"],
+    [
+      process.execPath,
+      `${repositoryRoot}/node_modules/vitest/vitest.mjs`,
+      "run",
+      "--config",
+      "vitest.config.ts",
+    ],
+    [process.execPath, "--test", "scripts/local-build.test.mjs", "scripts/build-desktop.test.mjs"],
   ]);
 });
 
