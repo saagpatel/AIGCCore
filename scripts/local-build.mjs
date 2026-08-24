@@ -133,7 +133,7 @@ function runReleaseCheck() {
 const COMMANDS = {
   fast: runFast,
   full: runFull,
-  fixtures: () => runPnpmScript("gate:all"),
+  fixtures: () => run(process.execPath, [resolve(repositoryRoot, "tools/gates/run-all.mjs")]),
   "controlled-failure": () =>
     run("cargo", [
       "test",
