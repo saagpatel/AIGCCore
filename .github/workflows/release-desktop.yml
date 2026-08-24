@@ -15,15 +15,12 @@ permissions:
   contents: read
 
 jobs:
-  build_signed_artifacts:
+  build_release_artifacts:
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-22.04, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    env:
-      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -93,25 +90,95 @@ jobs:
             fi
           done
 
-      - name: Verify signing prerequisites
+      - name: Verify macOS signing and notarization prerequisites
+        if: runner.os == 'macOS'
         shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          if [[ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" || -z "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}" ]]; then
-            echo "Missing TAURI signing secrets. Refusing to build unsigned release artifacts."
-            exit 1
-          fi
+          for REQUIRED_VAR in \
+            APPLE_CERTIFICATE \
+            APPLE_CERTIFICATE_PASSWORD \
+            APPLE_SIGNING_IDENTITY \
+            APPLE_ID \
+            APPLE_PASSWORD \
+            APPLE_TEAM_ID; do
+              if [[ -z "${!REQUIRED_VAR:-}" ]]; then
+                echo "Missing $REQUIRED_VAR. Refusing to build an unnotarized macOS release."
+                exit 1
+              fi
+            done
+
+      - name: Test macOS packaging contract
+        if: runner.os == 'macOS'
+        run: pnpm test:release:macos
 
       - name: Run canonical verification
         run: bash .codex/scripts/run_verify_commands.sh
 
-      - name: Build signed desktop artifacts
+      - name: Build Linux and Windows release artifacts
+        if: runner.os != 'macOS'
         run: pnpm build
+
+      - name: Import Developer ID certificate
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          CERTIFICATE_PATH="$RUNNER_TEMP/aigc-developer-id.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/aigc-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
+
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$CERTIFICATE_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security default-keychain -s "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" \
+            -k "$KEYCHAIN_PATH" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s \
+            -k "$KEYCHAIN_PASSWORD" \
+            "$KEYCHAIN_PATH"
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH" \
+            | grep -F "\"$APPLE_SIGNING_IDENTITY\""
+
+      - name: Build and verify Developer ID macOS release artifacts
+        if: runner.os == 'macOS'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: pnpm release:macos
+
+      - name: Remove ephemeral signing keychain
+        if: runner.os == 'macOS' && always()
+        shell: bash
+        run: |
+          security delete-keychain "$RUNNER_TEMP/aigc-signing.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/aigc-developer-id.p12"
 
       - name: Resolve bundle directory (unix)
         if: runner.os != 'Windows'
         shell: bash
         run: |
-          if [[ -d "target/release/bundle" ]]; then
+          if [[ -n "${BUNDLE_DIR:-}" && -d "$BUNDLE_DIR" ]]; then
+            echo "BUNDLE_DIR=$BUNDLE_DIR" >> "$GITHUB_ENV"
+          elif [[ -d "target/release/bundle" ]]; then
             echo "BUNDLE_DIR=target/release/bundle" >> "$GITHUB_ENV"
           elif [[ -d "src-tauri/target/release/bundle" ]]; then
             echo "BUNDLE_DIR=src-tauri/target/release/bundle" >> "$GITHUB_ENV"
@@ -137,19 +204,28 @@ jobs:
         if: runner.os != 'Windows'
         shell: bash
         run: |
-          find "${BUNDLE_DIR}" -type f -print0 | xargs -0 shasum -a 256 > "${BUNDLE_DIR}/SHA256SUMS.txt"
+          (
+            cd "$BUNDLE_DIR"
+            find . -type f ! -path './SHA256SUMS.txt' -print0 \
+              | xargs -0 shasum -a 256 > SHA256SUMS.txt
+          )
 
       - name: Generate SHA-256 checksums (windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $checksumPath = Join-Path $env:BUNDLE_DIR "SHA256SUMS.txt"
-          $files = Get-ChildItem -Path $env:BUNDLE_DIR -File -Recurse |
+          $bundleRoot = (Resolve-Path $env:BUNDLE_DIR).Path
+          $checksumPath = Join-Path $bundleRoot "SHA256SUMS.txt"
+          $files = Get-ChildItem -Path $bundleRoot -File -Recurse |
             Where-Object { $_.FullName -ne $checksumPath }
 
           $files |
-            Get-FileHash -Algorithm SHA256 |
-            ForEach-Object { "$($_.Hash.ToLower())  $($_.Path)" } |
+            Sort-Object FullName |
+            ForEach-Object {
+              $hash = (Get-FileHash -Algorithm SHA256 -Path $_.FullName).Hash.ToLower()
+              $relativePath = [System.IO.Path]::GetRelativePath($bundleRoot, $_.FullName).Replace('\', '/')
+              "$hash  $relativePath"
+            } |
             Out-File -Encoding utf8 $checksumPath
 
       - name: Upload release bundle

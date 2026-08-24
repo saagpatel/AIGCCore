@@ -46,9 +46,25 @@ pnpm test
 # Production build
 pnpm tauri build
 
+# Production macOS direct-distribution release
+pnpm release:macos
+
 # Clean heavy build artifacts
 pnpm clean:heavy
 ```
+
+`pnpm release:macos` is the only production macOS distribution path. It
+requires a usable Developer ID identity plus complete Apple notarization
+credentials, builds the app separately in a non-File-Provider Cargo target,
+normalizes unsafe extended attributes, packages a metadata-clean DMG, mounts
+the image to verify the embedded app, and requires Gatekeeper and stapled-ticket
+validation. The multi-platform release workflow uses this path for macOS;
+Windows and Linux jobs currently prove packaging and checksums, not platform
+signing.
+
+AIGCCore does not currently claim an in-app Tauri updater, automatic upgrade,
+downgrade, or rollback channel. A rollback is a manual reinstall of a separately
+qualified prior artifact and requires its own execution receipt.
 
 ## Tech Stack
 

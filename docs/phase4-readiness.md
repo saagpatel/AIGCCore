@@ -3,6 +3,16 @@
 Date: 2026-03-01
 Status: Complete
 
+## Lifecycle Qualification Correction (2026-08-23)
+
+Phase 4 completion remains historical project evidence. Its former
+"cross-platform signed" label is not current signature or notarization proof:
+the workflow gated Tauri updater-signing keys, not Developer ID application
+signing, and did not exercise installation. Treat the listed artifacts and
+workflow runs as build/checksum evidence only. Current macOS qualification must
+use the corrected release workflow; Windows and Linux signing remains
+`UNKNOWN` unless separately evidenced.
+
 ## Implemented
 
 1. Release metadata is production-safe:
@@ -11,7 +21,8 @@ Status: Complete
    - `src-tauri/Cargo.toml` version set to `0.1.0`
    - `src-tauri/tauri.conf.json` version set to `0.1.0`
    - `src-tauri/tauri.conf.json` identifier set to `com.aigc.core`
-2. Signed cross-platform release workflow implemented:
+2. Cross-platform packaging workflow implemented (historical signing claim
+   corrected above):
    - `.github/workflows/release-desktop.yml`
 3. Operator release runbook/checklist documented:
    - `docs/release-checklist.md`

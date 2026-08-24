@@ -2,6 +2,7 @@
 pnpm lint
 pnpm ui:gate:static
 pnpm test
+pnpm test:build:desktop
 cargo test --workspace
 cargo test --locked -p aigc_core_tauri --features authority-integrity-test-hooks authority_integrity_tests -- --show-output
 pnpm build
