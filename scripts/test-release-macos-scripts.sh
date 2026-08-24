@@ -13,6 +13,11 @@ TEST_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/aigc-release-script-test.XXXXXX")"
 FIXTURE_APP="$TEST_ROOT/Fixture Release.app"
 FIXTURE_DMG="$TEST_ROOT/Fixture_Release_1.0.0_aarch64.dmg"
 
+WORKFLOW="$REPO_ROOT/.github/workflows/release-desktop.yml"
+grep -Fq 'security import "$CERTIFICATE_PATH"' "$WORKFLOW"
+grep -Fq 'security set-key-partition-list' "$WORKFLOW"
+grep -Fq 'grep -F "\"$APPLE_SIGNING_IDENTITY\""' "$WORKFLOW"
+
 mkdir -p "$FIXTURE_APP/Contents/MacOS"
 cp /usr/bin/true "$FIXTURE_APP/Contents/MacOS/fixture-release"
 plutil -create xml1 "$FIXTURE_APP/Contents/Info.plist"

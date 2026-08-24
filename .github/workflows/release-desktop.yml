@@ -125,6 +125,35 @@ jobs:
         if: runner.os != 'macOS'
         run: pnpm build
 
+      - name: Import Developer ID certificate
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          CERTIFICATE_PATH="$RUNNER_TEMP/aigc-developer-id.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/aigc-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
+
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$CERTIFICATE_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security default-keychain -s "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" \
+            -k "$KEYCHAIN_PATH" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s \
+            -k "$KEYCHAIN_PASSWORD" \
+            "$KEYCHAIN_PATH"
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH" \
+            | grep -F "\"$APPLE_SIGNING_IDENTITY\""
+
       - name: Build and verify Developer ID macOS release artifacts
         if: runner.os == 'macOS'
         env:
@@ -135,6 +164,13 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: pnpm release:macos
+
+      - name: Remove ephemeral signing keychain
+        if: runner.os == 'macOS' && always()
+        shell: bash
+        run: |
+          security delete-keychain "$RUNNER_TEMP/aigc-signing.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/aigc-developer-id.p12"
 
       - name: Resolve bundle directory (unix)
         if: runner.os != 'Windows'
