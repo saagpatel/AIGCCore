@@ -6,12 +6,12 @@ import { StatusBadge } from "../StatusBadge";
 
 type Props = {
   running: boolean;
+  operationDisabled: boolean;
   result: PackCommandStatus | null;
-  error: string | null;
   onRun: (input: RedlineCommandInput) => Promise<void>;
 };
 
-export function RedlineOSPanel({ running, result, error, onRun }: Props) {
+export function RedlineOSPanel({ running, operationDisabled, result, onRun }: Props) {
   const [extractionMode, setExtractionMode] = useState<"NATIVE_PDF" | "OCR">("NATIVE_PDF");
   const [jurisdiction, setJurisdiction] = useState<string>("US-CA");
   const [reviewProfile, setReviewProfile] = useState<"default" | "aggressive" | "conservative">(
@@ -104,7 +104,12 @@ export function RedlineOSPanel({ running, result, error, onRun }: Props) {
         />
       </div>
 
-      <button type="button" disabled={running || !contractBase64.trim()} onClick={handleRun}>
+      <button
+        type="button"
+        disabled={running || operationDisabled || !contractBase64.trim()}
+        aria-describedby={operationDisabled ? "write-readiness" : undefined}
+        onClick={handleRun}
+      >
         {running ? "Analyzing Contract..." : "Generate Risk Assessment"}
       </button>
       <button type="button" onClick={handleLoadSampleData}>
@@ -114,10 +119,13 @@ export function RedlineOSPanel({ running, result, error, onRun }: Props) {
       {!contractBase64.trim() && (
         <p className="meta">Provide PDF payload bytes in Base64 or load sample data.</p>
       )}
-      {localError && <p className="error">{localError}</p>}
-      {error && <p className="error">{error}</p>}
+      {localError && (
+        <p className="error" role="alert">
+          {localError}
+        </p>
+      )}
       {result && (
-        <div className="result">
+        <div className="result" role="status" aria-live="polite" aria-atomic="true">
           <p>
             Status: <StatusBadge status={result.status} />
           </p>

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { FinanceOSPanel } from "./packs/FinanceOSPanel";
 import { HealthcareOSPanel } from "./packs/HealthcareOSPanel";
@@ -53,12 +53,25 @@ type EvidenceOsRunInput = {
   claim_text: string;
 };
 
+const evidenceFieldLabels = {
+  "artifact-title": "Artifact title",
+  "artifact-body": "Artifact text",
+  "artifact-tags": "Artifact tags",
+  "control-families": "Control families",
+  "claim-text": "Narrative claim",
+} as const;
+
+type EvidenceFieldId = keyof typeof evidenceFieldLabels;
+
 export function App() {
   const [snap, setSnap] = useState<NetworkSnapshot | null>(null);
   const [snapError, setSnapError] = useState<string | null>(null);
   const [controls, setControls] = useState<ControlDefinition[]>([]);
+  const [controlsLoading, setControlsLoading] = useState(true);
+  const [controlsError, setControlsError] = useState<string | null>(null);
   const [runResult, setRunResult] = useState<EvidenceOsRunResult | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
+  const [evidenceInvalidFields, setEvidenceInvalidFields] = useState<EvidenceFieldId[]>([]);
   const [running, setRunning] = useState(false);
   const [selectedCapability, setSelectedCapability] = useState("ALL");
   const [artifactTitle, setArtifactTitle] = useState("Network policy evidence");
@@ -75,11 +88,11 @@ export function App() {
 
   const [futurePackRunning, setFuturePackRunning] = useState<string | null>(null);
   const [futurePackResult, setFuturePackResult] = useState<Record<string, PackCommandStatus>>({});
-  const [futurePackError, setFuturePackError] = useState<Record<string, string>>({});
   const [incidentPayload, setIncidentPayload] = useState("");
   const [financePayload, setFinancePayload] = useState("");
   const [healthcareTranscriptPayload, setHealthcareTranscriptPayload] = useState("");
   const [healthcareConsentPayload, setHealthcareConsentPayload] = useState("");
+  const operationLockRef = useRef(false);
 
   const networkStatus = useMemo(() => {
     if (snapError) {
@@ -111,8 +124,12 @@ export function App() {
       try {
         const list = await invoke<ControlDefinition[]>("list_control_library");
         setControls(list);
+        setControlsError(null);
       } catch (error) {
-        setRunError(`Failed to load control library: ${String(error)}`);
+        setControls([]);
+        setControlsError(String(error));
+      } finally {
+        setControlsLoading(false);
       }
     })();
   }, []);
@@ -122,7 +139,69 @@ export function App() {
     return controls.filter((control) => control.capability === selectedCapability);
   }, [controls, selectedCapability]);
 
+  const operationalReady = snap !== null && !snapError && !controlsLoading && !controlsError;
+  const operationRunning = running || futurePackRunning !== null;
+  const writeUnavailable = useMemo(() => {
+    if (snapError)
+      return {
+        kind: "error" as const,
+        message: "Exports are unavailable because network enforcement status is unknown.",
+      };
+    if (!snap)
+      return {
+        kind: "status" as const,
+        message: "Exports are unavailable while network enforcement status is loading.",
+      };
+    if (controlsError)
+      return {
+        kind: "error" as const,
+        message: `Control library unavailable: ${controlsError}. Exports are unavailable.`,
+      };
+    if (controlsLoading)
+      return {
+        kind: "status" as const,
+        message: "Exports are unavailable while the control library is loading.",
+      };
+    if (operationRunning)
+      return {
+        kind: "status" as const,
+        message:
+          "Another local export is in progress. Wait for it to finish before starting another.",
+      };
+    return null;
+  }, [controlsError, controlsLoading, operationRunning, snap, snapError]);
+
+  const evidenceValidationMessage = useMemo(() => {
+    if (evidenceInvalidFields.length === 0) return null;
+    const labels = evidenceInvalidFields.map((field) => evidenceFieldLabels[field]);
+    return `Complete the required EvidenceOS fields: ${labels.join(", ")}.`;
+  }, [evidenceInvalidFields]);
+
+  const updateEvidenceField = (
+    field: EvidenceFieldId,
+    setValue: React.Dispatch<React.SetStateAction<string>>,
+    value: string,
+  ) => {
+    setValue(value);
+    setEvidenceInvalidFields((current) => current.filter((candidate) => candidate !== field));
+  };
+
   const onRunEvidenceOs = async () => {
+    const missingFields: EvidenceFieldId[] = [];
+    if (!artifactTitle.trim()) missingFields.push("artifact-title");
+    if (!artifactBody.trim()) missingFields.push("artifact-body");
+    if (!artifactTags.trim()) missingFields.push("artifact-tags");
+    if (!controlFamilies.trim()) missingFields.push("control-families");
+    if (!claimText.trim()) missingFields.push("claim-text");
+    setEvidenceInvalidFields(missingFields);
+    if (missingFields.length > 0) {
+      setRunError(null);
+      setRunResult(null);
+      return;
+    }
+    if (!operationalReady || operationLockRef.current) return;
+
+    operationLockRef.current = true;
     setRunning(true);
     setRunError(null);
     try {
@@ -143,23 +222,19 @@ export function App() {
       setRunResult(null);
     } finally {
       setRunning(false);
+      operationLockRef.current = false;
     }
   };
 
   const runFuturePack = async (command: string, input: unknown) => {
+    if (!operationalReady || operationLockRef.current) return;
+
+    operationLockRef.current = true;
     setFuturePackRunning(command);
-    setFuturePackError((prev) => ({ ...prev, [command]: "" }));
     try {
       const result = await invoke<PackCommandStatus>(command, { input });
-      if (result.status !== "SUCCESS") {
-        const errorLabel = result.error_code
-          ? `${result.message} (${result.error_code})`
-          : result.message;
-        setFuturePackError((prev) => ({ ...prev, [command]: errorLabel }));
-      }
       setFuturePackResult((prev) => ({ ...prev, [command]: result }));
     } catch (error) {
-      setFuturePackError((prev) => ({ ...prev, [command]: String(error) }));
       setFuturePackResult((prev) => ({
         ...prev,
         [command]: {
@@ -170,6 +245,7 @@ export function App() {
       }));
     } finally {
       setFuturePackRunning(null);
+      operationLockRef.current = false;
     }
   };
 
@@ -181,12 +257,26 @@ export function App() {
           className="badge"
           data-mode={snap?.network_mode ?? (snapError ? "UNKNOWN" : "LOADING")}
           data-testid="network-status"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
         >
           Network: {networkStatus}
         </div>
       </header>
 
-      <main className="main">
+      <main className="main" aria-busy={!operationalReady || operationRunning || undefined}>
+        {writeUnavailable && (
+          <p
+            id="write-readiness"
+            className="readiness"
+            data-state={writeUnavailable.kind}
+            role={writeUnavailable.kind === "error" ? "alert" : "status"}
+            aria-live={writeUnavailable.kind === "error" ? "assertive" : "polite"}
+          >
+            {writeUnavailable.message}
+          </p>
+        )}
         <section className="card">
           <h2>Phase 2 Hard Guarantees</h2>
           <ul>
@@ -221,37 +311,86 @@ export function App() {
             <label htmlFor="artifact-title">Artifact title</label>
             <input
               id="artifact-title"
+              required
+              aria-invalid={evidenceInvalidFields.includes("artifact-title") || undefined}
+              aria-describedby={
+                evidenceInvalidFields.includes("artifact-title")
+                  ? "evidence-validation-error"
+                  : undefined
+              }
               value={artifactTitle}
-              onChange={(event) => setArtifactTitle(event.target.value)}
+              onChange={(event) =>
+                updateEvidenceField("artifact-title", setArtifactTitle, event.target.value)
+              }
             />
             <label htmlFor="artifact-body">Artifact text</label>
             <textarea
               id="artifact-body"
               rows={3}
+              required
+              aria-invalid={evidenceInvalidFields.includes("artifact-body") || undefined}
+              aria-describedby={
+                evidenceInvalidFields.includes("artifact-body")
+                  ? "evidence-validation-error"
+                  : undefined
+              }
               value={artifactBody}
-              onChange={(event) => setArtifactBody(event.target.value)}
+              onChange={(event) =>
+                updateEvidenceField("artifact-body", setArtifactBody, event.target.value)
+              }
             />
             <label htmlFor="artifact-tags">Artifact tags (CSV)</label>
             <input
               id="artifact-tags"
+              required
+              aria-invalid={evidenceInvalidFields.includes("artifact-tags") || undefined}
+              aria-describedby={
+                evidenceInvalidFields.includes("artifact-tags")
+                  ? "evidence-validation-error"
+                  : undefined
+              }
               value={artifactTags}
-              onChange={(event) => setArtifactTags(event.target.value)}
+              onChange={(event) =>
+                updateEvidenceField("artifact-tags", setArtifactTags, event.target.value)
+              }
             />
             <label htmlFor="control-families">Control families (CSV)</label>
             <input
               id="control-families"
+              required
+              aria-invalid={evidenceInvalidFields.includes("control-families") || undefined}
+              aria-describedby={
+                evidenceInvalidFields.includes("control-families")
+                  ? "evidence-validation-error"
+                  : undefined
+              }
               value={controlFamilies}
-              onChange={(event) => setControlFamilies(event.target.value)}
+              onChange={(event) =>
+                updateEvidenceField("control-families", setControlFamilies, event.target.value)
+              }
             />
             <label htmlFor="claim-text">Narrative claim</label>
             <textarea
               id="claim-text"
               rows={3}
+              required
+              aria-invalid={evidenceInvalidFields.includes("claim-text") || undefined}
+              aria-describedby={
+                evidenceInvalidFields.includes("claim-text")
+                  ? "evidence-validation-error"
+                  : undefined
+              }
               value={claimText}
-              onChange={(event) => setClaimText(event.target.value)}
+              onChange={(event) =>
+                updateEvidenceField("claim-text", setClaimText, event.target.value)
+              }
             />
           </div>
           <div className="controls-grid">
+            {controlsLoading && <p role="status">Loading control library…</p>}
+            {!controlsLoading && !controlsError && filteredControls.length === 0 && (
+              <p className="meta">No controls are available for this capability.</p>
+            )}
             {filteredControls.map((control) => (
               <article key={control.control_id} className="control-card">
                 <h3>{control.control_id}</h3>
@@ -263,12 +402,26 @@ export function App() {
               </article>
             ))}
           </div>
-          <button type="button" disabled={running} onClick={onRunEvidenceOs}>
+          <button
+            type="button"
+            disabled={Boolean(writeUnavailable)}
+            aria-describedby={writeUnavailable ? "write-readiness" : undefined}
+            onClick={onRunEvidenceOs}
+          >
             {running ? "Generating EvidenceOS Bundle…" : "Generate EvidenceOS Bundle"}
           </button>
-          {runError && <p className="error">Phase 3 run failed: {runError}</p>}
+          {evidenceValidationMessage && (
+            <p id="evidence-validation-error" className="error" role="alert">
+              {evidenceValidationMessage}
+            </p>
+          )}
+          {runError && (
+            <p className="error" role="alert">
+              Phase 3 run failed: {runError}
+            </p>
+          )}
           {runResult && (
-            <div className="result">
+            <div className="result" role="status" aria-live="polite" aria-atomic="true">
               <p>
                 Export status: <StatusBadge status={runResult.status} />
               </p>
@@ -287,14 +440,14 @@ export function App() {
 
         <RedlineOSPanel
           running={futurePackRunning === "run_redlineos"}
+          operationDisabled={Boolean(writeUnavailable)}
           result={futurePackResult.run_redlineos ?? null}
-          error={futurePackError.run_redlineos ?? null}
           onRun={(input) => runFuturePack("run_redlineos", input)}
         />
         <IncidentOSPanel
           running={futurePackRunning === "run_incidentos"}
+          operationDisabled={Boolean(writeUnavailable)}
           result={futurePackResult.run_incidentos ?? null}
-          error={futurePackError.run_incidentos ?? null}
           payloadText={incidentPayload}
           onPayloadChange={setIncidentPayload}
           onLoadSample={() => setIncidentPayload(SAMPLE_INCIDENT_LOG)}
@@ -302,8 +455,8 @@ export function App() {
         />
         <FinanceOSPanel
           running={futurePackRunning === "run_financeos"}
+          operationDisabled={Boolean(writeUnavailable)}
           result={futurePackResult.run_financeos ?? null}
-          error={futurePackError.run_financeos ?? null}
           payloadText={financePayload}
           onPayloadChange={setFinancePayload}
           onLoadSample={() => setFinancePayload(SAMPLE_FINANCE_STATEMENT)}
@@ -313,8 +466,8 @@ export function App() {
         />
         <HealthcareOSPanel
           running={futurePackRunning === "run_healthcareos"}
+          operationDisabled={Boolean(writeUnavailable)}
           result={futurePackResult.run_healthcareos ?? null}
-          error={futurePackError.run_healthcareos ?? null}
           transcriptText={healthcareTranscriptPayload}
           consentText={healthcareConsentPayload}
           onTranscriptChange={setHealthcareTranscriptPayload}

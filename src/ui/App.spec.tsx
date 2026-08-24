@@ -133,6 +133,7 @@ describe("App", () => {
       expect(invokeMock).toHaveBeenCalledWith("generate_evidenceos_bundle", expect.any(Object));
     });
     await screen.findByText("Missing controls: CTRL-9");
+    expect(screen.getByText("Missing controls: CTRL-9").closest("[role='status']")).toBeTruthy();
     await screen.findByText("CONTROLLED / CONTROL_SIMULATION");
     await screen.findByText(
       "Must not satisfy: LIVE_EXECUTION, PRODUCTION_AUTHORITY, EXTERNAL_MUTATION",
@@ -145,6 +146,7 @@ describe("App", () => {
     });
     const redlineBundlePath = await screen.findByText("Bundle path: /tmp/redline.zip");
     const redlineResult = redlineBundlePath.closest(".result");
+    expect(redlineResult?.getAttribute("role")).toBe("status");
     expect(redlineResult?.textContent).toContain("Evidence authority: UNKNOWN");
     expect(redlineResult?.textContent).toContain("This result is non-authorizing");
 
@@ -236,30 +238,150 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Load IncidentOS sample data" }));
     fireEvent.click(screen.getByRole("button", { name: "Run IncidentOS Export" }));
     await waitFor(() => {
-      expect(
-        screen.getAllByText("Missing artifact payload for artifact_id=i_demo").length,
-      ).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText("Missing artifact payload for artifact_id=i_demo")).toHaveLength(
+        1,
+      );
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Load FinanceOS sample data" }));
     fireEvent.click(screen.getByRole("button", { name: "Run FinanceOS Export" }));
     await waitFor(() => {
-      expect(
-        screen.getByText(
-          "Failed to parse finance statement payload (FINANCE_STATEMENT_INVALID_FORMAT)",
-        ),
-      ).toBeTruthy();
+      expect(screen.getByText("Failed to parse finance statement payload")).toBeTruthy();
+      expect(screen.getByText("Error code: FINANCE_STATEMENT_INVALID_FORMAT")).toBeTruthy();
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Load HealthcareOS sample data" }));
     fireEvent.click(screen.getByRole("button", { name: "Run HealthcareOS Export" }));
     await waitFor(() => {
-      expect(
-        screen.getByText(
-          "HealthcareOS workflow failed: revoked consent (HEALTHCAREOS_WORKFLOW_INVALID_INPUT)",
-        ),
-      ).toBeTruthy();
+      expect(screen.getByText("HealthcareOS workflow failed: revoked consent")).toBeTruthy();
+      expect(screen.getByText("Error code: HEALTHCAREOS_WORKFLOW_INVALID_INPUT")).toBeTruthy();
     });
+  });
+
+  it("blocks exports until runtime readiness is known", async () => {
+    let resolveNetwork: ((value: unknown) => void) | undefined;
+    invokeMock.mockImplementation((command: string) => {
+      if (command === "get_network_snapshot") {
+        return new Promise((resolve) => {
+          resolveNetwork = resolve;
+        });
+      }
+      if (command === "list_control_library") return Promise.resolve([]);
+      return Promise.resolve({ status: "SUCCESS", message: `${command} complete` });
+    });
+
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "Load IncidentOS sample data" }));
+
+    const evidenceButton = screen.getByRole("button", { name: "Generate EvidenceOS Bundle" });
+    const incidentButton = screen.getByRole("button", { name: "Run IncidentOS Export" });
+    expect((evidenceButton as HTMLButtonElement).disabled).toBe(true);
+    expect((incidentButton as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByRole("main").getAttribute("aria-busy")).toBe("true");
+    expect(
+      screen.getByText("Exports are unavailable while network enforcement status is loading."),
+    ).toBeTruthy();
+
+    resolveNetwork?.({
+      network_mode: "OFFLINE",
+      proof_level: "OFFLINE_STRICT",
+      ui_remote_fetch_disabled: true,
+    });
+
+    await waitFor(() => {
+      expect((evidenceButton as HTMLButtonElement).disabled).toBe(false);
+      expect((incidentButton as HTMLButtonElement).disabled).toBe(false);
+      expect(screen.getByRole("main").getAttribute("aria-busy")).toBeNull();
+    });
+  });
+
+  it("uses one canonical alert when the control library is unavailable", async () => {
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === "get_network_snapshot") {
+        return {
+          network_mode: "OFFLINE",
+          proof_level: "OFFLINE_STRICT",
+          ui_remote_fetch_disabled: true,
+        };
+      }
+      if (command === "list_control_library") throw new Error("fixture controls unavailable");
+      return { status: "SUCCESS", message: `${command} complete` };
+    });
+
+    render(<App />);
+
+    const alert = await screen.findByRole("alert");
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(alert.textContent).toContain("fixture controls unavailable");
+    expect(
+      (screen.getByRole("button", { name: "Generate EvidenceOS Bundle" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+  });
+
+  it("rejects empty EvidenceOS fields without replacing or losing input", async () => {
+    render(<App />);
+    await screen.findByText("CTRL-1");
+
+    const artifactTitle = screen.getByLabelText("Artifact title") as HTMLInputElement;
+    fireEvent.change(artifactTitle, { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Generate EvidenceOS Bundle" }));
+
+    const alert = screen.getByRole("alert");
+    expect(alert.textContent).toContain("Artifact title");
+    expect(artifactTitle.value).toBe("");
+    expect(artifactTitle.getAttribute("aria-invalid")).toBe("true");
+    expect(
+      invokeMock.mock.calls.some(([command]) => command === "generate_evidenceos_bundle"),
+    ).toBe(false);
+
+    fireEvent.change(artifactTitle, { target: { value: "Recovered title 🧭" } });
+    expect(artifactTitle.value).toBe("Recovered title 🧭");
+    expect(artifactTitle.getAttribute("aria-invalid")).toBeNull();
+    expect(screen.queryByText(/Complete the required EvidenceOS fields/)).toBeNull();
+  });
+
+  it("serializes local export operations across packs", async () => {
+    let resolveIncident: ((value: unknown) => void) | undefined;
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === "get_network_snapshot") {
+        return {
+          network_mode: "OFFLINE",
+          proof_level: "OFFLINE_STRICT",
+          ui_remote_fetch_disabled: true,
+        };
+      }
+      if (command === "list_control_library") return [];
+      if (command === "run_incidentos") {
+        return new Promise((resolve) => {
+          resolveIncident = resolve;
+        });
+      }
+      return { status: "SUCCESS", message: `${command} complete` };
+    });
+
+    render(<App />);
+    await screen.findByText("No controls are available for this capability.");
+    fireEvent.click(screen.getByRole("button", { name: "Load IncidentOS sample data" }));
+    fireEvent.click(screen.getByRole("button", { name: "Load FinanceOS sample data" }));
+    fireEvent.click(screen.getByRole("button", { name: "Run IncidentOS Export" }));
+
+    const financeButton = screen.getByRole("button", { name: "Run FinanceOS Export" });
+    await waitFor(() => {
+      expect((financeButton as HTMLButtonElement).disabled).toBe(true);
+      expect(
+        (screen.getByRole("button", { name: "Generate EvidenceOS Bundle" }) as HTMLButtonElement)
+          .disabled,
+      ).toBe(true);
+    });
+    fireEvent.click(financeButton);
+    expect(invokeMock.mock.calls.filter(([command]) => command === "run_financeos")).toHaveLength(
+      0,
+    );
+
+    resolveIncident?.({ status: "SUCCESS", message: "Incident complete" });
+    await screen.findByText("Incident complete");
+    await waitFor(() => expect((financeButton as HTMLButtonElement).disabled).toBe(false));
   });
 
   it("reports the network state as unresolved instead of fabricating OFFLINE_STRICT", async () => {

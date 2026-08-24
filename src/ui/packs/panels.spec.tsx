@@ -15,8 +15,8 @@ describe("pack panels", () => {
     const { rerender } = render(
       <IncidentOSPanel
         running={false}
+        operationDisabled={false}
         result={null}
-        error={null}
         payloadText=""
         onPayloadChange={noop}
         onLoadSample={noop}
@@ -31,6 +31,7 @@ describe("pack panels", () => {
     rerender(
       <IncidentOSPanel
         running={false}
+        operationDisabled={false}
         result={{
           status: "SUCCESS",
           message: "ok",
@@ -39,26 +40,24 @@ describe("pack panels", () => {
           run_id: "r_incident",
           audit_path: "/tmp/inc/audit.ndjson",
         }}
-        error="incident error"
         payloadText={'{"ok":true}'}
         onPayloadChange={noop}
         onLoadSample={noop}
         onRun={resolved}
       />,
     );
-    expect(screen.getByText("incident error")).toBeTruthy();
     expect(screen.getByText("Bundle path: /tmp/inc.zip")).toBeTruthy();
     expect(screen.getByText("Run ID: r_incident")).toBeTruthy();
 
     rerender(
       <FinanceOSPanel
         running
+        operationDisabled={false}
         result={{
           status: "BLOCKED",
           message: "Missing statement payload",
           error_code: "ARTIFACT_PAYLOAD_MISSING",
         }}
-        error={null}
         payloadText={'{"statement_id":"x"}'}
         onPayloadChange={noop}
         onLoadSample={noop}
@@ -73,6 +72,7 @@ describe("pack panels", () => {
     rerender(
       <HealthcareOSPanel
         running={false}
+        operationDisabled={false}
         result={{
           status: "SUCCESS",
           message: "ok",
@@ -81,7 +81,6 @@ describe("pack panels", () => {
           run_id: "r_health",
           audit_path: "/tmp/health/audit.ndjson",
         }}
-        error={null}
         transcriptText={'{"transcript":true}'}
         consentText={'{"consent":true}'}
         onTranscriptChange={noop}
@@ -117,8 +116,8 @@ describe("pack panels", () => {
     const { container, rerender } = render(
       <IncidentOSPanel
         running={false}
+        operationDisabled={false}
         result={{ status: "SUCCESS", message: "ok" }}
-        error={null}
         payloadText={'{"ok":true}'}
         onPayloadChange={noop}
         onLoadSample={noop}
@@ -130,8 +129,8 @@ describe("pack panels", () => {
     rerender(
       <IncidentOSPanel
         running={false}
+        operationDisabled={false}
         result={{ status: "BLOCKED", message: "policy refused the export" }}
-        error={null}
         payloadText={'{"ok":true}'}
         onPayloadChange={noop}
         onLoadSample={noop}
@@ -143,8 +142,8 @@ describe("pack panels", () => {
     rerender(
       <IncidentOSPanel
         running={false}
+        operationDisabled={false}
         result={{ status: "FAILED", message: "export crashed" }}
-        error={null}
         payloadText={'{"ok":true}'}
         onPayloadChange={noop}
         onLoadSample={noop}
@@ -181,7 +180,9 @@ describe("pack panels", () => {
 
   it("supports redline sample toggle and command payload generation", async () => {
     const onRun = vi.fn(async (_input: unknown) => {});
-    render(<RedlineOSPanel running={false} result={null} error={null} onRun={onRun} />);
+    render(
+      <RedlineOSPanel running={false} operationDisabled={false} result={null} onRun={onRun} />,
+    );
 
     const runButton = screen.getByRole("button", { name: "Generate Risk Assessment" });
     expect((runButton as HTMLButtonElement).disabled).toBe(true);

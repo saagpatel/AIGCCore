@@ -4,8 +4,8 @@ import { EvidenceAuthorityNotice } from "./EvidenceAuthorityNotice";
 
 type Props = {
   running: boolean;
+  operationDisabled: boolean;
   result: PackCommandStatus | null;
-  error: string | null;
   payloadText: string;
   onPayloadChange: (value: string) => void;
   onLoadSample: () => void;
@@ -14,8 +14,8 @@ type Props = {
 
 export function IncidentOSPanel({
   running,
+  operationDisabled,
   result,
-  error,
   payloadText,
   onPayloadChange,
   onLoadSample,
@@ -42,13 +42,17 @@ export function IncidentOSPanel({
       <button type="button" onClick={onLoadSample}>
         Load IncidentOS sample data
       </button>
-      <button type="button" disabled={running || !canRun} onClick={() => void onRun()}>
+      <button
+        type="button"
+        disabled={running || operationDisabled || !canRun}
+        aria-describedby={operationDisabled ? "write-readiness" : undefined}
+        onClick={() => void onRun()}
+      >
         {running ? "Running IncidentOS..." : "Run IncidentOS Export"}
       </button>
       {!canRun && <p className="meta">Provide incident payload text or load sample data.</p>}
-      {error && <p className="error">{error}</p>}
       {result && (
-        <div className="result">
+        <div className="result" role="status" aria-live="polite" aria-atomic="true">
           <p>
             Status: <StatusBadge status={result.status} />
           </p>
