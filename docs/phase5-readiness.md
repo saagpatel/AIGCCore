@@ -3,6 +3,11 @@
 Date: 2026-03-01
 Status: Complete
 
+Lifecycle note (2026-08-23): the release URLs below remain historical CI and
+publication references; they do not prove current signing, notarization,
+installation, Gatekeeper acceptance, or user readiness. See
+`docs/release-evidence-v0.1.0.md` for the corrected proof boundary.
+
 ## Phase 5 Completion Snapshot
 
 Implemented in repository:
