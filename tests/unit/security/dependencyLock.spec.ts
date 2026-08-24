@@ -21,8 +21,8 @@ describe("dependency security overrides", () => {
     expect(lockfile).toContain("body-parser: 1.20.6");
     expect(lockfile).toContain("nanoid: 3.3.18");
     expect(lockfile).toContain("proxy-agent: 8.0.2");
-    expect(lockfile).toContain("'@puppeteer/browsers': 3.2.1");
-    expect(lockfile).toContain("'@puppeteer/browsers@3.2.1':");
+    expect(lockfile).toMatch(/["@']@puppeteer\/browsers["@']:\s*3\.2\.1/);
+    expect(lockfile).toMatch(/["@']@puppeteer\/browsers@3\.2\.1["@']:/);
     expect(lockfile).not.toMatch(/body-parser@1\.20\.5:/);
     expect(lockfile).not.toMatch(/extract-zip@/);
     expect(lockfile).not.toMatch(/nanoid@3\.3\.17:/);
