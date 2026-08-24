@@ -1,8 +1,8 @@
 # AIGC Core — Portfolio Disposition
 
-**Status:** Release Frozen at v0.1.0 — macOS unsigned release candidate
-complete, full readiness closeout merged, awaiting operator-only Apple
-signing + notarization credentials. Do not surface for routine review.
+**Status:** Release Frozen at v0.1.0 — macOS release mechanics corrected in
+source, awaiting operator-only Apple signing/notarization credentials and a
+fresh artifact/install qualification run. Do not surface for routine review.
 
 ---
 
@@ -23,8 +23,9 @@ the portfolio operating system how to treat the row.
 
 ## Closeout receipt
 
-Full readiness closeout merged 2026-03-14 (see
-`docs/full-readiness-closeout-2026-03-14.md`). What that closed:
+Readiness milestones are recorded in `docs/phase4-readiness.md` and
+`docs/phase5-readiness.md`; the previously cited consolidated closeout file is
+not present in the current tree. Those historical milestones covered:
 
 - Local dev launch alignment (`pnpm dev` boots cleanly)
 - Packaged macOS `.app` and DMG produce a visible, smoke-tested window
@@ -51,15 +52,16 @@ Five Packs (EvidenceOS, RedlineOS, IncidentOS, FinanceOS, HealthcareOS)
 pass pack-level happy-path command tests. Five ADRs cover pack export
 runtime contract, release signing/gates, branch-protection deadlock
 avoidance, audit-freshness/runtime-artifact security, and security
-hardening cycle ownership. The only gate between "v0.1.0 packaged
-locally" and "v0.1.0 distributed to a real user" is Apple signing
-credentials.
+hardening cycle ownership. The remaining gates between "v0.1.0 packaged
+locally" and a qualified real-user artifact are Apple signing/notarization
+credentials, a successful run of the corrected release path, and clean-host
+install/launch proof.
 
 For full detail, see (in priority order):
 
 - `docs/release-evidence-v0.1.0.md`
 - `docs/release-ceremony-v0.1.0-signoff.md`
-- `docs/full-readiness-closeout-2026-03-14.md`
+- `docs/phase5-readiness.md`
 - `docs/release-checklist.md`
 - `docs/adr/0002-release-signing-and-gates.md`
 
@@ -133,11 +135,11 @@ When portfolio operating system flips this row to `Active`:
 
 | Field                            | Value                                                             |
 | -------------------------------- | ----------------------------------------------------------------- |
-| Last meaningful commit on `main` | `e851e78` docs(agents): align communication contract labels (#36) |
+| Current admitted `main` binding  | `686532406cc92043bf93665d94b1e15626237b81`                         |
 | v0.1.0 release ceremony          | Locally completed (see signoff doc)                               |
-| Public release                   | Not yet — pending signing                                         |
-| Build verification status        | green                                                             |
+| Public release                   | Historical release object is cited; current publication unverified |
+| Build verification status        | Historical green; corrected release path not yet run in CI         |
 | Pack happy-path tests            | 5/5 packs passing                                                 |
-| Blocker                          | Apple signing + notarization (operator-only)                      |
+| Blocker                          | Apple credentials plus a corrected release and clean-host lifecycle run |
 | Open ADRs                        | 5 (0001–0005)                                                     |
 | Linux distribution status        | Deferred; glib remediation noted but not a macOS blocker          |
