@@ -64,12 +64,25 @@ async function waitForExit(child, timeoutMs) {
   });
 }
 
+async function waitForProcessGroupToExit(pid, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!(await processGroupExists(pid))) return true;
+    await delay(50);
+  }
+  return !(await processGroupExists(pid));
+}
+
 async function terminateExactProcessGroup(child) {
   if (!(await processGroupExists(child.pid))) return "already-exited";
   process.kill(-child.pid, "SIGTERM");
-  if (!(await waitForExit(child, 5000))) {
+  await waitForExit(child, 5000);
+  if (!(await waitForProcessGroupToExit(child.pid, 5000))) {
     process.kill(-child.pid, "SIGKILL");
     await waitForExit(child, 5000);
+    if (!(await waitForProcessGroupToExit(child.pid, 5000))) {
+      return "sigkill-group-still-present";
+    }
     return "sigkill";
   }
   return "sigterm";
