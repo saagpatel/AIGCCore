@@ -1,0 +1,201 @@
+# OSV-Scanner configuration for the root Cargo.lock.
+#
+# This file is consumed by OSV-Scanner and OpenSSF Scorecard's Vulnerabilities
+# check when scanning the root Rust lockfile. Each ignore is intentionally
+# advisory-specific, time-boxed, and tied to the current AIGCCore Scorecard #47
+# dependency triage. Do not add broad package ignores here.
+#
+# Reassess all entries before 2026-11-26 or earlier if Tauri, wry,
+# tauri-runtime-wry, tauri-utils, gtk-rs, or urlpattern publish a compatible
+# remediation path.
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0413"
+ignoreUntil = "2026-11-26T00:00:00Z"
+reason = """
+atk 0.18.2 is present only through the Linux Tauri runtime path
+tauri 2.11.5 -> gtk 0.18.2 -> atk. There is no patched version for this
+unmaintained GTK3 advisory, AIGCCore has no direct atk API usage, and current
+portfolio evidence defers Linux distribution behind macOS release readiness.
+Reassess when the upstream Tauri Linux stack moves off gtk 0.18.x or Linux
+distribution becomes active.
+"""
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0416"
+ignoreUntil = "2026-11-26T00:00:00Z"
+reason = """
+atk-sys 0.18.2 is present only through the Linux Tauri runtime path
+tauri 2.11.5 -> gtk 0.18.2 -> atk/gtk-sys/webkit2gtk-sys. There is no patched
+version for this unmaintained GTK3 advisory, AIGCCore has no direct atk-sys API
+usage, and Linux distribution is deferred. Reassess with the next compatible
+Tauri/gtk-rs runtime migration.
+"""
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0412"
+ignoreUntil = "2026-11-26T00:00:00Z"
+reason = """
+gdk 0.18.2 is present only through the Linux Tauri runtime path
+tauri 2.11.5 -> wry/tao/muda/webkit2gtk -> gtk/gdk. There is no patched version
+for this unmaintained GTK3 advisory, AIGCCore has no direct gdk API usage, and
+Linux distribution is deferred. Reassess with the next compatible Tauri/gtk-rs
+runtime migration.
+"""
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0418"
+ignoreUntil = "2026-11-26T00:00:00Z"
+reason = """
+gdk-sys 0.18.2 is present only through the Linux Tauri runtime path
+tauri 2.11.5 -> wry/tao/muda/webkit2gtk -> gtk/gdk/gdk-sys. There is no patched
+version for this unmaintained GTK3 advisory, AIGCCore has no direct gdk-sys API
+usage, and Linux distribution is deferred. Reassess with the next compatible
+Tauri/gtk-rs runtime migration.
+"""
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0411"
+ignoreUntil = "2026-11-26T00:00:00Z"
+reason = """
+gdkwayland-sys 0.18.2 is present only through the Linux Tauri runtime path
+tauri 2.11.5 -> tauri-runtime-wry 2.11.4 -> tao 0.35.3 -> gdkwayland-sys.
+There is no patched version for this unmaintained GTK3 advisory, AIGCCore has
+no direct gdkwayland-sys API usage, and Linux distribution is deferred.
+Reassess with the next compatible Tauri/gtk-rs runtime migration.
+"""
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0417"
+ignoreUntil = "2026-11-26T00:00:00Z"
+reason = """
+gdkx11 0.18.2 is present only through the Linux Tauri runtime path
+tauri 2.11.5 -> tauri-runtime-wry 2.11.4 -> wry 0.55.1 -> gdkx11. There is no
+patched version for this unmaintained GTK3 advisory, AIGCCore has no direct
+gdkx11 API usage, and Linux distribution is deferred. Reassess with the next
+compatible Tauri/gtk-rs runtime migration.
+"""
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0414"
+ignoreUntil = "2026-11-26T00:00:00Z"
+reason = """
+gdkx11-sys 0.18.2 is present only through the Linux Tauri runtime path
+tauri 2.11.5 -> wry/tao -> gdkx11/gdkx11-sys. There is no patched version for
+this unmaintained GTK3 advisory, AIGCCore has no direct gdkx11-sys API usage,
+and Linux distribution is deferred. Reassess with the next compatible
+Tauri/gtk-rs runtime migration.
+"""
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0415"
+ignoreUntil = "2026-11-26T00:00:00Z"
+reason = """
+gtk 0.18.2 is present only through the Linux Tauri runtime path
+tauri 2.11.5 -> tauri-runtime-wry/wry/tao/muda/webkit2gtk -> gtk. There is no
+patched version for this unmaintained GTK3 advisory, AIGCCore has no direct gtk
+API usage, and Linux distribution is deferred. Reassess with the next
+compatible Tauri/gtk-rs runtime migration.
+"""
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0420"
+ignoreUntil = "2026-11-26T00:00:00Z"
+reason = """
+gtk-sys 0.18.2 is present only through the Linux Tauri runtime path
+tauri 2.11.5 -> gtk/webkit2gtk -> gtk-sys. There is no patched version for this
+unmaintained GTK3 advisory, AIGCCore has no direct gtk-sys API usage, and Linux
+distribution is deferred. Reassess with the next compatible Tauri/gtk-rs
+runtime migration.
+"""
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0419"
+ignoreUntil = "2026-11-26T00:00:00Z"
+reason = """
+gtk3-macros 0.18.2 is present only through the Linux Tauri runtime path
+tauri 2.11.5 -> gtk 0.18.2 -> gtk3-macros. There is no patched version for
+this unmaintained GTK3 advisory, AIGCCore has no direct gtk3-macros API usage,
+and Linux distribution is deferred. Reassess with the next compatible
+Tauri/gtk-rs runtime migration.
+"""
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0370"
+ignoreUntil = "2026-11-26T00:00:00Z"
+reason = """
+proc-macro-error 1.0.4 is present through the Linux gtk-rs macro stack
+glib-macros 0.18.5 -> proc-macro-error. There is no patched version for this
+unmaintained build-time macro dependency, AIGCCore has no direct
+proc-macro-error API usage, and it does not ship as runtime application logic.
+Reassess with the next compatible Tauri/gtk-rs runtime migration.
+"""
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0081"
+ignoreUntil = "2026-11-26T00:00:00Z"
+reason = """
+unic-char-property 0.9.0 is present through Tauri URL pattern processing:
+tauri-utils 2.9.3 -> urlpattern 0.3.0 -> unic-ucd-ident. There is no patched
+version for this unmaintained advisory, AIGCCore has no direct unic or
+urlpattern API usage, and tauri-utils 2.9.3 currently constrains urlpattern to
+^0.3. Reassess when Tauri supports urlpattern 0.6.x or another maintained path.
+"""
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0075"
+ignoreUntil = "2026-11-26T00:00:00Z"
+reason = """
+unic-char-range 0.9.0 is present through Tauri URL pattern processing:
+tauri-utils 2.9.3 -> urlpattern 0.3.0 -> unic-ucd-ident. There is no patched
+version for this unmaintained advisory, AIGCCore has no direct unic or
+urlpattern API usage, and tauri-utils 2.9.3 currently constrains urlpattern to
+^0.3. Reassess when Tauri supports urlpattern 0.6.x or another maintained path.
+"""
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0080"
+ignoreUntil = "2026-11-26T00:00:00Z"
+reason = """
+unic-common 0.9.0 is present through Tauri URL pattern processing:
+tauri-utils 2.9.3 -> urlpattern 0.3.0 -> unic-ucd-ident -> unic-ucd-version.
+There is no patched version for this unmaintained advisory, AIGCCore has no
+direct unic or urlpattern API usage, and tauri-utils 2.9.3 currently constrains
+urlpattern to ^0.3. Reassess when Tauri supports urlpattern 0.6.x or another
+maintained path.
+"""
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0100"
+ignoreUntil = "2026-11-26T00:00:00Z"
+reason = """
+unic-ucd-ident 0.9.0 is present through Tauri URL pattern processing:
+tauri-utils 2.9.3 -> urlpattern 0.3.0 -> unic-ucd-ident. There is no patched
+version for this unmaintained advisory, AIGCCore has no direct unic or
+urlpattern API usage, and tauri-utils 2.9.3 currently constrains urlpattern to
+^0.3. Reassess when Tauri supports urlpattern 0.6.x or another maintained path.
+"""
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0098"
+ignoreUntil = "2026-11-26T00:00:00Z"
+reason = """
+unic-ucd-version 0.9.0 is present through Tauri URL pattern processing:
+tauri-utils 2.9.3 -> urlpattern 0.3.0 -> unic-ucd-ident. There is no patched
+version for this unmaintained advisory, AIGCCore has no direct unic or
+urlpattern API usage, and tauri-utils 2.9.3 currently constrains urlpattern to
+^0.3. Reassess when Tauri supports urlpattern 0.6.x or another maintained path.
+"""
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0429"
+ignoreUntil = "2026-11-26T00:00:00Z"
+reason = """
+glib 0.18.5 reaches AIGCCore through the Linux Tauri runtime path
+tauri 2.11.5 -> gtk/webkit2gtk/wry/tao -> glib. The patched range is
+glib >=0.20.0, but gtk 0.18.2 currently constrains glib to ^0.18 under the
+latest Tauri 2.11.x stack. AIGCCore has no direct glib API usage and no direct
+use of the affected VariantStrIter API was found. Reassess when the upstream
+Tauri Linux runtime stack can move to gtk-rs/glib >=0.20 or Linux distribution
+becomes active.
+"""

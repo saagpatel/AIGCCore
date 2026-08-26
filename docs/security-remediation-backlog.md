@@ -14,7 +14,7 @@ Source: security audit findings + hardening pass
 | P1       | Re-tighten branch approvals to `>=1` with named reviewer rotation       | High        | Repo admin / engineering manager | Done                                                 |
 | P1       | Decide CodeQL operating model (default setup only vs advanced workflow) | Medium      | Security owner / repo admin      | Done                                                 |
 | P1       | Close npm dependency vulnerability backlog                              | High        | Security owner / release owner   | Done                                                 |
-| P2       | Resolve `glib` advisory via upstream stack migration plan               | Medium      | Runtime owner                    | Blocked upstream after execution attempt (Issue #31) |
+| P2       | Resolve Scorecard #47 residual RustSec advisories                       | Medium      | Runtime owner                    | Time-boxed OSV disposition proposed; upstream stack migration still required |
 | P2       | Add backup security owner staffing in runbook + security policy         | Medium      | PM owner / repo admin            | Done                                                 |
 
 ## Remediation Details
@@ -93,12 +93,23 @@ Source: security audit findings + hardening pass
   - `ajv` `6.14.0`
   - `lodash` `4.17.23`
   - `tmp` `0.2.4`
-- Rust advisory (`glib`, GHSA-wrw7-89jp-8q8g):
-  - direct upgrade to `glib >= 0.20.0` is blocked by current `tauri`/`gtk` dependency constraints (`gtk = ^0.18`)
-  - migration plan published: `docs/glib-migration-plan.md`
-  - execution report: `docs/glib-remediation-execution-2026-03-01.md`
-  - remediation execution tracked at `https://github.com/saagar210/AIGCCore/issues/31`
-  - target decision date: 2026-04-15
+- RustSec/Scorecard advisory status (`VulnerabilitiesID`, alert #47):
+  - PR #101 lifted the remediable `quick-xml` path by updating `anyhow` to
+    `1.0.103`, `plist` to `1.10.0`, and `quick-xml` to `0.41.0`.
+  - 17 residual advisories remain in the current `Cargo.lock`; see
+    `docs/scorecard-rustsec-r47-disposition-2026-08-26.md`.
+  - direct lift to `glib >= 0.20.0` is still blocked by current
+    `tauri`/`gtk` dependency constraints (`gtk = ^0.18`).
+  - direct lift to `urlpattern 0.6.0` is blocked by `tauri-utils 2.9.3`
+    requiring `urlpattern = ^0.3`.
+  - direct lift to `wry 0.56.1` is blocked by `tauri-runtime-wry 2.11.4`
+    requiring `wry = ^0.55.0`.
+  - `osv-scanner.toml` records time-boxed, advisory-specific dispositions
+    through 2026-11-26; these are not remediation claims and must be reassessed
+    when the upstream Tauri Linux/runtime stack changes or Linux distribution
+    becomes active.
+  - historical migration plan: `docs/glib-migration-plan.md`
+  - historical execution report: `docs/glib-remediation-execution-2026-03-01.md`
 
 ## Reviewer Sustainability Follow-up
 
