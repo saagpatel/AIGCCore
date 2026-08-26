@@ -6,6 +6,11 @@
 
 AIGCCore is a local-first governance and audit engine for privacy-first desktop AI applications. It acts as a shared backbone for multiple specialized desktop Packs — each Pack inherits strict privacy boundaries, deterministic artifact generation, and a tamper-evident audit trail without rebuilding that infrastructure from scratch.
 
+OpenSSF Best Practices Badge status is tracked separately from repository-local
+evidence. See
+[`docs/openssf-best-practices-evidence.md`](docs/openssf-best-practices-evidence.md)
+for the current evidence map and external application gate.
+
 ## Features
 
 - **Offline-by-default enforcement** — the app runs fully offline; any online capability is explicitly gated, network egress is allowlisted, and local model adapters are restricted to loopback (127.0.0.1)
