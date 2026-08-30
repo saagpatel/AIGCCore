@@ -13,7 +13,7 @@ AIGCCore is a local-first governance and audit engine for privacy-first desktop 
 - **Hash-chained audit trail** — every action is recorded as a canonicalized audit event; events are hash-chained so any tampering is detectable without an external service
 - **Evidence Bundle v1 exports** — locked bundle contract includes all artifacts, hashes, and metadata needed for third-party verification
 - **Eval gates** — stable-ID quality and security correctness gates run before any bundle export is finalized
-- **Fuzz/property tests** — fast-check property tests exercise the authority-integrity request boundary before Rust policy validation
+- **Fuzz/property tests** — a cargo-fuzz target exercises the Rust authority-integrity loopback policy boundary; fast-check property tests cover the UI request handoff before Rust validation
 
 ## OpenSSF Best Practices
 
@@ -48,6 +48,10 @@ pnpm lean:dev
 
 # Run tests
 pnpm test
+
+# Run the authority-integrity loopback policy fuzzer
+cargo install cargo-fuzz
+cargo fuzz run authority_integrity_loopback
 
 # Production build
 pnpm tauri build

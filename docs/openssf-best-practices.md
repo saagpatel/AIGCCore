@@ -18,7 +18,8 @@ OpenSSF Best Practices badge API for the Git repository URL.
 - Code of conduct: `CODE_OF_CONDUCT.md`
 - License: `LICENSE`
 - CI and security checks: `.github/workflows/`
-- Fuzz/property-based testing: `tests/unit/security/authorityIntegrityFuzzing.spec.ts`
+- Rust policy fuzzing: `fuzz/fuzz_targets/authority_integrity_loopback.rs`
+- UI request property testing: `tests/unit/security/authorityIntegrityFuzzing.spec.ts`
 
 ## Closure condition
 
