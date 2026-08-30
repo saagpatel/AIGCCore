@@ -73,14 +73,14 @@ qualified prior artifact and requires its own execution receipt.
 
 ## Tech Stack
 
-| Layer | Technology |
-|-------|------------|
-| Desktop shell | Tauri 2 |
-| Core logic | Rust (aes-gcm, sha2, serde) |
-| UI | React + TypeScript |
-| Build | Vite |
-| Storage | SQLite + blob artifact store |
-| Cryptography | AES-256-GCM, ChaCha20-Poly1305, SHA-256 |
+| Layer          | Technology                                |
+| -------------- | ----------------------------------------- |
+| Desktop shell  | Tauri 2                                   |
+| Core logic     | Rust (aes-gcm, sha2, serde)               |
+| UI             | React + TypeScript                        |
+| Build          | Vite                                      |
+| Storage        | SQLite + blob artifact store              |
+| Cryptography   | AES-256-GCM, ChaCha20-Poly1305, SHA-256   |
 | Audit chaining | Custom hash-chain canonicalization (Rust) |
 
 ## Architecture
