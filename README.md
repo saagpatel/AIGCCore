@@ -13,6 +13,12 @@ AIGCCore is a local-first governance and audit engine for privacy-first desktop 
 - **Hash-chained audit trail** — every action is recorded as a canonicalized audit event; events are hash-chained so any tampering is detectable without an external service
 - **Evidence Bundle v1 exports** — locked bundle contract includes all artifacts, hashes, and metadata needed for third-party verification
 - **Eval gates** — stable-ID quality and security correctness gates run before any bundle export is finalized
+- **Fuzz/property tests** — a cargo-fuzz target exercises the Rust authority-integrity loopback policy boundary; fast-check property tests cover the UI request handoff before Rust validation
+
+## OpenSSF Best Practices
+
+AIGCCore is preparing OpenSSF Best Practices badge registration. The registration
+plan and closure criteria live in [`docs/openssf-best-practices.md`](docs/openssf-best-practices.md).
 
 ## Quick Start
 
@@ -43,6 +49,10 @@ pnpm lean:dev
 # Run tests
 pnpm test
 
+# Run the authority-integrity loopback policy fuzzer
+cargo install cargo-fuzz
+cargo fuzz run authority_integrity_loopback
+
 # Production build
 pnpm tauri build
 
@@ -68,14 +78,14 @@ qualified prior artifact and requires its own execution receipt.
 
 ## Tech Stack
 
-| Layer | Technology |
-|-------|------------|
-| Desktop shell | Tauri 2 |
-| Core logic | Rust (aes-gcm, sha2, serde) |
-| UI | React + TypeScript |
-| Build | Vite |
-| Storage | SQLite + blob artifact store |
-| Cryptography | AES-256-GCM, ChaCha20-Poly1305, SHA-256 |
+| Layer          | Technology                                |
+| -------------- | ----------------------------------------- |
+| Desktop shell  | Tauri 2                                   |
+| Core logic     | Rust (aes-gcm, sha2, serde)               |
+| UI             | React + TypeScript                        |
+| Build          | Vite                                      |
+| Storage        | SQLite + blob artifact store              |
+| Cryptography   | AES-256-GCM, ChaCha20-Poly1305, SHA-256   |
 | Audit chaining | Custom hash-chain canonicalization (Rust) |
 
 ## Architecture
