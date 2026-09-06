@@ -21,3 +21,6 @@ src-tauri/target/
 playwright-report/
 test-results/
 .lighthouseci/
+
+# Repository-owned local build state
+.local-build/

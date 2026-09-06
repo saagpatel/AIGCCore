@@ -7,7 +7,7 @@ import tailwindcss from "eslint-plugin-tailwindcss";
 
 export default [
   {
-    ignores: ["dist/**", "target/**", "src-tauri/target/**", "node_modules/**"],
+    ignores: [".local-build/**", "dist/**", "target/**", "src-tauri/target/**", "node_modules/**"],
   },
   js.configs.recommended,
   {

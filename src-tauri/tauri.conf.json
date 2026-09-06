@@ -23,6 +23,17 @@
     }
   },
   "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "AIGC Core",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 960,
+        "minHeight": 640,
+        "resizable": true
+      }
+    ],
     "security": {
       "csp": "default-src 'self'; img-src 'self' asset: data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self';"
     }
