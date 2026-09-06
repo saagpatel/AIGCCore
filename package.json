@@ -36,7 +36,7 @@
     "test:local-build": "node --test scripts/local-build.test.mjs",
     "test:unit:coverage": "vitest run --config vitest.config.ts --coverage",
     "test:e2e": "playwright test tests/ui",
-    "test:build:desktop": "node --test scripts/build-desktop.test.mjs",
+    "test:build:desktop": "node --test scripts/build-desktop.test.mjs scripts/tauri-window-config.test.mjs",
     "test:release:macos": "bash scripts/test-release-macos-scripts.sh",
     "gate:all": "node tools/gates/run-all.mjs",
     "ui:test:visual:update": "playwright test tests/ui --grep @visual --update-snapshots",
