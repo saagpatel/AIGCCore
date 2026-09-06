@@ -1,0 +1,23 @@
+[package]
+name = "aigc_core_fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+
+[dependencies]
+aigc_core = { path = "../core" }
+libfuzzer-sys = "0.4"
+serde_json = "1.0.120"
+url = "2.5.2"
+
+[[bin]]
+name = "authority_integrity_loopback"
+path = "fuzz_targets/authority_integrity_loopback.rs"
+test = false
+doc = false
+bench = false

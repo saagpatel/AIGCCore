@@ -55,7 +55,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: TruffleHog secret scan
-        uses: trufflesecurity/trufflehog@3ab759fef4bb5935d4fe9ac68b503d05346b8364
+        uses: trufflesecurity/trufflehog@0c952ace0f842f11c75775922d7400335cf60bc6
         with:
           extra_args: --results=verified
 
@@ -84,7 +84,7 @@ jobs:
           ignore-unfixed: true
 
   scorecard:
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'push'
     permissions:
       security-events: write
       id-token: write

@@ -51,6 +51,7 @@ use aigc_core::adapters::interface::{
     ResolveModelRequest, ResolveModelResponse,
 };
 #[cfg(feature = "authority-integrity-test-hooks")]
+use aigc_core::adapters::loopback::loopback_endpoint_socket_addr;
 use aigc_core::adapters::runtime::AdapterRuntime;
 #[cfg(feature = "authority-integrity-test-hooks")]
 use aigc_core::error::{CoreError, CoreResult};
@@ -59,7 +60,7 @@ use std::fs::OpenOptions;
 #[cfg(feature = "authority-integrity-test-hooks")]
 use std::io::Write;
 #[cfg(feature = "authority-integrity-test-hooks")]
-use std::net::{TcpStream, ToSocketAddrs};
+use std::net::TcpStream;
 #[cfg(feature = "authority-integrity-test-hooks")]
 use std::time::Duration;
 
@@ -105,18 +106,7 @@ struct SocketAttemptProbe {
 #[cfg(feature = "authority-integrity-test-hooks")]
 impl SocketAttemptProbe {
     fn socket_address(&self) -> CoreResult<std::net::SocketAddr> {
-        let authority = self
-            .endpoint
-            .strip_prefix("http://")
-            .or_else(|| self.endpoint.strip_prefix("https://"))
-            .ok_or_else(|| CoreError::InvalidInput("probe endpoint must be http(s)".to_string()))?;
-        let authority = authority.split('/').next().unwrap_or_default();
-        let mut addresses = authority
-            .to_socket_addrs()
-            .map_err(|error| CoreError::InvalidInput(format!("invalid probe endpoint: {error}")))?;
-        addresses
-            .next()
-            .ok_or_else(|| CoreError::InvalidInput("probe endpoint has no address".to_string()))
+        loopback_endpoint_socket_addr(&self.endpoint)
     }
 
     fn record_attempt(&self) -> CoreResult<()> {
