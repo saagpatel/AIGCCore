@@ -9,6 +9,7 @@ overrides:
   body-parser: 1.20.6
   brace-expansion@<1.1.18: 1.1.18
   brace-expansion@>=4.0.0 <5.0.9: 5.0.9
+  browserslist: 4.28.7
   esbuild@<=0.24.2: 0.25.0
   express: 4.22.2
   fast-uri: 4.1.3
