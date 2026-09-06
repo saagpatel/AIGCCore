@@ -11,6 +11,12 @@ function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
+export function manifestIdentitySha256(manifest) {
+  const artifactIdentity = { ...manifest };
+  delete artifactIdentity.app_name;
+  return sha256(JSON.stringify(artifactIdentity));
+}
+
 function argumentsFrom(argv) {
   const filtered = argv.filter((argument) => argument !== "--");
   const values = {};
@@ -56,23 +62,26 @@ function main() {
     return {
       generation: name,
       index,
-      manifest_identity_sha256: sha256(JSON.stringify(manifest)),
+      manifest_identity_sha256: manifestIdentitySha256(manifest),
       pointer,
       pointer_target: readlinkSync(pointer),
       revision: generation.revision,
     };
   });
+  const restoredIdentity =
+    activations[0].manifest_identity_sha256 === activations[2].manifest_identity_sha256;
   const trace = {
     activations,
     claim_boundary: "task-local append-only generation-pointer rehearsal only",
     schema: "AIGCCoreLocalRollbackV1",
     sequence: activations.map((activation) => activation.revision),
-    status: "PASS",
+    restored_identity_verified: restoredIdentity,
+    status: restoredIdentity ? "PASS" : "FAIL",
   };
   const tracePath = resolve(outputRoot, "trace.json");
   writeFileSync(tracePath, `${JSON.stringify(trace, null, 2)}\n`);
-  console.log(JSON.stringify({ status: "PASS", trace: tracePath }));
-  return 0;
+  console.log(JSON.stringify({ status: trace.status, trace: tracePath }));
+  return restoredIdentity ? 0 : 1;
 }
 
 if (resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url)) {

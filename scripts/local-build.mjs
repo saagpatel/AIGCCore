@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -36,7 +36,12 @@ export const FAST_COMMANDS = Object.freeze([
     "--test",
     "scripts/local-build.test.mjs",
     "scripts/build-desktop.test.mjs",
+    "scripts/tauri-window-config.test.mjs",
   ]),
+]);
+
+export const FULL_COMMAND = Object.freeze([
+  resolve(repositoryRoot, ".codex/scripts/run_verify_commands.sh"),
 ]);
 
 export function parseVerifyCommands(source) {
@@ -73,18 +78,14 @@ function runFast() {
 }
 
 function runFull() {
-  const verifyFile = resolve(repositoryRoot, ".codex/verify.commands");
-  const commands = parseVerifyCommands(readFileSync(verifyFile, "utf8"));
-  for (const command of commands) {
-    console.log(`>>> ${command}`);
-    const status = run("/bin/zsh", ["-c", command]);
-    if (status !== 0) return status;
-  }
-  return 0;
+  const [command, ...args] = FULL_COMMAND;
+  return run(command, args);
 }
 
-function resolveBuiltApp() {
-  const targetRoot = resolve(process.env.CARGO_TARGET_DIR ?? resolve(repositoryRoot, "target"));
+export function resolveBuiltApp(
+  targetRoot = process.env.CARGO_TARGET_DIR ?? resolve(repositoryRoot, "target"),
+) {
+  targetRoot = resolve(targetRoot);
   const bundleRoot = resolve(targetRoot, "release/bundle/macos");
   if (!existsSync(bundleRoot)) return undefined;
   const apps = readdirSync(bundleRoot, { withFileTypes: true })
@@ -93,8 +94,14 @@ function resolveBuiltApp() {
   return apps.length === 1 ? apps[0] : undefined;
 }
 
-function runPreviewCheck() {
-  const app = process.env.AIGCCORE_PREVIEW_APP ?? resolveBuiltApp();
+export function resolveReleaseApp(
+  targetRoot = process.env.CARGO_TARGET_DIR ?? resolve(repositoryRoot, "target"),
+) {
+  return resolveBuiltApp(targetRoot);
+}
+
+function runPreviewCheck(selectedApp) {
+  const app = selectedApp ?? process.env.AIGCCORE_PREVIEW_APP ?? resolveBuiltApp();
   if (!app || !existsSync(app)) {
     console.error("exactly one built app or AIGCCORE_PREVIEW_APP is required");
     return 2;
@@ -115,9 +122,13 @@ function runPreviewCheck() {
 function runReleaseCheck() {
   const buildStatus = runPnpmScript("build");
   if (buildStatus !== 0) return buildStatus;
-  const previewStatus = runPreviewCheck();
+  const app = resolveReleaseApp();
+  if (!app) {
+    console.error("release build must produce exactly one app in the current target directory");
+    return 2;
+  }
+  const previewStatus = runPreviewCheck(app);
   if (previewStatus !== 0) return previewStatus;
-  const app = process.env.AIGCCORE_PREVIEW_APP ?? resolveBuiltApp();
   const manifest =
     process.env.AIGCCORE_RELEASE_MANIFEST ??
     resolve(repositoryRoot, ".local-build/release/app-manifest.json");
