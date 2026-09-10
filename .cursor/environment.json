@@ -1,0 +1,5 @@
+{
+  "name": "aigc-core",
+  "disableAllMcpServers": true,
+  "install": "set -eu; corepack enable; corepack prepare pnpm@10.29.2 --activate; export PATH=\"$(dirname \"$(command -v corepack)\"):$PATH\"; CI=true pnpm install --frozen-lockfile; pnpm ui:gate:static"
+}
