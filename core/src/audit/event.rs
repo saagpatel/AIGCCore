@@ -54,6 +54,11 @@ pub fn finalize_event(mut event: AuditEvent) -> CoreResult<AuditEvent> {
 }
 
 fn validate_event_taxonomy(event: &AuditEvent) -> CoreResult<()> {
+    if !event.details.is_object() {
+        return Err(CoreError::InvalidInput(
+            "event details must be a JSON object".to_string(),
+        ));
+    }
     let allowed = [
         "RUN_CREATED",
         "RUN_STATE_CHANGED",
