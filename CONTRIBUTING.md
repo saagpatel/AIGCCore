@@ -53,8 +53,12 @@ runs `pnpm gate:all`, unit coverage, and diff coverage; its Python 3.12/hash-pin
 diff-cover prerequisites are defined there. Keep those gates intact when reporting
 only a focused local check.
 
-For changed UI behavior, install Chromium with `pnpm exec playwright install chromium`
-(Linux also needs the browser system dependencies), then run `pnpm ui:gate:regression`.
+For changed UI behavior, install Chromium with `pnpm exec playwright install chromium`.
+On Linux, use `pnpm exec playwright install --with-deps chromium`, matching the
+[UI workflow](.github/workflows/ui-quality.yml), to install Chromium and its native
+system libraries. That Linux command can require administrator privileges and
+changes system packages; review those prerequisites before running it on a shared
+host. Then run `pnpm ui:gate:regression`.
 The [Playwright configuration](playwright.config.ts) starts the loopback UI on port
 4102; use an unused port/configuration rather than another project's server.
 Cover loading, empty, error, success, disabled, and keyboard-focus states; UI changes
