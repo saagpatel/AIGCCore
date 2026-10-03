@@ -13,11 +13,11 @@ This file defines canonical project commands, paths, and repo-specific conventio
 
 ## Canonical Paths
 
-- Rust domain core: `~/Projects/AIGCCore/core`
-- Tauri shell + command handlers: `~/Projects/AIGCCore/src-tauri`
-- React UI: `~/Projects/AIGCCore/src`
-- Local validator CLI(s): `~/Projects/AIGCCore/tools`
-- Packet-driven docs created in-repo: `~/Projects/AIGCCore/docs`
+- Rust domain core: `core/`
+- Tauri shell + command handlers: `src-tauri/`
+- React UI: `src/`
+- Local validator CLI(s): `tools/`
+- Packet-driven docs created in-repo: `docs/`
 
 ## Canonical Commands
 
@@ -29,12 +29,12 @@ Primary runner is `pnpm` and Rust `cargo`.
 - Run all eval gates locally: `pnpm gate:all`
 - Rust tests: `cargo test --workspace`
 
-Source of truth for scripts is `~/Projects/AIGCCore/package.json`.
+Source of truth for scripts is the repository-root `package.json`.
 
 ## Hard Rules (Packet-Aligned)
 
 - Offline-by-default is enforced in Rust core; UI must not have direct egress.
-- Adapters are loopback-only (`127.0.0.1`) and must implement Annex B v1.
+- Adapters are loopback-only (literal IPv4 loopback addresses or `::1`) and must implement Annex B v1.
 - Evidence Bundle exports must comply with Annex A v1 + Phase 2.5 lock addendum.
 - Determinism mode must follow Addendum A + ZIP hardening rules.
 - Audit trail must be canonicalized and hash-chained per lock addendum and taxonomy.
@@ -47,9 +47,10 @@ Source: `.codex/verify.commands` (derived from `AGENTS.md` and `package.json`)
 
 - lint: `pnpm lint`
 - format-check: `N/A (no standalone formatter check defined in AGENTS/CI)`
-- typecheck: `pnpm ui:typecheck` (also included in `pnpm ui:gate:static`)
-- unit-test: `pnpm test`; `cargo test --workspace`
-- integration-test: `pnpm gate:all`
+- typecheck: `pnpm ui:gate:static` (includes `pnpm ui:typecheck`)
+- unit-test: `pnpm test`; `pnpm test:build:desktop`; `cargo test --workspace`
+- authority-integrity-test: `cargo test --locked -p aigc_core_tauri --features authority-integrity-test-hooks authority_integrity_tests -- --show-output`
+- integration-test (additional gate in `package.json`): `pnpm gate:all`
 - build: `pnpm build`
 
 ### Definition of Done
@@ -99,7 +100,7 @@ AIGCCore is a local-first governance and audit backbone for privacy-first deskto
 
 ## Current State
 
-The repo is active infrastructure work. The Rust core is the source of truth for governance logic, audit canonicalization, hash chaining, determinism enforcement, and bundle assembly. Current local changes are PR-template metadata, so context recovery should not stage unrelated files.
+The repo is active infrastructure work. The Rust core is the source of truth for governance logic, audit canonicalization, hash chaining, determinism enforcement, and bundle assembly. Context recovery should not stage unrelated files.
 
 ## Stack
 
@@ -109,8 +110,8 @@ The repo is active infrastructure work. The Rust core is the source of truth for
 | Core logic | Rust (aes-gcm, sha2, serde) |
 | UI | React + TypeScript |
 | Build | Vite |
-| Storage | SQLite + blob artifact store |
-| Cryptography | AES-256-GCM, ChaCha20-Poly1305, SHA-256 |
+| Storage | File-backed vault for SQLite bytes and blob artifacts |
+| Cryptography | AES-256-GCM, XChaCha20-Poly1305, SHA-256 |
 | Audit chaining | Custom hash-chain canonicalization (Rust) |
 
 ## How To Run
@@ -141,6 +142,6 @@ pnpm clean:heavy
 
 ## Next Recommended Move
 
-Resolve the PR-template drift separately, then keep future work focused on deterministic bundle validation, audit-chain integrity, and offline enforcement.
+Keep future work focused on deterministic bundle validation, audit-chain integrity, and offline enforcement.
 
 <!-- portfolio-context:end -->
