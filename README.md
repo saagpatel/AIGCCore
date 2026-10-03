@@ -2,15 +2,15 @@
 
 [![Rust](https://img.shields.io/badge/Rust-dea584?style=flat-square&logo=rust&logoColor=white)](#) [![TypeScript](https://img.shields.io/badge/TypeScript-3178c6?style=flat-square&logo=typescript&logoColor=white)](#) [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](#)
 
-> Most AI apps leak data by default and audit by accident. AIGCCore flips that — offline-first, hash-chained audit trail, provably deterministic outputs
+> Most AI apps leak data by default and audit by accident. AIGCCore flips that — offline-first, hash-chained audit trail, deterministic artifact serialization
 
 AIGCCore is a local-first governance and audit engine for privacy-first desktop AI applications. It acts as a shared backbone for multiple specialized desktop Packs — each Pack inherits strict privacy boundaries, deterministic artifact generation, and a tamper-evident audit trail without rebuilding that infrastructure from scratch.
 
 ## Features
 
-- **Offline-by-default enforcement** — the app runs fully offline; any online capability is explicitly gated, network egress is allowlisted, and local model adapters are restricted to loopback (127.0.0.1)
-- **Deterministic outputs** — given identical inputs, config, and model identity pin the system produces identical computed metrics, exports, and hashes; controlled by a locked ruleset
-- **Hash-chained audit trail** — every action is recorded as a canonicalized audit event; events are hash-chained so any tampering is detectable without an external service
+- **Offline-by-default enforcement** — the app runs fully offline; any online capability is explicitly gated, network egress is allowlisted, and local model adapters are restricted to literal IPv4 loopback addresses or ::1
+- **Deterministic outputs** — canonical JSON and ZIP serialization are deterministic for identical bundle contents; runtime audit timestamps can change complete bundle hashes between runs
+- **Hash-chained audit trail** — recorded audit events are canonicalized and hash-chained; local verification detects edits inconsistent with the stored hash chain without an external service
 - **Evidence Bundle v1 exports** — locked bundle contract includes all artifacts, hashes, and metadata needed for third-party verification
 - **Eval gates** — stable-ID quality and security correctness gates run before any bundle export is finalized
 - **Fuzz/property tests** — a cargo-fuzz target exercises the Rust authority-integrity loopback policy boundary; fast-check property tests cover the UI request handoff before Rust validation
@@ -89,13 +89,13 @@ qualified prior artifact and requires its own execution receipt.
 | Core logic     | Rust (aes-gcm, sha2, serde)               |
 | UI             | React + TypeScript                        |
 | Build          | Vite                                      |
-| Storage        | SQLite + blob artifact store              |
-| Cryptography   | AES-256-GCM, ChaCha20-Poly1305, SHA-256   |
+| Storage        | File-backed vault for SQLite bytes and blob artifacts |
+| Cryptography   | AES-256-GCM, XChaCha20-Poly1305, SHA-256   |
 | Audit chaining | Custom hash-chain canonicalization (Rust) |
 
 ## Architecture
 
-The Rust `core` crate is the single source of truth for all governance logic — audit event canonicalization, hash chaining, determinism enforcement, and bundle assembly. It has no network access; any adapter that needs to call a local model does so only through the allowlisted loopback adapter interface defined in Annex B. The Tauri shell exposes a minimal command surface to the React frontend; the frontend cannot directly modify audit state. Evidence bundles are assembled by the `bundle_validator` tool, which runs the full `Bundle_Validator_Checklist_v3` before producing a signed ZIP output.
+The Rust `aigc_core` crate in `core/` is the single source of truth for all governance logic — audit event canonicalization, hash chaining, determinism enforcement, and bundle assembly. It has no network access; any adapter that needs to call a local model does so only through the allowlisted loopback adapter interface defined in Annex B. The Tauri shell exposes a minimal command surface to the React frontend; the frontend cannot directly modify audit state. Evidence bundles are assembled by `EvidenceBundleBuilder` in the Rust core; `RunManager` runs eval gates and v3 bundle validation before finalizing exports. The `bundle_validator` tool validates existing ZIPs and reports results; bundle ZIPs are SHA-256 hashed, without cryptographic signatures.
 
 ## License
 
