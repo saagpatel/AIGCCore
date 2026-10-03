@@ -47,7 +47,7 @@ Source: `.codex/verify.commands` (derived from `AGENTS.md` and `package.json`)
 
 - lint: `pnpm lint`
 - format-check: `N/A (no standalone formatter check defined in AGENTS/CI)`
-- typecheck: `N/A (no standalone typecheck command defined in AGENTS/CI)`
+- typecheck: `pnpm ui:typecheck` (also included in `pnpm ui:gate:static`)
 - unit-test: `pnpm test`; `cargo test --workspace`
 - integration-test: `pnpm gate:all`
 - build: `pnpm build`
