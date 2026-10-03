@@ -25,19 +25,24 @@ plan and closure criteria live in [`docs/openssf-best-practices.md`](docs/openss
 ### Prerequisites
 
 - Rust stable toolchain (via [rustup](https://rustup.rs))
-- Node.js 18+
-- pnpm 8+
+- Node.js 22.12+ on the 22.x line (CI uses Node 22; the locked Vitest 5 also supports Node 24 and 26+)
+- pnpm 10.29.2, as pinned in `package.json`
 - macOS, Windows, or Linux
+- The [Tauri platform prerequisites](https://tauri.app/start/prerequisites/) for native tests and desktop builds
 
 ### Installation
 
 ```bash
 git clone https://github.com/saagpatel/AIGCCore.git
 cd AIGCCore
-pnpm install
+pnpm install --frozen-lockfile
 ```
 
 ### Usage
+
+For fixture tests, static checks, and the full CI verification lane, see
+[Contributing: verification](CONTRIBUTING.md#verification). Release and cleanup
+commands below are separate operations, not verification prerequisites.
 
 ```bash
 # Development mode
