@@ -3,29 +3,19 @@
   "info": {
     "title": "AIGC Core Local Command Contract",
     "version": "0.1.0",
-    "description": "Documentation contract for local Tauri command invocations."
+    "description": "Documentation contract for local Tauri IPC invocations, not HTTP endpoints. Governance kernel plus EvidenceOS."
   },
   "paths": {
-    "/commands/run_redlineos": {
+    "/commands/get_network_snapshot": {
       "post": {
-        "summary": "Run RedlineOS and export a bundle",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RedlineCommandInput"
-              }
-            }
-          }
-        },
+        "summary": "Get network posture declaration",
         "responses": {
           "200": {
-            "description": "Pack command result",
+            "description": "Successful local IPC result",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PackCommandStatus"
+                  "$ref": "#/components/schemas/UiNetworkSnapshot"
                 }
               }
             }
@@ -33,26 +23,41 @@
         }
       }
     },
-    "/commands/run_incidentos": {
+    "/commands/list_control_library": {
       "post": {
-        "summary": "Run IncidentOS and export a bundle",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/IncidentCommandInput"
+        "summary": "List EvidenceOS controls",
+        "responses": {
+          "200": {
+            "description": "Successful local IPC result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ControlDefinition"
+                  }
+                }
               }
             }
           }
         },
-        "responses": {
-          "200": {
-            "description": "Pack command result",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PackCommandStatus"
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [],
+                "properties": {
+                  "enabledCapabilities": {
+                    "type": [
+                      "array",
+                      "null"
+                    ],
+                    "items": {
+                      "type": "string"
+                    }
+                  }
                 }
               }
             }
@@ -60,26 +65,44 @@
         }
       }
     },
-    "/commands/run_financeos": {
+    "/commands/generate_evidenceos_bundle": {
       "post": {
-        "summary": "Run FinanceOS and export a bundle",
+        "summary": "Generate an EvidenceOS bundle",
+        "responses": {
+          "200": {
+            "description": "Successful local IPC result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidenceOsRunResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Rejected local IPC invocation (not an HTTP status).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/FinanceCommandInput"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Pack command result",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PackCommandStatus"
+                "type": "object",
+                "required": [
+                  "input"
+                ],
+                "properties": {
+                  "input": {
+                    "$ref": "#/components/schemas/EvidenceOsRunInput"
+                  }
                 }
               }
             }
@@ -87,329 +110,484 @@
         }
       }
     },
-    "/commands/run_healthcareos": {
+    "/commands/authority_integrity_probe_adapter": {
       "post": {
-        "summary": "Run HealthcareOS and export a bundle",
+        "summary": "Probe the loopback policy through Tauri IPC",
+        "responses": {
+          "200": {
+            "description": "Successful local IPC result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorityIntegrityProbeResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Rejected local IPC invocation (not an HTTP status).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/HealthcareCommandInput"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Pack command result",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PackCommandStatus"
+                "type": "object",
+                "required": [
+                  "input"
+                ],
+                "properties": {
+                  "input": {
+                    "$ref": "#/components/schemas/AuthorityIntegrityProbeInput"
+                  }
                 }
               }
             }
           }
-        }
+        },
+        "x-cargo-feature": "authority-integrity-test-hooks",
+        "description": "Test-only; absent from production command registration."
       }
     }
   },
   "components": {
     "schemas": {
-      "ArtifactPayloadInput": {
+      "UiNetworkSnapshot": {
         "type": "object",
-        "required": ["artifact_id"],
+        "required": [
+          "network_mode",
+          "proof_level",
+          "ui_remote_fetch_disabled"
+        ],
         "properties": {
-          "artifact_id": {
+          "network_mode": {
             "type": "string",
-            "description": "Artifact identifier that must match one declared artifact reference."
+            "enum": [
+              "OFFLINE"
+            ]
           },
-          "content_text": {
+          "proof_level": {
             "type": "string",
-            "description": "Text payload content. Use for JSON/NDJSON/text artifacts."
+            "enum": [
+              "OFFLINE_STRICT"
+            ]
           },
-          "content_base64": {
-            "type": "string",
-            "description": "Base64 payload content. Required for binary artifacts."
-          }
-        }
-      },
-      "PackCommandStatus": {
-        "type": "object",
-        "required": ["status", "message"],
-        "properties": {
-          "status": {
-            "type": "string"
-          },
-          "message": {
-            "type": "string"
-          },
-          "bundle_path": {
-            "type": ["string", "null"],
-            "description": "Absolute path to exported bundle zip when status is SUCCESS."
-          },
-          "bundle_sha256": {
-            "type": ["string", "null"],
-            "description": "SHA-256 of exported bundle zip when status is SUCCESS."
-          },
-          "error_code": {
-            "type": ["string", "null"],
-            "description": "Machine-readable runtime code (for example ARTIFACT_SHA256_MISMATCH, ARTIFACT_PAYLOAD_TOO_LARGE, REDLINE_ARTIFACT_NOT_PDF)."
-          },
-          "run_id": {
-            "type": ["string", "null"],
-            "description": "Deterministic run identifier when runtime execution initialized."
-          },
-          "audit_path": {
-            "type": ["string", "null"],
-            "description": "Runtime audit file path. Bundled audit log includes final validation lifecycle events."
+          "ui_remote_fetch_disabled": {
+            "type": "boolean",
+            "const": true
           }
         },
-        "examples": [
-          {
-            "status": "BLOCKED",
-            "message": "Declared sha256 does not match payload bytes for artifact_id=incident_001",
-            "error_code": "ARTIFACT_SHA256_MISMATCH"
-          },
-          {
-            "status": "BLOCKED",
-            "message": "Payload for artifact_id=incident_001 exceeds size limit (5242881 > 5242880 bytes)",
-            "error_code": "ARTIFACT_PAYLOAD_TOO_LARGE"
-          },
-          {
-            "status": "BLOCKED",
-            "message": "Artifact payload for contract_001 is not a valid PDF-like payload",
-            "error_code": "REDLINE_ARTIFACT_NOT_PDF"
-          },
-          {
-            "status": "BLOCKED",
-            "message": "Duplicate artifact payload entries for artifact_id=incident_001",
-            "error_code": "ARTIFACT_PAYLOAD_DUPLICATE"
-          },
-          {
-            "status": "BLOCKED",
-            "message": "Declared sha256 for artifact_id=incident_001 is not valid hex",
-            "error_code": "ARTIFACT_SHA256_INVALID"
-          }
-        ]
+        "example": {
+          "network_mode": "OFFLINE",
+          "proof_level": "OFFLINE_STRICT",
+          "ui_remote_fetch_disabled": true
+        }
       },
-      "RedlineCommandInput": {
+      "ControlDefinition": {
+        "type": "object",
+        "required": [
+          "control_id",
+          "title",
+          "capability",
+          "control_family",
+          "description"
+        ],
+        "properties": {
+          "control_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "capability": {
+            "type": "string"
+          },
+          "control_family": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          }
+        }
+      },
+      "EvidenceOsRunInput": {
+        "type": "object",
+        "required": [
+          "enabled_capabilities",
+          "artifact_title",
+          "artifact_body",
+          "artifact_tags_csv",
+          "control_families_csv",
+          "claim_text"
+        ],
+        "properties": {
+          "enabled_capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "artifact_title": {
+            "type": "string"
+          },
+          "artifact_body": {
+            "type": "string"
+          },
+          "artifact_tags_csv": {
+            "type": "string"
+          },
+          "control_families_csv": {
+            "type": "string"
+          },
+          "claim_text": {
+            "type": "string"
+          }
+        },
+        "example": {
+          "enabled_capabilities": [
+            "Traceability"
+          ],
+          "artifact_title": "Controlled evidence",
+          "artifact_body": "Bounded local evidence",
+          "artifact_tags_csv": "OPS,NETWORK",
+          "control_families_csv": "Traceability",
+          "claim_text": "The controlled bundle path was exercised."
+        }
+      },
+      "EvidenceAuthorityManifest": {
         "type": "object",
         "required": [
           "schema_version",
-          "contract_artifacts",
-          "extraction_mode",
-          "review_profile",
-          "artifact_payloads"
+          "case_id",
+          "requested_execution_class",
+          "observed_execution_class",
+          "evidence_origin",
+          "generated_at_utc",
+          "valid_until_utc",
+          "credential_availability",
+          "production_equivalent",
+          "source",
+          "allowed_effects",
+          "observed_effects",
+          "tools",
+          "state_scope",
+          "downstream_claims",
+          "limitations"
         ],
         "properties": {
           "schema_version": {
             "type": "string"
           },
-          "contract_artifacts": {
+          "case_id": {
+            "type": "string"
+          },
+          "requested_execution_class": {
+            "type": "string"
+          },
+          "observed_execution_class": {
+            "type": "string"
+          },
+          "evidence_origin": {
+            "type": "string"
+          },
+          "generated_at_utc": {
+            "type": "string"
+          },
+          "valid_until_utc": {
+            "type": "string"
+          },
+          "credential_availability": {
+            "type": "string"
+          },
+          "production_equivalent": {
+            "type": "boolean"
+          },
+          "source": {
+            "type": "object",
+            "required": [
+              "producer",
+              "source_revision",
+              "executable",
+              "executable_sha256",
+              "arguments_sha256",
+              "environment_sha256",
+              "audit_log_sha256"
+            ],
+            "properties": {
+              "producer": {
+                "type": "string"
+              },
+              "source_revision": {
+                "type": "string"
+              },
+              "executable": {
+                "type": "string"
+              },
+              "executable_sha256": {
+                "type": "string"
+              },
+              "arguments_sha256": {
+                "type": "string"
+              },
+              "environment_sha256": {
+                "type": "string"
+              },
+              "audit_log_sha256": {
+                "type": "string"
+              }
+            }
+          },
+          "allowed_effects": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "observed_effects": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tools": {
             "type": "array",
             "items": {
               "type": "object",
-              "required": ["artifact_id", "filename"],
+              "required": [
+                "tool_id",
+                "declared_available",
+                "observed_used",
+                "external_mutation_allowed"
+              ],
               "properties": {
-                "artifact_id": {
+                "tool_id": {
                   "type": "string"
                 },
-                "sha256": {
-                  "type": "string",
-                  "default": "",
-                  "description": "Optional compatibility declaration. Omission maps to the empty legacy value; a valid 64-hex value is enforced against decoded payload bytes."
+                "declared_available": {
+                  "type": "boolean"
                 },
-                "filename": {
+                "observed_used": {
+                  "type": "boolean"
+                },
+                "external_mutation_allowed": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "state_scope": {
+            "type": "object",
+            "required": [
+              "cache_scope",
+              "prior_approval_reused",
+              "credential_state_reused",
+              "mutable_cache_reused"
+            ],
+            "properties": {
+              "cache_scope": {
+                "type": "string"
+              },
+              "prior_approval_reused": {
+                "type": "boolean"
+              },
+              "credential_state_reused": {
+                "type": "boolean"
+              },
+              "mutable_cache_reused": {
+                "type": "boolean"
+              }
+            }
+          },
+          "downstream_claims": {
+            "type": "object",
+            "required": [
+              "may_satisfy",
+              "must_not_satisfy"
+            ],
+            "properties": {
+              "may_satisfy": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "must_not_satisfy": {
+                "type": "array",
+                "items": {
                   "type": "string"
                 }
               }
             }
           },
-          "extraction_mode": {
-            "type": "string"
-          },
-          "jurisdiction_hint": {
-            "type": ["string", "null"]
-          },
-          "review_profile": {
-            "type": "string"
-          },
-          "artifact_payloads": {
+          "limitations": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/ArtifactPayloadInput"
+              "type": "string"
             }
           }
         }
       },
-      "IncidentCommandInput": {
+      "EvidenceOsRunResult": {
         "type": "object",
         "required": [
-          "schema_version",
-          "incident_artifacts",
-          "customer_redaction_profile",
-          "artifact_payloads"
+          "status",
+          "bundle_path",
+          "bundle_sha256",
+          "missing_control_ids",
+          "evidence_authority"
         ],
         "properties": {
-          "schema_version": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "COMPLETED"
+            ]
+          },
+          "bundle_path": {
             "type": "string"
           },
-          "incident_artifacts": {
+          "bundle_sha256": {
+            "type": "string"
+          },
+          "missing_control_ids": {
             "type": "array",
             "items": {
-              "type": "object",
-              "required": ["artifact_id", "source_type"],
-              "properties": {
-                "artifact_id": {
-                  "type": "string"
-                },
-                "sha256": {
-                  "type": "string",
-                  "default": "",
-                  "description": "Optional compatibility declaration. Omission maps to the empty legacy value; a valid 64-hex value is enforced against decoded payload bytes."
-                },
-                "source_type": {
-                  "type": "string"
-                }
+              "type": "string"
+            }
+          },
+          "evidence_authority": {
+            "$ref": "#/components/schemas/EvidenceAuthorityManifest"
+          }
+        },
+        "example": {
+          "status": "COMPLETED",
+          "bundle_path": "/runtime/evidence_bundle_evidenceos_v1.zip",
+          "bundle_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "missing_control_ids": [],
+          "evidence_authority": {
+            "schema_version": "EVIDENCE_AUTHORITY_V1",
+            "case_id": "r_example",
+            "requested_execution_class": "CONTROLLED",
+            "observed_execution_class": "CONTROLLED",
+            "evidence_origin": "CONTROL_SIMULATION",
+            "production_equivalent": false,
+            "generated_at_utc": "2026-10-12T12:00:00Z",
+            "valid_until_utc": "2026-10-13T12:00:00Z",
+            "source": {
+              "producer": "aigccore-tauri:generate_evidenceos_bundle",
+              "source_revision": "example-revision",
+              "executable": "/runtime/aigccore",
+              "executable_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "arguments_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "environment_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "audit_log_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+            },
+            "allowed_effects": [
+              "LOCAL_RUNTIME_DIRECTORY_WRITE",
+              "LOCAL_AUDIT_LOG_WRITE",
+              "LOCAL_EVIDENCE_BUNDLE_WRITE"
+            ],
+            "observed_effects": [
+              "LOCAL_RUNTIME_DIRECTORY_WRITE",
+              "LOCAL_AUDIT_LOG_WRITE",
+              "LOCAL_EVIDENCE_BUNDLE_WRITE"
+            ],
+            "credential_availability": "NOT_REQUESTED",
+            "tools": [
+              {
+                "tool_id": "LOCAL_EVIDENCE_BUNDLE_EXPORT",
+                "declared_available": true,
+                "observed_used": true,
+                "external_mutation_allowed": false
+              },
+              {
+                "tool_id": "MODEL_INFERENCE",
+                "declared_available": false,
+                "observed_used": false,
+                "external_mutation_allowed": false
+              },
+              {
+                "tool_id": "EXTERNAL_PUBLICATION_OR_DEPLOYMENT",
+                "declared_available": false,
+                "observed_used": false,
+                "external_mutation_allowed": false
               }
-            }
-          },
-          "timeline_start_hint": {
-            "type": ["string", "null"]
-          },
-          "timeline_end_hint": {
-            "type": ["string", "null"]
-          },
-          "customer_redaction_profile": {
-            "type": "string"
-          },
-          "artifact_payloads": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ArtifactPayloadInput"
-            }
+            ],
+            "state_scope": {
+              "cache_scope": "CASE_LOCAL",
+              "prior_approval_reused": false,
+              "credential_state_reused": false,
+              "mutable_cache_reused": false
+            },
+            "downstream_claims": {
+              "may_satisfy": [
+                "LOCAL_CONTROLLED_EXECUTION",
+                "BUNDLE_INTEGRITY",
+                "OFFLINE_POLICY_CONFIGURATION"
+              ],
+              "must_not_satisfy": [
+                "LIVE_EXECUTION",
+                "PRODUCTION_AUTHORITY",
+                "EXTERNAL_MUTATION",
+                "REAL_USER_SUCCESS",
+                "CURRENT_RUNTIME_CAPABILITY",
+                "DEPLOYABILITY",
+                "LIVE_EVALUATION_COMPLETION",
+                "LIVE_EGRESS_BLOCKED"
+              ]
+            },
+            "limitations": [
+              "Blocked-egress evidence is a control simulation, not an observed network request.",
+              "No production credentials, external mutation authority, deployment, publication, or real-user outcome was exercised.",
+              "This receipt may not authorize live or production claims."
+            ]
           }
         }
       },
-      "FinanceCommandInput": {
+      "AuthorityIntegrityProbeInput": {
         "type": "object",
         "required": [
-          "schema_version",
-          "finance_artifacts",
-          "period",
-          "exception_rules_profile",
-          "retention_profile",
-          "artifact_payloads"
+          "endpoint"
         ],
         "properties": {
-          "schema_version": {
+          "endpoint": {
             "type": "string"
-          },
-          "finance_artifacts": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "required": ["artifact_id", "artifact_kind"],
-              "properties": {
-                "artifact_id": {
-                  "type": "string"
-                },
-                "sha256": {
-                  "type": "string",
-                  "default": "",
-                  "description": "Optional compatibility declaration. Omission maps to the empty legacy value; a valid 64-hex value is enforced against decoded payload bytes."
-                },
-                "artifact_kind": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "period": {
-            "type": "string"
-          },
-          "exception_rules_profile": {
-            "type": "string"
-          },
-          "retention_profile": {
-            "type": "string"
-          },
-          "artifact_payloads": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ArtifactPayloadInput"
-            }
           }
+        },
+        "example": {
+          "endpoint": "http://127.0.0.1:49152"
         }
       },
-      "HealthcareCommandInput": {
+      "AuthorityIntegrityProbeResult": {
         "type": "object",
         "required": [
-          "schema_version",
-          "consent_artifacts",
-          "transcript_artifacts",
-          "draft_template_profile",
-          "verifier_identity",
-          "artifact_payloads"
+          "adapter_id",
+          "endpoint",
+          "dependency_path_reached"
         ],
         "properties": {
-          "schema_version": {
+          "adapter_id": {
             "type": "string"
           },
-          "consent_artifacts": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "required": ["artifact_id", "artifact_kind"],
-              "properties": {
-                "artifact_id": {
-                  "type": "string"
-                },
-                "sha256": {
-                  "type": "string",
-                  "default": "",
-                  "description": "Optional compatibility declaration. Omission maps to the empty legacy value; a valid 64-hex value is enforced against decoded payload bytes."
-                },
-                "artifact_kind": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "transcript_artifacts": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "required": ["artifact_id", "artifact_kind"],
-              "properties": {
-                "artifact_id": {
-                  "type": "string"
-                },
-                "sha256": {
-                  "type": "string",
-                  "default": "",
-                  "description": "Optional compatibility declaration. Omission maps to the empty legacy value; a valid 64-hex value is enforced against decoded payload bytes."
-                },
-                "artifact_kind": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "draft_template_profile": {
+          "endpoint": {
             "type": "string"
           },
-          "verifier_identity": {
-            "type": "string"
-          },
-          "artifact_payloads": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ArtifactPayloadInput"
-            }
+          "dependency_path_reached": {
+            "type": "boolean"
           }
+        },
+        "example": {
+          "adapter_id": "authority-integrity-probe",
+          "endpoint": "http://127.0.0.1:49152",
+          "dependency_path_reached": true
         }
       }
     }

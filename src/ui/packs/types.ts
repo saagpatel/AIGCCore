@@ -1,12 +1,8 @@
-/**
- * Terminal statuses the Tauri pack commands emit.
- * Source: src-tauri/src/lib.rs:2228 (SUCCESS), :2237 (BLOCKED), :2246 (FAILED);
- * PackCommandError::blocked :294 and ::failed :304/:319 cover the error paths.
- */
+/** Terminal statuses understood by the status badge. */
 export type PackStatus = "SUCCESS" | "BLOCKED" | "FAILED";
 
 /**
- * EvidenceOS export status. src-tauri/src/lib.rs:660 rejects any outcome other
+ * EvidenceOS export status. src-tauri/src/export/mod.rs rejects any outcome other
  * than COMPLETED before it reaches the UI, so COMPLETED is the only value the
  * frontend can observe. ExportOutcome itself is wider (core/src/run/manager.rs:41).
  */
@@ -66,60 +62,4 @@ export type EvidenceAuthorityManifest = {
     must_not_satisfy: string[];
   };
   limitations: string[];
-};
-
-export type PackCommandStatus = {
-  status: PackStatus;
-  message: string;
-  bundle_path?: string | null;
-  bundle_sha256?: string | null;
-  error_code?: string | null;
-  run_id?: string | null;
-  audit_path?: string | null;
-  evidence_authority?: EvidenceAuthorityManifest | null;
-};
-
-export type ArtifactPayloadInput = {
-  artifact_id: string;
-  content_text?: string;
-  content_base64?: string;
-};
-
-export type RedlineOSInput = {
-  schema_version: string;
-  contract_artifacts: Array<{ artifact_id: string; sha256: string; filename: string }>;
-  extraction_mode: "NATIVE_PDF" | "OCR";
-  jurisdiction_hint: string | null;
-  review_profile: "default" | "aggressive" | "conservative";
-};
-
-export type RedlineCommandInput = RedlineOSInput & {
-  artifact_payloads: ArtifactPayloadInput[];
-};
-
-export type IncidentCommandInput = {
-  schema_version: string;
-  incident_artifacts: Array<{ artifact_id: string; sha256: string; source_type: string }>;
-  timeline_start_hint: string | null;
-  timeline_end_hint: string | null;
-  customer_redaction_profile: string;
-  artifact_payloads: ArtifactPayloadInput[];
-};
-
-export type FinanceCommandInput = {
-  schema_version: string;
-  finance_artifacts: Array<{ artifact_id: string; sha256: string; artifact_kind: string }>;
-  period: string;
-  exception_rules_profile: string;
-  retention_profile: string;
-  artifact_payloads: ArtifactPayloadInput[];
-};
-
-export type HealthcareCommandInput = {
-  schema_version: string;
-  consent_artifacts: Array<{ artifact_id: string; sha256: string; artifact_kind: string }>;
-  transcript_artifacts: Array<{ artifact_id: string; sha256: string; artifact_kind: string }>;
-  draft_template_profile: string;
-  verifier_identity: string;
-  artifact_payloads: ArtifactPayloadInput[];
 };

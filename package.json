@@ -55,11 +55,6 @@
     "git:session:save": "bash scripts/git/session-save.sh",
     "git:session:resume": "bash scripts/git/session-resume.sh",
     "pr:notes": "bash scripts/git/generate-pr-notes.sh",
-    "perf:bundle": "node scripts/perf/bundle-report.mjs",
-    "perf:build": "node scripts/perf/measure-build-time.mjs",
-    "perf:assets": "bash scripts/perf/check-assets.sh",
-    "perf:memory": "node --expose-gc scripts/perf/memory-smoke.mjs",
-    "perf:summary": "node scripts/perf/summarize.mjs",
     "lint-staged": "lint-staged"
   },
   "dependencies": {

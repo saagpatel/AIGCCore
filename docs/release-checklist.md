@@ -51,11 +51,8 @@ Use this checklist for every production desktop release.
   boundary. Do not infer installer validation from workflow success.
 - Smoke-test installation and launch on at least one host per target platform,
   retaining exact artifact and host receipts.
-- Verify pack commands produce successful bundle exports:
-  - RedlineOS
-  - IncidentOS
-  - FinanceOS
-  - HealthcareOS
+- Verify `generate_evidenceos_bundle` produces a successful EvidenceOS bundle
+  export and validate the exported ZIP with `bundle_validator`.
 
 ## 5) Manual Rollback Readiness (Blocking)
 

@@ -11,7 +11,6 @@ export default defineConfig({
     ],
     exclude: [
       "tests/ui/**",
-      "tests/perf/**",
       "node_modules/**",
       "dist/**",
       "target/**",
