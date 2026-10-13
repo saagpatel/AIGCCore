@@ -94,6 +94,8 @@ Purpose: Defines named evaluation gates that are executed by Core and recorded i
         "network_snapshot": {
           "network_mode_present": true,
           "proof_level_present": true,
+          "proof_source": "POLICY_DECLARATION",
+          "proof_source_consistent_with_posture": true,
           "ui_remote_fetch_disabled": true,
           "adapter_endpoints_present": true,
           "ui_remote_fetch_disabled_must_be_true": true,
@@ -212,7 +214,9 @@ Purpose: Defines named evaluation gates that are executed by Core and recorded i
         }
       },
       "evidence_required": [
-        "inputs_snapshot/model_snapshot.json"
+        "inputs_snapshot/model_snapshot.json",
+        "inputs_snapshot/network_snapshot.json",
+        "run_manifest.json"
       ]
     },
     {

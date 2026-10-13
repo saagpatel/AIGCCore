@@ -264,15 +264,19 @@ fn map_validator_to_gates(
             "EVIDENCE_AUTHORITY.CONTRACT_V1" => {
                 summary.result_for_check("CHK.EVIDENCE.AUTHORITY_CONTRACT")
             }
-            "OFFLINE_ENFORCEMENT.MODE_PROOF_V1" => {
-                summary.result_for_check("CHK.NETWORK.SNAPSHOT_PRESENT")
-            }
+            "OFFLINE_ENFORCEMENT.MODE_PROOF_V1" => combined_check_result(
+                summary,
+                &["CHK.NETWORK.SNAPSHOT_PRESENT", "CHK.NETWORK.PROOF_SOURCE"],
+            ),
             "OFFLINE_ENFORCEMENT.ALLOWLIST_MATCH_V1" => allowlist_gate.clone(),
             "CITATIONS.STRICT_ENFORCED_V1" => summary.result_for_check("CHK.CITATIONS.STRICT"),
             "REDACTION.REQUIRED_APPLIED_V1" => {
                 summary.result_for_check("CHK.REDACTION.POLICY_GATE")
             }
-            "MODEL_PINNING.MIN_LEVEL_V1" => summary.result_for_check("CHK.MODEL.PINNING_LEVEL"),
+            "MODEL_PINNING.MIN_LEVEL_V1" => combined_check_result(
+                summary,
+                &["CHK.MODEL.PINNING_LEVEL", "CHK.RUN.SNAPSHOT_CONSISTENCY"],
+            ),
             "VAULT_CRYPTO.ENCRYPTION_AT_REST_V1" => (
                 summary.vault_crypto_gate_result(),
                 summary.vault_crypto_message(),
@@ -307,6 +311,16 @@ fn map_validator_to_gates(
     }
     results.sort_by(|a, b| a.gate_id.cmp(&b.gate_id));
     results
+}
+
+fn combined_check_result(summary: &ValidationSummary, check_ids: &[&str]) -> (String, String) {
+    for check_id in check_ids {
+        let (result, message) = summary.result_for_check(check_id);
+        if result != "PASS" {
+            return ("FAIL".into(), format!("{check_id}: {message}"));
+        }
+    }
+    ("PASS".into(), "ok".into())
 }
 
 fn evaluate_offline_allowlist_gate(bundle_zip: &Path) -> CoreResult<(String, String)> {
@@ -578,6 +592,119 @@ mod tests {
     use crate::eval::registry::{GateDef, GateRegistry};
     use crate::policy::types::PolicyMode;
     use crate::validator::ValidationSummary;
+    use serde_json::Value;
+
+    fn generated_snapshot_gates(
+        model: Value,
+        calls: Value,
+        network: Value,
+        policy: PolicyMode,
+    ) -> Vec<GateRunResult> {
+        use std::io::Write;
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("snapshots.zip");
+        let mut writer = zip::ZipWriter::new(std::fs::File::create(&path).unwrap());
+        // Other bundle checks are independent; these entries exercise the real
+        // validator-to-gate path for network posture and model activity.
+        for (name, value) in [
+            (
+                "BUNDLE_INFO.json",
+                serde_json::json!({"bundle_version":"1.1.0", "pack_id":"self_audit"}),
+            ),
+            (
+                "run_manifest.json",
+                serde_json::json!({"model_calls":calls}),
+            ),
+            ("inputs_snapshot/model_snapshot.json", model),
+            ("inputs_snapshot/network_snapshot.json", network),
+        ] {
+            writer
+                .start_file(name, zip::write::FileOptions::<()>::default())
+                .unwrap();
+            writer
+                .write_all(&serde_json::to_vec(&value).unwrap())
+                .unwrap();
+        }
+        writer
+            .start_file("audit_log.ndjson", zip::write::FileOptions::<()>::default())
+            .unwrap();
+        writer.finish().unwrap();
+        EvalRunner::new_v3()
+            .unwrap()
+            .run_all_for_bundle(&path, policy)
+            .unwrap()
+    }
+
+    fn assert_snapshot_gate(results: &[GateRunResult], gate_id: &str, expected: &str) {
+        let gate = results.iter().find(|gate| gate.gate_id == gate_id).unwrap();
+        assert_eq!(gate.result, expected, "{}", gate.message);
+        assert_eq!(gate.severity, "BLOCKER");
+    }
+
+    #[test]
+    fn generated_model_gate_rejects_activity_without_a_model_snapshot() {
+        let network = serde_json::to_value(
+            crate::policy::network_snapshot::NetworkSnapshot::offline_policy(),
+        )
+        .unwrap();
+        for policy in [PolicyMode::STRICT, PolicyMode::BALANCED] {
+            let unused = generated_snapshot_gates(
+                Value::Null,
+                serde_json::json!([]),
+                network.clone(),
+                policy,
+            );
+            assert_snapshot_gate(&unused, "MODEL_PINNING.MIN_LEVEL_V1", "PASS");
+
+            let calls = generated_snapshot_gates(
+                Value::Null,
+                serde_json::json!([{"model_id":"unexpected"}]),
+                network.clone(),
+                policy,
+            );
+            assert_snapshot_gate(&calls, "MODEL_PINNING.MIN_LEVEL_V1", "FAIL");
+            let mut endpoints = network.clone();
+            endpoints["adapter_endpoints"] =
+                serde_json::json!([{"endpoint":"http://127.0.0.1:11434", "is_loopback":true}]);
+            let adapters =
+                generated_snapshot_gates(Value::Null, serde_json::json!([]), endpoints, policy);
+            assert_snapshot_gate(&adapters, "MODEL_PINNING.MIN_LEVEL_V1", "FAIL");
+        }
+    }
+
+    #[test]
+    fn generated_network_gate_rejects_invalid_or_missing_proof_source() {
+        let network = serde_json::to_value(
+            crate::policy::network_snapshot::NetworkSnapshot::offline_policy(),
+        )
+        .unwrap();
+        for policy in [
+            PolicyMode::STRICT,
+            PolicyMode::BALANCED,
+            PolicyMode::DRAFT_ONLY,
+        ] {
+            let valid = generated_snapshot_gates(
+                Value::Null,
+                serde_json::json!([]),
+                network.clone(),
+                policy,
+            );
+            assert_snapshot_gate(&valid, "OFFLINE_ENFORCEMENT.MODE_PROOF_V1", "PASS");
+            let mut invalid = network.clone();
+            invalid["proof_source"] = serde_json::json!("MEASURED");
+            let results = generated_snapshot_gates(
+                Value::Null,
+                serde_json::json!([]),
+                invalid.clone(),
+                policy,
+            );
+            assert_snapshot_gate(&results, "OFFLINE_ENFORCEMENT.MODE_PROOF_V1", "FAIL");
+            invalid.as_object_mut().unwrap().remove("proof_source");
+            let results =
+                generated_snapshot_gates(Value::Null, serde_json::json!([]), invalid, policy);
+            assert_snapshot_gate(&results, "OFFLINE_ENFORCEMENT.MODE_PROOF_V1", "FAIL");
+        }
+    }
 
     #[test]
     fn unused_egress_is_not_reported_as_runtime_proof() {
