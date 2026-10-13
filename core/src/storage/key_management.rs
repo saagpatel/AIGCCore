@@ -39,6 +39,9 @@ pub fn create_kek(
     storage: KeyStorage,
     fallback_path: &std::path::Path,
 ) -> CoreResult<KekMaterial> {
+    // Only the macOS keychain and Windows DPAPI paths key the KEK by vault id.
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let _ = vault_id;
     let kek = match storage {
         KeyStorage::FILE_FALLBACK => file_get_or_create_kek(fallback_path)?,
         KeyStorage::MACOS_KEYCHAIN => {
