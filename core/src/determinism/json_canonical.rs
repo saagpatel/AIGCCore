@@ -1,3 +1,5 @@
+//! Canonical JSON uses recursively sorted object keys, compact UTF-8, and integer-only numbers.
+
 use crate::error::{CoreError, CoreResult};
 use serde::Serialize;
 use serde_json::Value;

@@ -1,5 +1,7 @@
 # Bundle Validator Checklist v3 (LOCKED)
 
+**Document status:** Normative current export validation checklist.
+
 Version: bundle_validator_v3  
 Status: LOCKED (semantic requirements; implementation may evolve but must enforce this checklist)  
 Purpose: Defines what it means for an Evidence Bundle v1 to be “valid” and exportable.
@@ -9,6 +11,7 @@ Purpose: Defines what it means for an Evidence Bundle v1 to be “valid” and e
 ---
 
 ## Checklist JSON (authoritative)
+
 ```json
 {
   "checklist_version": "bundle_validator_v3",
@@ -38,13 +41,8 @@ Purpose: Defines what it means for an Evidence Bundle v1 to be “valid” and e
       "description": "Exports layout contains deliverables and attachments; templates_used.json must exist for each pack export.",
       "validate": {
         "exports": {
-          "must_have_dirs": [
-            "deliverables",
-            "attachments"
-          ],
-          "attachments_must_exist": [
-            "templates_used.json"
-          ],
+          "must_have_dirs": ["deliverables", "attachments"],
+          "attachments_must_exist": ["templates_used.json"],
           "attachments_must_validate": {
             "templates_used.json": "TEMPLATES_USED_V1"
           }
@@ -120,9 +118,7 @@ Purpose: Defines what it means for an Evidence Bundle v1 to be “valid” and e
       "validate": {
         "conditional": {
           "if_policy": "STRICT",
-          "must_exist_glob": [
-            "exports/**/attachments/citations_map.json"
-          ],
+          "must_exist_glob": ["exports/**/attachments/citations_map.json"],
           "citations_schema": "LOCATOR_SCHEMA_V1",
           "artifact_refs_in_hashes_csv": true,
           "requires_claim_markers": "<!-- CLAIM:C#### -->",
@@ -137,9 +133,7 @@ Purpose: Defines what it means for an Evidence Bundle v1 to be “valid” and e
       "validate": {
         "conditional": {
           "if_policy_requires_redaction": true,
-          "must_exist_glob": [
-            "exports/**/attachments/redactions_map.json"
-          ],
+          "must_exist_glob": ["exports/**/attachments/redactions_map.json"],
           "redactions_schema": "REDACTION_SCHEMA_V1",
           "required_redactions_definition": "Per Phase_2_5_Lock_Addendum_v2.5-lock-4 \u00a76.3"
         }
@@ -177,19 +171,9 @@ Purpose: Defines what it means for an Evidence Bundle v1 to be “valid” and e
         "json_path": "inputs_snapshot/model_snapshot.json",
         "unused_model_requires_null_snapshot_and_empty_calls_and_endpoints": true,
         "allowed_pinning_levels_by_policy": {
-          "STRICT": [
-            "CRYPTO_PINNED",
-            "VERSION_PINNED"
-          ],
-          "BALANCED": [
-            "VERSION_PINNED",
-            "CRYPTO_PINNED"
-          ],
-          "DRAFT_ONLY": [
-            "NAME_ONLY",
-            "VERSION_PINNED",
-            "CRYPTO_PINNED"
-          ]
+          "STRICT": ["CRYPTO_PINNED", "VERSION_PINNED"],
+          "BALANCED": ["VERSION_PINNED", "CRYPTO_PINNED"],
+          "DRAFT_ONLY": ["NAME_ONLY", "VERSION_PINNED", "CRYPTO_PINNED"]
         }
       }
     },
@@ -199,10 +183,7 @@ Purpose: Defines what it means for an Evidence Bundle v1 to be “valid” and e
       "description": "Final eval report is non-empty, registry-bound, policy-complete, and consistent with the run manifest.",
       "validate": {
         "json_path": "eval_report.json",
-        "required_fields": [
-          "overall_status",
-          "gates"
-        ],
+        "required_fields": ["overall_status", "gates"],
         "gate_ids_must_exist_in_registry": true,
         "authorizing_registry_version": "gates_registry_v3",
         "legacy_registry_versions_are_diagnostic_only": true,
@@ -211,10 +192,7 @@ Purpose: Defines what it means for an Evidence Bundle v1 to be “valid” and e
         "v3_gate_fields_must_match_registry": true,
         "overall_status_must_match_gate_results": true,
         "run_manifest_gate_status_must_match_report": true,
-        "diagnostic_registry_versions": [
-          "gates_registry_v1",
-          "gates_registry_v2"
-        ]
+        "diagnostic_registry_versions": ["gates_registry_v1", "gates_registry_v2"]
       }
     },
     {

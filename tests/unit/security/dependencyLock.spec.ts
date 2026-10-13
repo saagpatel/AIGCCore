@@ -9,6 +9,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../
 const readRepoFile = (relativePath: string) =>
   readFileSync(path.join(repoRoot, relativePath), "utf8");
 
+// Package audit detects known advisories, but cannot enforce this specific dependency-graph exclusion.
 describe("dependency security overrides", () => {
   it("keeps Puppeteer's browser helper off the extract-zip dependency path", () => {
     const workspace = readRepoFile("pnpm-workspace.yaml");

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Summary (planned 0.2.0; no tag or release)
+
+- Summarize waves 1–5: consolidate the product around the governance kernel and EvidenceOS, retain truthful validated bundle exports, harden integrity and deterministic contracts, and refresh the frontend toolchain and setup documentation.
+
 ### Changed (breaking)
 
 - Vault layout: data lives in `generations/<name>/` with `meta/active_generation` as the commit point. Flat-layout vaults still open and migrate on their first key rotation.

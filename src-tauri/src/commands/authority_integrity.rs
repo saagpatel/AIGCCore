@@ -1,3 +1,5 @@
+//! Authority probes preserve caller input for core validation and report only observed local results.
+
 use aigc_core::adapters::interface::{
     AdapterCapabilitiesResponse, AdapterClient, AdapterHealthResponse, AdapterModel,
     ResolveModelRequest, ResolveModelResponse,
