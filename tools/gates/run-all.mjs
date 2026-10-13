@@ -9,7 +9,7 @@ const enforce = spawnSync("node", ["tools/gates/check-egress-enforcement.mjs"], 
 });
 if ((enforce.status ?? 1) !== 0) process.exit(enforce.status ?? 1);
 
-const res = spawnSync("cargo", ["run", "-p", "gate_runner"], {
+const res = spawnSync("cargo", ["run", "--locked", "-p", "gate_runner"], {
   stdio: "inherit",
   env: process.env,
 });
