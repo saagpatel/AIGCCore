@@ -1,240 +1,94 @@
-# Local Command Surface (Tauri Invoke)
+# Local Command Surface
 
-This project does not expose an external HTTP API. The primary runtime interface is the local Tauri command surface.
+AIGCCore exposes the governance kernel and EvidenceOS only. The app is wired in
+`src-tauri/src/lib.rs`; commands live in `src-tauri/src/commands/`, and the
+EvidenceOS bundle path lives in `src-tauri/src/export/`. Invocations use
+`invoke(command, arguments)`; these are local IPC commands, not HTTP endpoints.
+The documentation contract is `openapi/openapi.generated.json`.
 
-## Experimental qualification binary
+## Command: `get_network_snapshot`
 
-`aigc_local_execution_qualify` is available only when the Tauri crate is built
-with `local-execution-backend-v1`. It runs the embedded
-`AIGC_LOCAL_EXECUTION_FIXTURE_V1` and writes an
-`AIGC_EXECUTION_RECEIPT_V1`.
+Purpose: Return the current command's network posture declaration. No arguments.
+Implementation: `commands/network.rs`.
 
-It is deliberately not registered in the Tauri invoke handler and cannot accept
-an arbitrary repository, command, environment, mount, image, network
-destination, or credential. The portable backend interface returns
-`PolicyBlocked` for every request except the exact prepared embedded
-qualification fixture and input; the qualification binary itself routes
-through that interface. See
-`docs/local-execution-v1-qualification.md`.
-
-## Contract Notes (Phase 5)
-
-- Command names and request/response schema remain backward-compatible.
-- Runtime export directories are permission-hardened on Unix (`0o700`).
-- Healthcare run fingerprinting is based on sorted input artifact descriptors.
-- Bundled `audit_log.ndjson` now includes final validation lifecycle evidence before export result is returned.
-- Evidence Bundle bytes are validated again after the last audit-log rewrite;
-  a final validation error or failure removes the ZIP and returns no export
-  path or digest.
-- Egress decision events require an explicit origin. Synthetic policy-path events use
-  `details.evidence_origin = CONTROL_SIMULATION`; actual policy-client decisions use
-  `RUNTIME_OBSERVATION`.
-- Every successful pack result includes `evidence_authority` (`EVIDENCE_AUTHORITY_V1`). Treat
-  `CONTROL_SIMULATION` as controlled policy-path evidence only. It is not proof of live traffic,
-  production authority, external mutation, deployability, or real-user success.
-- Evidence authority is case-local, hash-bound to source/executable/arguments/environment/audit
-  inputs, and expiring. Missing, stale, malformed, or mismatched authority is non-authorizing.
-- `RUNTIME_OBSERVATION`, `FIXTURE`, and `REPLAY` authority manifests are reserved and
-  non-authorizing until their explicit manifest and audit-evidence contracts are implemented.
-
-## Command: `run_redlineos`
-
-Purpose: Run contract review and export a RedlineOS Evidence Bundle.
-
-Request shape:
+Response:
 
 ```json
 {
-  "schema_version": "REDLINEOS_INPUT_V1",
-  "contract_artifacts": [
-    {
-      "artifact_id": "a_contract_001",
-      "sha256": "optional-client-hash",
-      "filename": "contract.pdf"
-    }
-  ],
-  "extraction_mode": "NATIVE_PDF",
-  "jurisdiction_hint": "US-CA",
-  "review_profile": "default",
-  "artifact_payloads": [
-    {
-      "artifact_id": "a_contract_001",
-      "content_base64": "<base64-pdf-bytes>"
-    }
-  ]
+  "network_mode": "OFFLINE",
+  "proof_level": "OFFLINE_STRICT",
+  "ui_remote_fetch_disabled": true
 }
 ```
 
-Response shape:
+## Command: `list_control_library`
+
+Purpose: Return EvidenceOS controls for the requested capabilities. An omitted,
+null, or empty `enabledCapabilities` returns all controls. The argument key uses
+Tauri's default camelCase naming; nested serialized DTO fields use snake_case.
+Implementation: `commands/evidenceos.rs`.
+
+Request:
+
+```json
+{ "enabledCapabilities": ["Traceability"] }
+```
+
+Response entries have this shape (illustrative control identifier):
+
+```json
+[
+  {
+    "control_id": "CTRL_EXAMPLE",
+    "title": "Example control",
+    "capability": "Traceability",
+    "control_family": "Traceability",
+    "description": "Example control description."
+  }
+]
+```
+
+## Command: `generate_evidenceos_bundle`
+
+Purpose: Run EvidenceOS capability mapping and strict-citation export through
+the kernel pipeline. Implementation: `commands/evidenceos.rs` delegates to
+`export/mod.rs`. All six input fields are required by the serialized DTO.
+
+Request:
 
 ```json
 {
-  "status": "SUCCESS|BLOCKED|FAILED",
-  "message": "human-readable status",
-  "error_code": "optional-machine-readable-failure-code",
-  "run_id": "optional-run-id",
-  "audit_path": "optional-audit-log-path",
-  "bundle_path": "/tmp/.../evidence_bundle_redlineos_v1.zip",
-  "bundle_sha256": "hex-sha256",
-  "evidence_authority": {
-    "schema_version": "EVIDENCE_AUTHORITY_V1",
-    "observed_execution_class": "CONTROLLED",
-    "evidence_origin": "CONTROL_SIMULATION",
-    "production_equivalent": false,
-    "valid_until_utc": "RFC3339 timestamp",
-    "downstream_claims": {
-      "may_satisfy": ["LOCAL_CONTROLLED_EXECUTION", "BUNDLE_INTEGRITY"],
-      "must_not_satisfy": ["LIVE_EXECUTION", "PRODUCTION_AUTHORITY", "EXTERNAL_MUTATION"]
-    }
+  "input": {
+    "enabled_capabilities": ["Traceability"],
+    "artifact_title": "Controlled evidence",
+    "artifact_body": "Bounded local evidence",
+    "artifact_tags_csv": "OPS,NETWORK",
+    "control_families_csv": "Traceability",
+    "claim_text": "The controlled bundle path was exercised."
   }
 }
 ```
 
-Validation notes:
+Successful response fields:
 
-- Redline payload must be provided in `content_base64` and decode to PDF-like bytes.
-- Text-only payloads for binary artifacts are blocked with `ARTIFACT_CONTENT_TYPE_UNSUPPORTED`.
+- `status`: `COMPLETED` (other export outcomes become command errors).
+- `bundle_path`: path to the exported ZIP.
+- `bundle_sha256`: SHA-256 of the ZIP bytes.
+- `missing_control_ids`: array of controls without mapped evidence.
+- `evidence_authority`: the `EVIDENCE_AUTHORITY_V1` object bound into the final
+  run manifest, including producer, executable/arguments/environment/audit
+  digests, timestamps, tools, effects, state scope, and permitted/prohibited
+  downstream claims. See `core/src/evidence_bundle/authority.rs` for the contract.
 
-Standard failure codes used across pack commands:
+Failures reject the invocation with a string. They do not return a demo-pack
+status/error-code object. An export blocked by policy also rejects; there is no
+successful response until the kernel export outcome is `COMPLETED`.
 
-- `ARTIFACT_PAYLOAD_MISSING`: required payload object is missing for a declared artifact.
-- `ARTIFACT_PAYLOAD_DUPLICATE`: multiple payload objects exist for the same `artifact_id`.
-- `ARTIFACT_PAYLOAD_EMPTY`: payload exists but has no usable `content_text`/`content_base64`.
-- `ARTIFACT_PAYLOAD_INVALID_BASE64`: `content_base64` is not valid base64.
-- `ARTIFACT_PAYLOAD_INVALID_UTF8`: text payload cannot be decoded as UTF-8.
-- `ARTIFACT_PAYLOAD_TOO_LARGE`: payload exceeds command contract size limit (text: 5 MiB, binary: 20 MiB).
-- `ARTIFACT_SHA256_INVALID`: declared artifact hash is present but not valid 64-hex.
-- `ARTIFACT_SHA256_MISMATCH`: declared valid hash does not match decoded payload bytes.
-- `ARTIFACT_CONTENT_TYPE_UNSUPPORTED`: payload field shape does not match expected artifact type.
-- `REDLINE_ARTIFACT_NOT_PDF`: Redline payload bytes are not PDF-like (`%PDF-` preflight failed).
-- `*_INPUT_INVALID` / `*_WORKFLOW_INVALID_INPUT`: pack-specific schema/workflow validation blocked execution.
-- `EXPORT_BLOCKED` / `EXPORT_FAILED`: export pipeline blocked or failed after workflow execution began.
-
-SHA policy:
-
-- If `artifact.sha256` is valid 64-hex, runtime enforces exact byte hash match.
-- If `artifact.sha256` is missing or legacy placeholder (non-64 length), runtime treats it as non-enforced compatibility mode and continues.
-
-## Command: `run_incidentos`
-
-Purpose: Parse incident logs, generate customer/internal deliverables, export IncidentOS bundle.
-
-Request shape:
-
-```json
-{
-  "schema_version": "INCIDENTOS_INPUT_V1",
-  "incident_artifacts": [
-    {
-      "artifact_id": "incident_log_001",
-      "sha256": "optional-client-hash",
-      "source_type": "syslog"
-    }
-  ],
-  "timeline_start_hint": null,
-  "timeline_end_hint": null,
-  "customer_redaction_profile": "STRICT",
-  "artifact_payloads": [
-    {
-      "artifact_id": "incident_log_001",
-      "content_text": "<ndjson-or-json-log-content>"
-    }
-  ]
-}
-```
-
-Response: same `PackCommandStatus` structure as above.
-
-Validation notes:
-
-- Text payloads can be supplied via `content_text` or base64-decoded UTF-8 in `content_base64`.
-- Duplicate payload entries per artifact are blocked.
-
-## Command: `run_financeos`
-
-Purpose: Detect finance exceptions, generate audit outputs, export FinanceOS bundle.
-
-Request shape:
-
-```json
-{
-  "schema_version": "FINANCEOS_INPUT_V1",
-  "finance_artifacts": [
-    {
-      "artifact_id": "statement_001",
-      "sha256": "optional-client-hash",
-      "artifact_kind": "statement"
-    }
-  ],
-  "period": "2026-01",
-  "exception_rules_profile": "default",
-  "retention_profile": "ret_min",
-  "artifact_payloads": [
-    {
-      "artifact_id": "statement_001",
-      "content_text": "<statement-json>"
-    }
-  ]
-}
-```
-
-Response: same `PackCommandStatus` structure as above.
-
-Validation notes:
-
-- Statement payload must be valid JSON and schema-compliant for workflow parsing.
-- Text payload size > 5 MiB is blocked before workflow execution.
-
-## Command: `run_healthcareos`
-
-Purpose: Run consent-gated clinical draft workflow and export HealthcareOS bundle.
-
-Request shape:
-
-```json
-{
-  "schema_version": "HEALTHCAREOS_INPUT_V1",
-  "consent_artifacts": [
-    {
-      "artifact_id": "consent_001",
-      "sha256": "optional-client-hash",
-      "artifact_kind": "consent"
-    }
-  ],
-  "transcript_artifacts": [
-    {
-      "artifact_id": "transcript_001",
-      "sha256": "optional-client-hash",
-      "artifact_kind": "transcript"
-    }
-  ],
-  "draft_template_profile": "soap",
-  "verifier_identity": "clinician_1",
-  "artifact_payloads": [
-    {
-      "artifact_id": "consent_001",
-      "content_text": "<consent-json>"
-    },
-    {
-      "artifact_id": "transcript_001",
-      "content_text": "<transcript-json>"
-    }
-  ]
-}
-```
-
-Response: same `PackCommandStatus` structure as above.
-
-Validation notes:
-
-- Both transcript and consent payloads are required for runtime execution.
-- Payload schema/content failures are blocked before export pipeline handoff.
-
-## Command: `generate_evidenceos_bundle`
-
-Purpose: Run Phase 3 EvidenceOS capability mapping + strict citation export.
-
-Request and response are unchanged from prior implementation and remain exposed in `src-tauri/src/lib.rs`.
+Behavior is unchanged in this scope reduction: the UI checks required non-empty
+fields, while the backend retains its existing fallback text for empty title,
+body, and claim. Evidence authority remains `CONTROLLED / CONTROL_SIMULATION`;
+it cannot authorize live execution or production authority. Existing encryption
+and model stamps are deferred to wave 2.
 
 ## Test-only command: `authority_integrity_probe_adapter`
 
