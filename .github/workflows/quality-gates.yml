@@ -44,6 +44,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Waivers live in pnpm-workspace.yaml (auditConfig) with an owner and expiry.
+      - name: Audit dependencies
+        run: pnpm audit --audit-level high
+
       # rustup reads the channel and components from rust-toolchain.toml.
       - name: Setup pinned Rust
         run: rustup show active-toolchain
