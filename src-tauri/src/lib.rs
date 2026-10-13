@@ -1,5 +1,6 @@
 mod commands;
 mod export;
+pub mod logging;
 
 #[cfg(not(feature = "authority-integrity-test-hooks"))]
 pub fn app_builder<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {

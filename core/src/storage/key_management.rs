@@ -26,50 +26,143 @@ pub fn get_or_create_kek(
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     let _ = vault_id;
     #[cfg(target_os = "macos")]
-    {
-        if let Ok(kek) = macos_get_or_create_kek(vault_id) {
-            return Ok(KekMaterial {
-                kek,
-                storage: KeyStorage::MACOS_KEYCHAIN,
-            });
-        }
-    }
-
+    let storage = KeyStorage::MACOS_KEYCHAIN;
     #[cfg(target_os = "windows")]
-    {
-        if let Ok(kek) = windows_get_or_create_kek_dpapi(vault_id, fallback_path) {
-            return Ok(KekMaterial {
-                kek,
-                storage: KeyStorage::WINDOWS_DPAPI,
-            });
-        }
-    }
+    let storage = KeyStorage::WINDOWS_DPAPI;
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let storage = KeyStorage::FILE_FALLBACK;
+    create_kek(vault_id, storage, fallback_path)
+}
 
-    // Fallback keeps local development deterministic and testable.
-    let kek = file_get_or_create_kek(fallback_path)?;
-    Ok(KekMaterial {
-        kek,
-        storage: KeyStorage::FILE_FALLBACK,
-    })
+pub fn create_kek(
+    vault_id: &str,
+    storage: KeyStorage,
+    fallback_path: &std::path::Path,
+) -> CoreResult<KekMaterial> {
+    // Only the macOS keychain and Windows DPAPI paths key the KEK by vault id.
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let _ = vault_id;
+    let kek = match storage {
+        KeyStorage::FILE_FALLBACK => file_get_or_create_kek(fallback_path)?,
+        KeyStorage::MACOS_KEYCHAIN => {
+            #[cfg(target_os = "macos")]
+            {
+                macos_get_or_create_kek(vault_id)?
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                return Err(CoreError::PolicyBlocked(
+                    "KEY_PROVIDER_UNAVAILABLE: macOS Keychain cannot be created on this platform"
+                        .into(),
+                ));
+            }
+        }
+        KeyStorage::WINDOWS_DPAPI => {
+            #[cfg(target_os = "windows")]
+            {
+                windows_get_or_create_kek_dpapi(vault_id, fallback_path)?
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                return Err(CoreError::PolicyBlocked(
+                    "KEY_PROVIDER_UNAVAILABLE: Windows DPAPI cannot be created on this platform"
+                        .into(),
+                ));
+            }
+        }
+    };
+    Ok(KekMaterial { kek, storage })
+}
+
+pub fn load_kek(
+    vault_id: &str,
+    storage: KeyStorage,
+    fallback_path: &std::path::Path,
+) -> CoreResult<KekMaterial> {
+    let _ = vault_id;
+    let kek = match storage {
+        KeyStorage::FILE_FALLBACK => file_load_kek(fallback_path)?,
+        KeyStorage::MACOS_KEYCHAIN => {
+            #[cfg(target_os = "macos")]
+            {
+                macos_load_kek(vault_id)?
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                return Err(CoreError::PolicyBlocked(
+                    "KEY_PROVIDER_UNAVAILABLE: macOS Keychain cannot be loaded on this platform"
+                        .into(),
+                ));
+            }
+        }
+        KeyStorage::WINDOWS_DPAPI => {
+            #[cfg(target_os = "windows")]
+            {
+                windows_load_kek(vault_id, fallback_path)?
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                return Err(CoreError::PolicyBlocked(
+                    "KEY_PROVIDER_UNAVAILABLE: Windows DPAPI cannot be loaded on this platform"
+                        .into(),
+                ));
+            }
+        }
+    };
+    Ok(KekMaterial { kek, storage })
+}
+
+fn file_load_kek(path: &std::path::Path) -> CoreResult<[u8; 32]> {
+    let metadata = std::fs::symlink_metadata(path).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            CoreError::ArtifactMissingError(
+                "KEY_PROVIDER_MISSING: file fallback KEK is missing".into(),
+            )
+        } else {
+            CoreError::PolicyBlocked(format!(
+                "KEY_PROVIDER_ACCESS_FAILED: cannot inspect file fallback KEK: {error}"
+            ))
+        }
+    })?;
+    if metadata.file_type().is_symlink() {
+        return Err(CoreError::PolicyBlocked(
+            "KEY_PROVIDER_PATH_REJECTED: fallback KEK must be a regular file".into(),
+        ));
+    }
+    if !metadata.is_file() {
+        return Err(CoreError::PolicyBlocked(
+            "KEY_PROVIDER_ACCESS_FAILED: fallback KEK path is not a regular file".into(),
+        ));
+    }
+    let bytes = std::fs::read(path).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            CoreError::ArtifactMissingError(
+                "KEY_PROVIDER_MISSING: file fallback KEK is missing".into(),
+            )
+        } else {
+            CoreError::PolicyBlocked(format!(
+                "KEY_PROVIDER_ACCESS_FAILED: cannot read file fallback KEK: {error}"
+            ))
+        }
+    })?;
+    if bytes.len() != 32 {
+        return Err(CoreError::InvalidInput(
+            "KEY_PROVIDER_INVALID: fallback KEK must be 32 bytes".into(),
+        ));
+    }
+    let mut result = [0u8; 32];
+    result.copy_from_slice(&bytes);
+    Ok(result)
 }
 
 #[cfg(target_os = "macos")]
 fn macos_get_or_create_kek(vault_id: &str) -> CoreResult<[u8; 32]> {
     let service = "aigc-core-vault-kek";
     let account = format!("vault:{}", vault_id);
-
-    // Try find existing secret in Keychain.
-    let out = Command::new("security")
-        .args(["find-generic-password", "-s", service, "-a", &account, "-w"])
-        .output()?;
-    if out.status.success() {
-        let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        let bytes = base64_decode(&s)?;
-        if bytes.len() == 32 {
-            let mut arr = [0u8; 32];
-            arr.copy_from_slice(&bytes);
-            return Ok(arr);
-        }
+    match macos_load_kek(vault_id) {
+        Ok(key) => return Ok(key),
+        Err(CoreError::ArtifactMissingError(_)) => {}
+        Err(error) => return Err(error),
     }
 
     // Create and persist new KEK in Keychain.
@@ -79,7 +172,6 @@ fn macos_get_or_create_kek(vault_id: &str) -> CoreResult<[u8; 32]> {
     let out = Command::new("security")
         .args([
             "add-generic-password",
-            "-U",
             "-s",
             service,
             "-a",
@@ -90,24 +182,65 @@ fn macos_get_or_create_kek(vault_id: &str) -> CoreResult<[u8; 32]> {
         .output()?;
     if !out.status.success() {
         return Err(CoreError::PolicyBlocked(
-            "failed to store KEK in macOS Keychain".to_string(),
+            "KEY_PROVIDER_ACCESS_FAILED: failed to store KEK in macOS Keychain".to_string(),
         ));
     }
     Ok(kek)
 }
 
-fn file_get_or_create_kek(path: &std::path::Path) -> CoreResult<[u8; 32]> {
-    if path.exists() {
-        harden_secret_file_permissions(path)?;
-        let bytes = std::fs::read(path)?;
-        if bytes.len() == 32 {
-            let mut arr = [0u8; 32];
-            arr.copy_from_slice(&bytes);
-            return Ok(arr);
+#[cfg(target_os = "macos")]
+fn macos_load_kek(vault_id: &str) -> CoreResult<[u8; 32]> {
+    let service = "aigc-core-vault-kek";
+    let account = format!("vault:{vault_id}");
+    let output = Command::new("security")
+        .args(["find-generic-password", "-s", service, "-a", &account, "-w"])
+        .output()
+        .map_err(|error| {
+            CoreError::PolicyBlocked(format!(
+                "KEY_PROVIDER_ACCESS_FAILED: Keychain lookup failed: {error}"
+            ))
+        })?;
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr).to_lowercase();
+        if detail.contains("could not be found") || detail.contains("item not found") {
+            return Err(CoreError::ArtifactMissingError(
+                "KEY_PROVIDER_MISSING: Keychain item not found".into(),
+            ));
         }
-        return Err(CoreError::InvalidInput(
-            "invalid fallback KEK length".to_string(),
+        return Err(CoreError::PolicyBlocked(
+            "KEY_PROVIDER_ACCESS_FAILED: Keychain access denied or unavailable".into(),
         ));
+    }
+    let decoded = base64_decode(String::from_utf8_lossy(&output.stdout).trim()).map_err(|_| {
+        CoreError::InvalidInput("KEY_PROVIDER_INVALID: Keychain KEK encoding is invalid".into())
+    })?;
+    if decoded.len() != 32 {
+        return Err(CoreError::InvalidInput(
+            "KEY_PROVIDER_INVALID: Keychain KEK must be 32 bytes".into(),
+        ));
+    }
+    let mut result = [0u8; 32];
+    result.copy_from_slice(&decoded);
+    Ok(result)
+}
+
+fn file_get_or_create_kek(path: &std::path::Path) -> CoreResult<[u8; 32]> {
+    match std::fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => {
+            return Err(CoreError::PolicyBlocked(
+                "KEY_PROVIDER_PATH_REJECTED: fallback KEK must be a regular file".into(),
+            ));
+        }
+        Ok(_) => {
+            harden_secret_file_permissions(path)?;
+            return file_load_kek(path);
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(CoreError::PolicyBlocked(format!(
+                "KEY_PROVIDER_ACCESS_FAILED: cannot inspect fallback KEK: {error}"
+            )))
+        }
     }
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -115,9 +248,68 @@ fn file_get_or_create_kek(path: &std::path::Path) -> CoreResult<[u8; 32]> {
     }
     let mut kek = [0u8; 32];
     rand::rng().fill_bytes(&mut kek);
-    std::fs::write(path, kek)?;
-    harden_secret_file_permissions(path)?;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
+    }
+    let mut file = match options.open(path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            return file_load_kek(path)
+        }
+        Err(error) => return Err(error.into()),
+    };
+    use std::io::Write;
+    file.write_all(&kek)?;
+    file.sync_all()?;
     Ok(kek)
+}
+
+#[cfg(target_os = "windows")]
+fn windows_load_kek(vault_id: &str, path: &std::path::Path) -> CoreResult<[u8; 32]> {
+    let metadata = std::fs::symlink_metadata(path).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            CoreError::ArtifactMissingError(
+                "KEY_PROVIDER_MISSING: DPAPI key file is missing".into(),
+            )
+        } else {
+            CoreError::PolicyBlocked(format!(
+                "KEY_PROVIDER_ACCESS_FAILED: cannot inspect DPAPI key file: {error}"
+            ))
+        }
+    })?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err(CoreError::PolicyBlocked(
+            "KEY_PROVIDER_PATH_REJECTED: DPAPI key must be a regular file".into(),
+        ));
+    }
+    let bytes = std::fs::read(path).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            CoreError::ArtifactMissingError(
+                "KEY_PROVIDER_MISSING: DPAPI key file is missing".into(),
+            )
+        } else {
+            CoreError::PolicyBlocked(format!(
+                "KEY_PROVIDER_ACCESS_FAILED: cannot read DPAPI key file: {error}"
+            ))
+        }
+    })?;
+    let plain = dpapi_unprotect(&bytes, vault_id).map_err(|error| {
+        CoreError::PolicyBlocked(format!(
+            "KEY_PROVIDER_ACCESS_FAILED: DPAPI key access failed: {error}"
+        ))
+    })?;
+    if plain.len() != 32 {
+        return Err(CoreError::InvalidInput(
+            "KEY_PROVIDER_INVALID: DPAPI KEK must be 32 bytes".into(),
+        ));
+    }
+    let mut result = [0u8; 32];
+    result.copy_from_slice(&plain);
+    Ok(result)
 }
 
 fn harden_secret_dir_permissions(path: &std::path::Path) -> CoreResult<()> {
@@ -150,17 +342,19 @@ fn harden_secret_file_permissions(path: &std::path::Path) -> CoreResult<()> {
 
 #[cfg(target_os = "windows")]
 fn windows_get_or_create_kek_dpapi(vault_id: &str, path: &std::path::Path) -> CoreResult<[u8; 32]> {
-    if path.exists() {
-        let enc = std::fs::read(path)?;
-        let dec = dpapi_unprotect(&enc, vault_id)?;
-        if dec.len() != 32 {
-            return Err(CoreError::InvalidInput(
-                "DPAPI-unwrapped KEK invalid length".to_string(),
+    match std::fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => {
+            return Err(CoreError::PolicyBlocked(
+                "KEY_PROVIDER_PATH_REJECTED: DPAPI key must be a regular file".into(),
             ));
         }
-        let mut arr = [0u8; 32];
-        arr.copy_from_slice(&dec);
-        return Ok(arr);
+        Ok(_) => return windows_load_kek(vault_id, path),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(CoreError::PolicyBlocked(format!(
+                "KEY_PROVIDER_ACCESS_FAILED: cannot inspect DPAPI key: {error}"
+            )))
+        }
     }
 
     if let Some(parent) = path.parent() {
@@ -169,7 +363,20 @@ fn windows_get_or_create_kek_dpapi(vault_id: &str, path: &std::path::Path) -> Co
     let mut kek = [0u8; 32];
     rand::rng().fill_bytes(&mut kek);
     let enc = dpapi_protect(&kek, vault_id)?;
-    std::fs::write(path, enc)?;
+    let mut file = match std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+    {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            return windows_load_kek(vault_id, path)
+        }
+        Err(error) => return Err(error.into()),
+    };
+    use std::io::Write;
+    file.write_all(&enc)?;
+    file.sync_all()?;
     Ok(kek)
 }
 
@@ -374,7 +581,7 @@ mod tests {
         assert!(result
             .expect_err("expected invalid length error")
             .to_string()
-            .contains("invalid fallback KEK length"));
+            .contains("KEY_PROVIDER_INVALID"));
     }
 
     #[test]

@@ -18,6 +18,9 @@ serde = { version = "1.0.203", features = ["derive"] }
 serde_json = "1.0.120"
 aigc_core = { path = "../core" }
 time = { version = "0.3.36", features = ["formatting"] }
+sha2 = "0.11.0"
+hex = "0.4.3"
+log = "0.4.29"
 
 [features]
 default = []
@@ -25,3 +28,4 @@ authority-integrity-test-hooks = []
 
 [dev-dependencies]
 tauri = { version = "2.11.3", features = ["test"] }
+zip = { version = "8.6.0", default-features = false, features = ["deflate"] }

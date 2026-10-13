@@ -8,6 +8,30 @@ use zip::write::{FileOptions, ZipWriter};
 use zip::CompressionMethod;
 
 // Addendum_A_Determinism_Matrix_v2.md §4 + Phase_2_5_Lock_Addendum_v2.5-lock-4.md §3.1
+/// Open the output for (re)writing without following a symlink and, on unix,
+/// readable only by the current user. An existing regular file is rewritten
+/// because bundle assembly rebuilds the same path; callers that need a fresh
+/// name reserve it with `create_new` first.
+fn create_private_output(path: &Path) -> CoreResult<File> {
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
+    }
+    let file = options
+        .open(path)
+        .map_err(|error| CoreError::io("create bundle archive", path, error))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        file.set_permissions(std::fs::Permissions::from_mode(0o600))
+            .map_err(|error| CoreError::io("restrict bundle archive", path, error))?;
+    }
+    Ok(file)
+}
+
 // Deterministic zip builder:
 // - entries sorted lexicographically by bundle_rel_path
 // - fixed timestamps (DOS epoch equivalent)
@@ -40,7 +64,7 @@ pub fn zip_dir_deterministic(root_dir: &Path, out_zip: &Path) -> CoreResult<Stri
     }
     entries.sort_by(|a, b| a.1.cmp(&b.1));
 
-    let f = File::create(out_zip)?;
+    let f = create_private_output(out_zip)?;
     let mut zw = ZipWriter::new(f);
 
     // DOS epoch (zip format): earliest representable time is 1980-01-01.
@@ -86,4 +110,54 @@ pub fn zip_dir_deterministic(root_dir: &Path, out_zip: &Path) -> CoreResult<Stri
         h.update(&buf[..n]);
     }
     Ok(hex::encode(h.finalize()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn archive_is_private_and_rebuildable() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("root");
+        std::fs::create_dir(&root).unwrap();
+        std::fs::write(root.join("a.txt"), b"a").unwrap();
+        let out = temp.path().join("out.zip");
+
+        zip_dir_deterministic(&root, &out).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&out).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o600);
+        }
+        // Rebuilding the same path is allowed and tightens a looser mode.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&out, std::fs::Permissions::from_mode(0o644)).unwrap();
+        }
+        zip_dir_deterministic(&root, &out).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&out).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o600);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn archive_output_does_not_follow_a_planted_symlink() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("root");
+        std::fs::create_dir(&root).unwrap();
+        let victim = temp.path().join("victim");
+        std::fs::write(&victim, b"keep").unwrap();
+        let out = temp.path().join("out.zip");
+        std::os::unix::fs::symlink(&victim, &out).unwrap();
+
+        assert!(zip_dir_deterministic(&root, &out).is_err());
+        assert_eq!(std::fs::read(&victim).unwrap(), b"keep");
+    }
 }

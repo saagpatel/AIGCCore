@@ -160,11 +160,9 @@ fn make_self_audit_inputs(bundle_root: &Path, policy_mode: PolicyMode) -> Eviden
     let pack_version = "0.0.0".to_string();
 
     // Create encrypted vault to anchor crypto status + key rotation events.
+    let runtime_vault = bundle_root.with_extension("runtime_vault");
     let mut vault = VaultStorage::create(
-        bundle_root
-            .parent()
-            .unwrap_or(bundle_root)
-            .join("runtime_vault"),
+        runtime_vault,
         VaultConfig {
             vault_id: vault_id.clone(),
             encryption_algorithm: EncryptionAlgorithm::XCHACHA20_POLY1305,

@@ -7,9 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.0.0] - 2026-03-24
+### Changed (breaking)
+
+- Vault layout: data lives in `generations/<name>/` with `meta/active_generation` as the commit point. Flat-layout vaults still open and migrate on their first key rotation.
+- `VaultStorage::write_blob` refuses to overwrite an existing blob.
+- `VaultStorage::create` refuses to create over an existing vault, and on macOS no longer falls back to a file key when the Keychain fails.
+- Key rotation requires that no other instance has the vault open (`VAULT_IN_USE`).
+- Blob IDs, pack IDs and deliverable paths are validated; absolute paths, `..` and symlinked parents are rejected.
+- Exported ZIPs are created with mode 0600 on unix.
+
+### Fixed
+
+- Rotating a flat-layout vault no longer fails with "File name too long".
+- Audit appends are single writes, and opening a log takes a shared lock and never truncates.
+- ZIP validation bounds decompression by actual bytes read, not declared sizes.
+- Build provenance no longer stamps a clean revision on a binary built from a dirty tree.
+- A failed executable hash is no longer cached for the process lifetime.
+
+## [0.1.0] - 2026-03-24
 
 ### Added
+
 - Close out phases 4 and 5 hardening
 - Begin phase 4–7 implementation scaffolding
 - HealthcareOS Pack: clinical documentation workflow with consent validation
@@ -23,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive review and validation report for all phases
 
 ### Fixed
+
 - Restore Windows icon packaging and closeout evidence
 - Remove duplicate TruffleHog fail flag
 - Avoid Unix checksum self-hash artifact
@@ -35,6 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Use a valid Trivy action tag and repair Codex security workflow
 
 ### Changed
+
 - Align agent communication contract labels
 - Capture glib remediation execution blocker
 - Close phase 5 follow-up artifacts and remaining phase completion items

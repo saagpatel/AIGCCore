@@ -12,7 +12,12 @@ pub fn emit_source_revision_rerun_inputs(repository_root: &Path) {
         .split(|byte| *byte == 0)
         .filter(|path| !path.is_empty())
     {
-        let path = String::from_utf8(path.to_vec()).expect("tracked paths must be UTF-8");
+        let Ok(path) = std::str::from_utf8(path) else {
+            continue;
+        };
+        if !should_rerun_for_tracked_path(Path::new(path)) {
+            continue;
+        }
         assert!(
             !path.contains(['\n', '\r']),
             "tracked path contains a Cargo directive delimiter"
@@ -53,6 +58,60 @@ pub fn emit_source_revision_rerun_inputs(repository_root: &Path) {
     }
 }
 
+/// Paths whose contents can change the compiled binary. The rebuild triggers
+/// and the `+DIRTY` stamp both use this one predicate so they always agree.
+pub fn should_rerun_for_tracked_path(path: &Path) -> bool {
+    const SOURCE_DIRECTORIES: [&str; 5] = [
+        "core/src",
+        "src-tauri/src",
+        "tools",
+        "src",
+        "src-tauri/capabilities",
+    ];
+    const BUILD_INPUT_FILES: [&str; 5] = [
+        "Cargo.lock",
+        "rust-toolchain.toml",
+        "src-tauri/build.rs",
+        "src-tauri/build_provenance.rs",
+        "src-tauri/tauri.conf.json",
+    ];
+    SOURCE_DIRECTORIES
+        .iter()
+        .any(|directory| path.starts_with(directory))
+        || BUILD_INPUT_FILES.iter().any(|file| path == Path::new(file))
+        || path.file_name().is_some_and(|name| name == "Cargo.toml")
+}
+
+/// True when any path that can affect the binary differs from `HEAD`
+/// (staged or unstaged). Changes to documentation do not count.
+pub fn tree_is_dirty_for_build(repository_root: &Path) -> bool {
+    let Some(changed) = git_optional_output(
+        repository_root,
+        &[
+            "diff",
+            "--name-only",
+            "-z",
+            "--ignore-submodules",
+            "HEAD",
+            "--",
+        ],
+    ) else {
+        // Cannot prove the tree is clean; stamp conservatively.
+        return true;
+    };
+    any_changed_path_affects_build(&changed)
+}
+
+pub fn any_changed_path_affects_build(nul_separated_paths: &[u8]) -> bool {
+    nul_separated_paths
+        .split(|byte| *byte == 0)
+        .filter(|path| !path.is_empty())
+        .any(|path| match std::str::from_utf8(path) {
+            Ok(path) => should_rerun_for_tracked_path(Path::new(path)),
+            Err(_) => true,
+        })
+}
+
 pub fn source_revision(repository_root: &Path) -> String {
     let candidates = ["AIGC_SOURCE_REVISION", "GITHUB_SHA"]
         .iter()
@@ -88,18 +147,10 @@ pub fn source_revision_with_candidates(
         .to_string();
     assert!(!revision.is_empty(), "git revision must not be empty");
 
-    let worktree_clean = git_quiet(
-        repository_root,
-        &["diff", "--quiet", "--ignore-submodules", "--"],
-    );
-    let index_clean = git_quiet(
-        repository_root,
-        &["diff", "--cached", "--quiet", "--ignore-submodules", "--"],
-    );
-    if worktree_clean && index_clean {
-        validate_revision(revision)
-    } else {
+    if tree_is_dirty_for_build(repository_root) {
         validate_revision(format!("{revision}+DIRTY"))
+    } else {
+        validate_revision(revision)
     }
 }
 
@@ -119,15 +170,6 @@ fn git_optional_stdout(repository_root: &Path, args: &[&str]) -> Option<String> 
         .trim()
         .to_string();
     (!value.is_empty()).then_some(value)
-}
-
-fn git_quiet(repository_root: &Path, args: &[&str]) -> bool {
-    Command::new("git")
-        .arg("-C")
-        .arg(repository_root)
-        .args(args)
-        .status()
-        .is_ok_and(|status| status.success())
 }
 
 fn validate_revision(value: String) -> String {

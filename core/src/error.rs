@@ -38,6 +38,14 @@ pub enum CoreError {
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 
+    #[error("io error during {operation} at {path}: {source}")]
+    IoAt {
+        operation: &'static str,
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
+
     #[error("json error: {0}")]
     Json(#[from] serde_json::Error),
 
@@ -46,6 +54,29 @@ pub enum CoreError {
 
     #[error("csv error: {0}")]
     Csv(#[from] csv::Error),
+}
+
+impl CoreError {
+    /// An IO failure that records which operation and path failed.
+    pub fn io(
+        operation: &'static str,
+        path: impl AsRef<std::path::Path>,
+        source: std::io::Error,
+    ) -> Self {
+        Self::IoAt {
+            operation,
+            path: path.as_ref().display().to_string(),
+            source,
+        }
+    }
+
+    /// The underlying IO error kind, when this error wraps one.
+    pub fn io_kind(&self) -> Option<std::io::ErrorKind> {
+        match self {
+            Self::Io(source) | Self::IoAt { source, .. } => Some(source.kind()),
+            _ => None,
+        }
+    }
 }
 
 pub type CoreResult<T> = Result<T, CoreError>;
