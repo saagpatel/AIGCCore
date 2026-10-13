@@ -249,3 +249,93 @@ fn audit_event_rejects_non_object_details() {
     let error = finalize_event(event).unwrap_err();
     assert!(error.to_string().contains("details must be a JSON object"));
 }
+
+fn run_created() -> AuditEvent {
+    audit_event(
+        "RUN_CREATED",
+        serde_json::json!({
+            "pack_id": "pack",
+            "pack_version": "1.0.0",
+            "policy_pack_id": "policy",
+            "policy_pack_version": "1.0.0",
+            "determinism_enabled": true
+        }),
+    )
+}
+
+#[test]
+fn audit_open_never_truncates_a_log_other_writers_are_extending() {
+    const WRITERS: usize = 8;
+    const APPENDS_PER_WRITER: usize = 5;
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("nested/audit.ndjson");
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(WRITERS));
+    let handles: Vec<_> = (0..WRITERS)
+        .map(|_| {
+            let path = path.clone();
+            let barrier = barrier.clone();
+            std::thread::spawn(move || {
+                barrier.wait();
+                let mut appended = 0;
+                while appended < APPENDS_PER_WRITER {
+                    // Reopen after a stale-writer rejection, as a real caller would.
+                    let mut log = AuditLog::open_or_create(&path).unwrap();
+                    match log.append(run_created()) {
+                        Ok(_) => appended += 1,
+                        Err(error) => {
+                            assert!(error.to_string().contains("AUDIT_STALE_WRITER"), "{error}")
+                        }
+                    }
+                }
+            })
+        })
+        .collect();
+    for handle in handles {
+        handle.join().unwrap();
+    }
+    let contents = fs::read_to_string(&path).unwrap();
+    assert_eq!(contents.lines().count(), WRITERS * APPENDS_PER_WRITER);
+    AuditLog::open_or_create(&path).expect("the combined log is one valid chain");
+}
+
+#[test]
+fn audit_open_waits_for_an_in_flight_append_lock() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("audit.ndjson");
+    AuditLog::open_or_create(&path)
+        .unwrap()
+        .append(run_created())
+        .unwrap();
+
+    let holder = fs::OpenOptions::new().append(true).open(&path).unwrap();
+    holder.lock().unwrap();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let reader_path = path.clone();
+    let reader = std::thread::spawn(move || {
+        let opened = AuditLog::open_or_create(&reader_path).is_ok();
+        sender.send(opened).unwrap();
+    });
+    assert!(
+        receiver
+            .recv_timeout(std::time::Duration::from_millis(300))
+            .is_err(),
+        "open must wait while an appender holds the exclusive lock"
+    );
+    holder.unlock().unwrap();
+    assert!(receiver
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .unwrap());
+    reader.join().unwrap();
+}
+
+#[test]
+fn audit_open_error_names_the_operation_and_path() {
+    let temp = tempfile::tempdir().unwrap();
+    // A regular file where the parent directory should be.
+    let blocker = temp.path().join("blocker");
+    fs::write(&blocker, b"x").unwrap();
+    let error = AuditLog::open_or_create(blocker.join("audit.ndjson")).unwrap_err();
+    let message = error.to_string();
+    assert!(message.contains("create audit log directory"), "{message}");
+    assert!(message.contains("blocker"), "{message}");
+}

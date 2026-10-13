@@ -1,7 +1,7 @@
 use crate::audit::event::{finalize_event, AuditEvent, ZERO_HASH_64};
 use crate::error::{CoreError, CoreResult};
 use serde_json::Value;
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
@@ -25,26 +25,39 @@ pub struct AuditLog {
 impl AuditLog {
     pub fn open_or_create(path: impl AsRef<Path>) -> CoreResult<Self> {
         let path = path.as_ref().to_path_buf();
-        if !path.exists() {
-            if let Some(parent) = path.parent() {
-                fs::create_dir_all(parent)?;
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|e| CoreError::io("create audit log directory", parent, e))?;
+        }
+        // Never truncate: another writer may have created and extended the log
+        // between any existence check and this open.
+        let mut file = OpenOptions::new()
+            .read(true)
+            .append(true)
+            .create(true)
+            .open(&path)
+            .map_err(|e| CoreError::io("open audit log", &path, e))?;
+        // A shared lock keeps a concurrent append from being read half-written.
+        file.lock_shared()
+            .map_err(|e| CoreError::io("lock audit log", &path, e))?;
+        let result = (|| {
+            let mut bytes = Vec::new();
+            file.read_to_end(&mut bytes)
+                .map_err(|e| CoreError::io("read audit log", &path, e))?;
+            if !bytes.is_empty() && !bytes.ends_with(b"\n") {
+                return Err(CoreError::InvalidInput(
+                    "AUDIT_UNTERMINATED_TAIL: refusing to append to an incomplete final record"
+                        .into(),
+                ));
             }
-            File::create(&path)?;
-            return Ok(Self {
-                path,
-                last_hash: ZERO_HASH_64.to_string(),
-            });
-        }
-
-        let bytes = fs::read(&path)?;
-        if !bytes.is_empty() && !bytes.ends_with(b"\n") {
-            return Err(CoreError::InvalidInput(
-                "AUDIT_UNTERMINATED_TAIL: refusing to append to an incomplete final record".into(),
-            ));
-        }
-        let contents = String::from_utf8(bytes.clone())
-            .map_err(|error| CoreError::InvalidInput(format!("audit log is not UTF-8: {error}")))?;
-        let last_hash = verify_ndjson(&contents)?;
+            let contents = String::from_utf8(bytes).map_err(|error| {
+                CoreError::InvalidInput(format!("audit log is not UTF-8: {error}"))
+            })?;
+            verify_ndjson(&contents)
+        })();
+        let unlock = file.unlock();
+        let last_hash = result?;
+        unlock.map_err(|e| CoreError::io("unlock audit log", &path, e))?;
         Ok(Self { path, last_hash })
     }
 
@@ -52,8 +65,10 @@ impl AuditLog {
         let mut f = OpenOptions::new()
             .read(true)
             .append(true)
-            .open(&self.path)?;
-        f.lock()?;
+            .open(&self.path)
+            .map_err(|e| CoreError::io("open audit log", &self.path, e))?;
+        f.lock()
+            .map_err(|e| CoreError::io("lock audit log", &self.path, e))?;
         let result = (|| {
             let opened_hash = self.last_hash.clone();
             let persisted_len = f.metadata()?.len();
@@ -68,15 +83,20 @@ impl AuditLog {
             self.last_hash = persisted_hash;
             event.prev_event_hash = self.last_hash.clone();
             let event = finalize_event(event)?;
-            let line = serde_json::to_string(&event)?;
-            f.write_all(line.as_bytes())?;
-            f.write_all(b"\n")?;
-            f.sync_all()?;
+            let mut line = serde_json::to_string(&event)?;
+            line.push('\n');
+            // One write keeps the record and its terminator together.
+            f.write_all(line.as_bytes())
+                .map_err(|e| CoreError::io("append audit record", &self.path, e))?;
+            f.sync_all()
+                .map_err(|e| CoreError::io("sync audit log", &self.path, e))?;
             self.last_hash = event.event_hash.clone();
             Ok(event)
         })();
-        f.unlock()?;
-        result
+        let unlock = f.unlock();
+        let event = result?;
+        unlock.map_err(|e| CoreError::io("unlock audit log", &self.path, e))?;
+        Ok(event)
     }
 
     pub fn read_all_ndjson(&self) -> CoreResult<String> {
