@@ -61,6 +61,7 @@ dependencies = [
  "csv",
  "hex",
  "idna",
+ "libc",
  "rand 0.10.3",
  "regex",
  "serde",
@@ -81,11 +82,15 @@ name = "aigc_core_tauri"
 version = "0.1.0"
 dependencies = [
  "aigc_core",
+ "hex",
+ "log",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
  "tauri",
  "tauri-build",
  "time",
+ "zip",
 ]
 
 [[package]]
