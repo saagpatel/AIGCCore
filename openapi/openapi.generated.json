@@ -68,6 +68,16 @@
     "/commands/generate_evidenceos_bundle": {
       "post": {
         "summary": "Generate an EvidenceOS bundle",
+        "x-exported-bundle-contract": {
+          "bundle_version": "1.1.0",
+          "truthful_snapshot_schemas": {
+            "policy_snapshot": "#/components/schemas/TruthfulPolicySnapshot",
+            "network_snapshot": "#/components/schemas/TruthfulNetworkSnapshot",
+            "model_snapshot": "#/components/schemas/TruthfulModelSnapshot"
+          },
+          "declared_sha256_pattern": "^[0-9a-f]{64}$",
+          "legacy_behavior": "Bundles with an older bundle_version remain inspectable and report LEGACY_UNVERIFIABLE; they do not pass as truthful."
+        },
         "responses": {
           "200": {
             "description": "Successful local IPC result",
@@ -165,6 +175,8 @@
         "required": [
           "network_mode",
           "proof_level",
+          "proof_source",
+          "adapter_endpoints",
           "ui_remote_fetch_disabled"
         ],
         "properties": {
@@ -180,6 +192,21 @@
               "OFFLINE_STRICT"
             ]
           },
+          "proof_source": {
+            "type": "string",
+            "enum": [
+              "POLICY_DECLARATION",
+              "MEASURED"
+            ],
+            "description": "POLICY_DECLARATION means the posture comes from enforced policy and is not a network measurement."
+          },
+          "adapter_endpoints": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Endpoints used by an adapter in the relevant run; empty when no adapter ran."
+          },
           "ui_remote_fetch_disabled": {
             "type": "boolean",
             "const": true
@@ -188,6 +215,8 @@
         "example": {
           "network_mode": "OFFLINE",
           "proof_level": "OFFLINE_STRICT",
+          "proof_source": "POLICY_DECLARATION",
+          "adapter_endpoints": [],
           "ui_remote_fetch_disabled": true
         }
       },
@@ -241,6 +270,11 @@
           "artifact_body": {
             "type": "string"
           },
+          "artifact_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "Optional SHA-256 of the exact UTF-8 bytes of artifact_body, including empty content. If omitted, the backend computes it from those exact bytes. A malformed or mismatching declared digest is rejected."
+          },
           "artifact_tags_csv": {
             "type": "string"
           },
@@ -257,10 +291,139 @@
           ],
           "artifact_title": "Controlled evidence",
           "artifact_body": "Bounded local evidence",
+          "artifact_sha256": "a73e5152bf4d84940a7f0e552bbf99478b5e6882c74f89ac804cd3e4af0ad1e2",
           "artifact_tags_csv": "OPS,NETWORK",
           "control_families_csv": "Traceability",
           "claim_text": "The controlled bundle path was exercised."
         }
+      },
+      "TruthfulPolicySnapshot": {
+        "type": "object",
+        "required": [
+          "encryption_at_rest"
+        ],
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "encryption_at_rest": {
+                  "const": true
+                }
+              },
+              "required": [
+                "encryption_at_rest"
+              ]
+            },
+            "then": {
+              "required": [
+                "encryption_algorithm"
+              ]
+            },
+            "else": {
+              "not": {
+                "required": [
+                  "encryption_algorithm"
+                ]
+              }
+            }
+          }
+        ],
+        "properties": {
+          "encryption_at_rest": {
+            "type": "boolean"
+          },
+          "encryption_algorithm": {
+            "type": "string",
+            "enum": [
+              "AES_256_GCM",
+              "XCHACHA20_POLY1305"
+            ],
+            "description": "Omitted when encryption_at_rest is false."
+          }
+        },
+        "description": "A true encryption claim requires actual vault use and a matching VAULT_ENCRYPTION_STATUS audit event with an accepted key_storage value."
+      },
+      "TruthfulNetworkSnapshot": {
+        "type": "object",
+        "required": [
+          "proof_level",
+          "proof_source",
+          "adapter_endpoints"
+        ],
+        "properties": {
+          "proof_level": {
+            "type": "string"
+          },
+          "proof_source": {
+            "type": "string",
+            "enum": [
+              "POLICY_DECLARATION",
+              "MEASURED"
+            ]
+          },
+          "adapter_endpoints": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "description": "POLICY_DECLARATION records enforced policy, not measured traffic. The endpoint list is empty when no adapter ran."
+      },
+      "TruthfulModelSnapshot": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "description": "JSON null when no model ran. If present, its adapter_endpoint must occur in network_snapshot.adapter_endpoints and run_manifest.model_calls must be nonempty.",
+        "properties": {
+          "adapter_id": {
+            "type": "string"
+          },
+          "adapter_version": {
+            "type": "string"
+          },
+          "adapter_endpoint": {
+            "type": "string"
+          },
+          "model_id": {
+            "type": "string"
+          },
+          "model_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "pinning_level": {
+            "type": "string",
+            "enum": [
+              "CRYPTO_PINNED",
+              "VERSION_PINNED",
+              "NAME_ONLY"
+            ]
+          }
+        }
+      },
+      "EvidenceBundleInfo": {
+        "type": "object",
+        "required": [
+          "bundle_version",
+          "core_build",
+          "run_id"
+        ],
+        "properties": {
+          "bundle_version": {
+            "type": "string",
+            "const": "1.1.0"
+          },
+          "core_build": {
+            "type": "string",
+            "description": "Package version and compiled source revision; not a placeholder."
+          },
+          "run_id": {
+            "type": "string"
+          }
+        },
+        "description": "Truthful snapshot contract metadata for the generated archive."
       },
       "EvidenceAuthorityManifest": {
         "type": "object",
@@ -296,7 +459,15 @@
             "type": "string"
           },
           "evidence_origin": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "LOCAL_ARTIFACT_EXPORT",
+              "CONTROL_SIMULATION",
+              "RUNTIME_OBSERVATION",
+              "FIXTURE",
+              "REPLAY"
+            ],
+            "description": "LOCAL_ARTIFACT_EXPORT identifies a local bundle-writing run without simulated egress. CONTROL_SIMULATION is reserved for actual control-simulation runs and their blocked-egress evidence contract."
           },
           "generated_at_utc": {
             "type": "string"
@@ -442,7 +613,9 @@
           "bundle_path",
           "bundle_sha256",
           "missing_control_ids",
-          "evidence_authority"
+          "evidence_authority",
+          "encryption_at_rest",
+          "model_used"
         ],
         "properties": {
           "status": {
@@ -465,6 +638,14 @@
           },
           "evidence_authority": {
             "$ref": "#/components/schemas/EvidenceAuthorityManifest"
+          },
+          "encryption_at_rest": {
+            "type": "boolean",
+            "description": "Whether this exported run actually used at-rest encryption."
+          },
+          "model_used": {
+            "type": "boolean",
+            "description": "Whether model inference ran in this exported run."
           }
         },
         "example": {
@@ -472,12 +653,14 @@
           "bundle_path": "/runtime/evidence_bundle_evidenceos_v1.zip",
           "bundle_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
           "missing_control_ids": [],
+          "encryption_at_rest": false,
+          "model_used": false,
           "evidence_authority": {
             "schema_version": "EVIDENCE_AUTHORITY_V1",
             "case_id": "r_example",
             "requested_execution_class": "CONTROLLED",
             "observed_execution_class": "CONTROLLED",
-            "evidence_origin": "CONTROL_SIMULATION",
+            "evidence_origin": "LOCAL_ARTIFACT_EXPORT",
             "production_equivalent": false,
             "generated_at_utc": "2026-10-12T12:00:00Z",
             "valid_until_utc": "2026-10-13T12:00:00Z",
@@ -545,7 +728,7 @@
               ]
             },
             "limitations": [
-              "Blocked-egress evidence is a control simulation, not an observed network request.",
+              "Network posture is a policy declaration; no network measurement or blocked request was recorded.",
               "No production credentials, external mutation authority, deployment, publication, or real-user outcome was exercised.",
               "This receipt may not authorize live or production claims."
             ]

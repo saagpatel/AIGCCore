@@ -194,6 +194,7 @@ Purpose: Defines named evaluation gates that are executed by Core and recorded i
         "BALANCED"
       ],
       "pass_criteria": {
+        "when_model_unused_requires_null_snapshot_and_empty_calls_and_endpoints": true,
         "allowed_pinning_levels_by_policy": {
           "STRICT": [
             "CRYPTO_PINNED",
@@ -224,9 +225,8 @@ Purpose: Defines named evaluation gates that are executed by Core and recorded i
         "DRAFT_ONLY"
       ],
       "pass_criteria": {
-        "policy_snapshot_requires": {
-          "encryption_at_rest": true
-        },
+        "snapshot_evidence_consistent": true,
+        "when_encryption_at_rest_true_requires_matching_vault_event": true,
         "vault_crypto_algorithms_allowed": [
           "XCHACHA20_POLY1305",
           "AES_256_GCM"

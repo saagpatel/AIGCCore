@@ -17,9 +17,15 @@ Response:
 {
   "network_mode": "OFFLINE",
   "proof_level": "OFFLINE_STRICT",
+  "proof_source": "POLICY_DECLARATION",
+  "adapter_endpoints": [],
   "ui_remote_fetch_disabled": true
 }
 ```
+
+`POLICY_DECLARATION` means this response reports the enforced offline policy;
+it does not report a network measurement. `adapter_endpoints` is empty until an
+adapter actually runs during the relevant run.
 
 ## Command: `list_control_library`
 
@@ -52,7 +58,8 @@ Response entries have this shape (illustrative control identifier):
 
 Purpose: Run EvidenceOS capability mapping and strict-citation export through
 the kernel pipeline. Implementation: `commands/evidenceos.rs` delegates to
-`export/mod.rs`. All six input fields are required by the serialized DTO.
+`export/mod.rs`. The six base input fields are required by the serialized DTO;
+`artifact_sha256` is optional.
 
 Request:
 
@@ -62,6 +69,7 @@ Request:
     "enabled_capabilities": ["Traceability"],
     "artifact_title": "Controlled evidence",
     "artifact_body": "Bounded local evidence",
+    "artifact_sha256": "a73e5152bf4d84940a7f0e552bbf99478b5e6882c74f89ac804cd3e4af0ad1e2",
     "artifact_tags_csv": "OPS,NETWORK",
     "control_families_csv": "Traceability",
     "claim_text": "The controlled bundle path was exercised."
@@ -69,26 +77,63 @@ Request:
 }
 ```
 
+`artifact_sha256`, when present, must be the lowercase SHA-256 of the exact
+UTF-8 bytes of `artifact_body`, including an empty body as zero bytes. The
+backend rejects malformed digests and digests that do not match. If omitted,
+the backend computes the digest from those exact bytes; it does not substitute
+fallback text or bytes.
+
+Invalid requests include both a malformed digest and a well-formed digest for
+different payload bytes:
+
+```json
+{"input":{"enabled_capabilities":["Traceability"],"artifact_title":"Example","artifact_body":"Bounded local evidence","artifact_sha256":"demo_sha256","artifact_tags_csv":"OPS","control_families_csv":"Traceability","claim_text":"Example claim"}}
+```
+
+```json
+{"input":{"enabled_capabilities":["Traceability"],"artifact_title":"Example","artifact_body":"Bounded local evidence","artifact_sha256":"0000000000000000000000000000000000000000000000000000000000000000","artifact_tags_csv":"OPS","control_families_csv":"Traceability","claim_text":"Example claim"}}
+```
+
+Both invocations reject with a command error. The first digest fails format
+validation; the second does not match the payload bytes.
+
 Successful response fields:
 
 - `status`: `COMPLETED` (other export outcomes become command errors).
 - `bundle_path`: path to the exported ZIP.
 - `bundle_sha256`: SHA-256 of the ZIP bytes.
 - `missing_control_ids`: array of controls without mapped evidence.
+- `encryption_at_rest`: whether this exported run actually used at-rest
+  encryption.
+- `model_used`: whether model inference ran in this exported run.
 - `evidence_authority`: the `EVIDENCE_AUTHORITY_V1` object bound into the final
   run manifest, including producer, executable/arguments/environment/audit
   digests, timestamps, tools, effects, state scope, and permitted/prohibited
   downstream claims. See `core/src/evidence_bundle/authority.rs` for the contract.
 
+The exported archive uses `bundle_version: "1.1.0"`. Its snapshots report
+`encryption_at_rest: false` with no algorithm and `model_snapshot.json: null`
+when the EvidenceOS run uses neither vault encryption nor model inference;
+`network_snapshot.adapter_endpoints` is empty in the same no-adapter case.
+The run manifest has an empty `model_calls` array. Build metadata identifies
+the package version and compiled source revision. Older archives remain
+inspectable but validators label their truth status `LEGACY_UNVERIFIABLE`.
+The network snapshot's `POLICY_DECLARATION` describes enforced offline policy;
+the export records no network measurement or blocked request.
+
 Failures reject the invocation with a string. They do not return a demo-pack
 status/error-code object. An export blocked by policy also rejects; there is no
 successful response until the kernel export outcome is `COMPLETED`.
 
-Behavior is unchanged in this scope reduction: the UI checks required non-empty
-fields, while the backend retains its existing fallback text for empty title,
-body, and claim. Evidence authority remains `CONTROLLED / CONTROL_SIMULATION`;
-it cannot authorize live execution or production authority. Existing encryption
-and model stamps are deferred to wave 2.
+The UI checks required non-empty fields. The backend hashes the body exactly as
+received, including an empty body if invoked directly, and does not replace its
+bytes with fallback content. This archive export uses
+`CONTROLLED / LOCAL_ARTIFACT_EXPORT`; `CONTROL_SIMULATION` is reserved for
+actual control-simulation runs. The local export records no blocked-egress
+event or network measurement. Its required audit `vault_id` is a logical
+namespace derived from run input identity and does not mean vault storage was
+used. The authority receipt cannot authorize live execution or production
+authority.
 
 ## Test-only command: `authority_integrity_probe_adapter`
 
