@@ -1,24 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { FinanceOSPanel } from "./packs/FinanceOSPanel";
-import { HealthcareOSPanel } from "./packs/HealthcareOSPanel";
-import { IncidentOSPanel } from "./packs/IncidentOSPanel";
-import { RedlineOSPanel } from "./packs/RedlineOSPanel";
 import { StatusBadge } from "./StatusBadge";
 import { EvidenceAuthorityNotice } from "./packs/EvidenceAuthorityNotice";
-import {
-  SAMPLE_FINANCE_STATEMENT,
-  SAMPLE_HEALTHCARE_CONSENT,
-  SAMPLE_HEALTHCARE_TRANSCRIPT,
-  SAMPLE_INCIDENT_LOG,
-  buildFinanceCommandInputFromStatement,
-  buildHealthcareCommandInput,
-  buildIncidentCommandInput,
-} from "./packs/samplePayloads";
 import type {
   EvidenceAuthorityManifest,
   EvidenceExportStatus,
-  PackCommandStatus,
 } from "./packs/types";
 
 type NetworkSnapshot = {
@@ -86,12 +72,6 @@ export function App() {
     "A controlled simulation exercised the offline block path; no live traffic.",
   );
 
-  const [futurePackRunning, setFuturePackRunning] = useState<string | null>(null);
-  const [futurePackResult, setFuturePackResult] = useState<Record<string, PackCommandStatus>>({});
-  const [incidentPayload, setIncidentPayload] = useState("");
-  const [financePayload, setFinancePayload] = useState("");
-  const [healthcareTranscriptPayload, setHealthcareTranscriptPayload] = useState("");
-  const [healthcareConsentPayload, setHealthcareConsentPayload] = useState("");
   const operationLockRef = useRef(false);
 
   const networkStatus = useMemo(() => {
@@ -140,7 +120,7 @@ export function App() {
   }, [controls, selectedCapability]);
 
   const operationalReady = snap !== null && !snapError && !controlsLoading && !controlsError;
-  const operationRunning = running || futurePackRunning !== null;
+  const operationRunning = running;
   const writeUnavailable = useMemo(() => {
     if (snapError)
       return {
@@ -222,29 +202,6 @@ export function App() {
       setRunResult(null);
     } finally {
       setRunning(false);
-      operationLockRef.current = false;
-    }
-  };
-
-  const runFuturePack = async (command: string, input: unknown) => {
-    if (!operationalReady || operationLockRef.current) return;
-
-    operationLockRef.current = true;
-    setFuturePackRunning(command);
-    try {
-      const result = await invoke<PackCommandStatus>(command, { input });
-      setFuturePackResult((prev) => ({ ...prev, [command]: result }));
-    } catch (error) {
-      setFuturePackResult((prev) => ({
-        ...prev,
-        [command]: {
-          status: "FAILED",
-          message: String(error),
-          error_code: "INVOKE_RUNTIME_ERROR",
-        },
-      }));
-    } finally {
-      setFuturePackRunning(null);
       operationLockRef.current = false;
     }
   };
@@ -438,51 +395,6 @@ export function App() {
           )}
         </section>
 
-        <RedlineOSPanel
-          running={futurePackRunning === "run_redlineos"}
-          operationDisabled={Boolean(writeUnavailable)}
-          result={futurePackResult.run_redlineos ?? null}
-          onRun={(input) => runFuturePack("run_redlineos", input)}
-        />
-        <IncidentOSPanel
-          running={futurePackRunning === "run_incidentos"}
-          operationDisabled={Boolean(writeUnavailable)}
-          result={futurePackResult.run_incidentos ?? null}
-          payloadText={incidentPayload}
-          onPayloadChange={setIncidentPayload}
-          onLoadSample={() => setIncidentPayload(SAMPLE_INCIDENT_LOG)}
-          onRun={() => runFuturePack("run_incidentos", buildIncidentCommandInput(incidentPayload))}
-        />
-        <FinanceOSPanel
-          running={futurePackRunning === "run_financeos"}
-          operationDisabled={Boolean(writeUnavailable)}
-          result={futurePackResult.run_financeos ?? null}
-          payloadText={financePayload}
-          onPayloadChange={setFinancePayload}
-          onLoadSample={() => setFinancePayload(SAMPLE_FINANCE_STATEMENT)}
-          onRun={() =>
-            runFuturePack("run_financeos", buildFinanceCommandInputFromStatement(financePayload))
-          }
-        />
-        <HealthcareOSPanel
-          running={futurePackRunning === "run_healthcareos"}
-          operationDisabled={Boolean(writeUnavailable)}
-          result={futurePackResult.run_healthcareos ?? null}
-          transcriptText={healthcareTranscriptPayload}
-          consentText={healthcareConsentPayload}
-          onTranscriptChange={setHealthcareTranscriptPayload}
-          onConsentChange={setHealthcareConsentPayload}
-          onLoadSample={() => {
-            setHealthcareTranscriptPayload(SAMPLE_HEALTHCARE_TRANSCRIPT);
-            setHealthcareConsentPayload(SAMPLE_HEALTHCARE_CONSENT);
-          }}
-          onRun={() =>
-            runFuturePack(
-              "run_healthcareos",
-              buildHealthcareCommandInput(healthcareTranscriptPayload, healthcareConsentPayload),
-            )
-          }
-        />
       </main>
     </div>
   );

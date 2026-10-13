@@ -78,43 +78,11 @@ describe("App", () => {
           ];
         case "generate_evidenceos_bundle":
           return {
-            status: "SUCCESS",
+            status: "COMPLETED",
             bundle_path: "/tmp/evidence.zip",
             bundle_sha256: "abc123",
             missing_control_ids: ["CTRL-9"],
             evidence_authority: controlledAuthority,
-          };
-        case "run_redlineos":
-          return {
-            status: "SUCCESS",
-            message: "run_redlineos complete",
-            bundle_path: "/tmp/redline.zip",
-            bundle_sha256: "sha-redline",
-            run_id: "r_redline",
-          };
-        case "run_incidentos":
-          return {
-            status: "SUCCESS",
-            message: "run_incidentos complete",
-            bundle_path: "/tmp/incident.zip",
-            bundle_sha256: "sha-incident",
-            run_id: "r_incident",
-          };
-        case "run_financeos":
-          return {
-            status: "SUCCESS",
-            message: "run_financeos complete",
-            bundle_path: "/tmp/finance.zip",
-            bundle_sha256: "sha-finance",
-            run_id: "r_finance",
-          };
-        case "run_healthcareos":
-          return {
-            status: "SUCCESS",
-            message: "run_healthcareos complete",
-            bundle_path: "/tmp/healthcare.zip",
-            bundle_sha256: "sha-healthcare",
-            run_id: "r_healthcare",
           };
         default:
           throw new Error(`Unexpected command: ${command}`);
@@ -122,11 +90,15 @@ describe("App", () => {
     });
   });
 
-  it("renders and runs EvidenceOS plus all pack commands", async () => {
+  it("renders and runs only the EvidenceOS pack", async () => {
     render(<App />);
 
     await screen.findByRole("heading", { level: 1, name: "AIGC Core" });
     await screen.findByText("CTRL-1");
+    expect(screen.getAllByRole("heading", { level: 2 }).map((heading) => heading.textContent)).toEqual([
+      "Phase 2 Hard Guarantees",
+      "Phase 3 EvidenceOS Pack",
+    ]);
 
     fireEvent.click(screen.getByRole("button", { name: "Generate EvidenceOS Bundle" }));
     await waitFor(() => {
@@ -138,124 +110,6 @@ describe("App", () => {
     await screen.findByText(
       "Must not satisfy: LIVE_EXECUTION, PRODUCTION_AUTHORITY, EXTERNAL_MUTATION",
     );
-
-    fireEvent.click(screen.getByRole("button", { name: "Load RedlineOS sample data" }));
-    fireEvent.click(screen.getByRole("button", { name: "Generate Risk Assessment" }));
-    await waitFor(() => {
-      expect(invokeMock).toHaveBeenCalledWith("run_redlineos", expect.any(Object));
-    });
-    const redlineBundlePath = await screen.findByText("Bundle path: /tmp/redline.zip");
-    const redlineResult = redlineBundlePath.closest(".result");
-    expect(redlineResult?.getAttribute("role")).toBe("status");
-    expect(redlineResult?.textContent).toContain("Evidence authority: UNKNOWN");
-    expect(redlineResult?.textContent).toContain("This result is non-authorizing");
-
-    fireEvent.click(screen.getByRole("button", { name: "Load IncidentOS sample data" }));
-    fireEvent.click(screen.getByRole("button", { name: "Run IncidentOS Export" }));
-    await waitFor(() => {
-      expect(invokeMock).toHaveBeenCalledWith("run_incidentos", expect.any(Object));
-    });
-    await screen.findByText("Bundle path: /tmp/incident.zip");
-
-    fireEvent.click(screen.getByRole("button", { name: "Load FinanceOS sample data" }));
-    fireEvent.click(screen.getByRole("button", { name: "Run FinanceOS Export" }));
-    await waitFor(() => {
-      expect(invokeMock).toHaveBeenCalledWith("run_financeos", expect.any(Object));
-    });
-    await screen.findByText("Bundle path: /tmp/finance.zip");
-
-    fireEvent.click(screen.getByRole("button", { name: "Load HealthcareOS sample data" }));
-    fireEvent.click(screen.getByRole("button", { name: "Run HealthcareOS Export" }));
-    await waitFor(() => {
-      expect(invokeMock).toHaveBeenCalledWith("run_healthcareos", expect.any(Object));
-    });
-    await screen.findByText("Bundle path: /tmp/healthcare.zip");
-  });
-
-  it("starts in real-input mode with pack run buttons disabled until payload exists", async () => {
-    render(<App />);
-    await screen.findByRole("heading", { level: 1, name: "AIGC Core" });
-
-    expect(
-      (screen.getByRole("button", { name: "Generate Risk Assessment" }) as HTMLButtonElement)
-        .disabled,
-    ).toBe(true);
-    expect(
-      (screen.getByRole("button", { name: "Run IncidentOS Export" }) as HTMLButtonElement).disabled,
-    ).toBe(true);
-    expect(
-      (screen.getByRole("button", { name: "Run FinanceOS Export" }) as HTMLButtonElement).disabled,
-    ).toBe(true);
-    expect(
-      (screen.getByRole("button", { name: "Run HealthcareOS Export" }) as HTMLButtonElement)
-        .disabled,
-    ).toBe(true);
-
-    fireEvent.click(screen.getByRole("button", { name: "Load IncidentOS sample data" }));
-    expect(
-      (screen.getByRole("button", { name: "Run IncidentOS Export" }) as HTMLButtonElement).disabled,
-    ).toBe(false);
-  });
-
-  it("surfaces actionable blocked errors across pack commands", async () => {
-    invokeMock.mockImplementation(async (command: string) => {
-      if (command === "get_network_snapshot") {
-        return {
-          network_mode: "OFFLINE",
-          proof_level: "OFFLINE_STRICT",
-          ui_remote_fetch_disabled: true,
-        };
-      }
-      if (command === "list_control_library") {
-        return [];
-      }
-      if (command === "run_incidentos") {
-        return {
-          status: "BLOCKED",
-          message: "Missing artifact payload for artifact_id=i_demo",
-        };
-      }
-      if (command === "run_financeos") {
-        return {
-          status: "BLOCKED",
-          message: "Failed to parse finance statement payload",
-          error_code: "FINANCE_STATEMENT_INVALID_FORMAT",
-        };
-      }
-      if (command === "run_healthcareos") {
-        return {
-          status: "BLOCKED",
-          message: "HealthcareOS workflow failed: revoked consent",
-          error_code: "HEALTHCAREOS_WORKFLOW_INVALID_INPUT",
-        };
-      }
-      return { status: "SUCCESS", message: `${command} complete` };
-    });
-
-    render(<App />);
-    await screen.findByRole("heading", { level: 1, name: "AIGC Core" });
-
-    fireEvent.click(screen.getByRole("button", { name: "Load IncidentOS sample data" }));
-    fireEvent.click(screen.getByRole("button", { name: "Run IncidentOS Export" }));
-    await waitFor(() => {
-      expect(screen.getAllByText("Missing artifact payload for artifact_id=i_demo")).toHaveLength(
-        1,
-      );
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "Load FinanceOS sample data" }));
-    fireEvent.click(screen.getByRole("button", { name: "Run FinanceOS Export" }));
-    await waitFor(() => {
-      expect(screen.getByText("Failed to parse finance statement payload")).toBeTruthy();
-      expect(screen.getByText("Error code: FINANCE_STATEMENT_INVALID_FORMAT")).toBeTruthy();
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "Load HealthcareOS sample data" }));
-    fireEvent.click(screen.getByRole("button", { name: "Run HealthcareOS Export" }));
-    await waitFor(() => {
-      expect(screen.getByText("HealthcareOS workflow failed: revoked consent")).toBeTruthy();
-      expect(screen.getByText("Error code: HEALTHCAREOS_WORKFLOW_INVALID_INPUT")).toBeTruthy();
-    });
   });
 
   it("blocks exports until runtime readiness is known", async () => {
@@ -271,12 +125,9 @@ describe("App", () => {
     });
 
     render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: "Load IncidentOS sample data" }));
 
     const evidenceButton = screen.getByRole("button", { name: "Generate EvidenceOS Bundle" });
-    const incidentButton = screen.getByRole("button", { name: "Run IncidentOS Export" });
     expect((evidenceButton as HTMLButtonElement).disabled).toBe(true);
-    expect((incidentButton as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByRole("main").getAttribute("aria-busy")).toBe("true");
     expect(
       screen.getByText("Exports are unavailable while network enforcement status is loading."),
@@ -290,7 +141,6 @@ describe("App", () => {
 
     await waitFor(() => {
       expect((evidenceButton as HTMLButtonElement).disabled).toBe(false);
-      expect((incidentButton as HTMLButtonElement).disabled).toBe(false);
       expect(screen.getByRole("main").getAttribute("aria-busy")).toBeNull();
     });
   });
@@ -341,47 +191,45 @@ describe("App", () => {
     expect(screen.queryByText(/Complete the required EvidenceOS fields/)).toBeNull();
   });
 
-  it("serializes local export operations across packs", async () => {
-    let resolveIncident: ((value: unknown) => void) | undefined;
-    invokeMock.mockImplementation(async (command: string) => {
-      if (command === "get_network_snapshot") {
-        return {
-          network_mode: "OFFLINE",
-          proof_level: "OFFLINE_STRICT",
-          ui_remote_fetch_disabled: true,
-        };
-      }
-      if (command === "list_control_library") return [];
-      if (command === "run_incidentos") {
-        return new Promise((resolve) => {
-          resolveIncident = resolve;
+  it("serializes EvidenceOS exports and releases the operation lock after failure", async () => {
+    let rejectExport: ((reason: Error) => void) | undefined;
+    const defaultInvoke = invokeMock.getMockImplementation()!;
+    invokeMock.mockImplementation((command: string, ...args: unknown[]) => {
+      if (command === "generate_evidenceos_bundle") {
+        return new Promise((_resolve, reject) => {
+          rejectExport = reject;
         });
       }
-      return { status: "SUCCESS", message: `${command} complete` };
+      return defaultInvoke(command, ...args);
     });
 
     render(<App />);
-    await screen.findByText("No controls are available for this capability.");
-    fireEvent.click(screen.getByRole("button", { name: "Load IncidentOS sample data" }));
-    fireEvent.click(screen.getByRole("button", { name: "Load FinanceOS sample data" }));
-    fireEvent.click(screen.getByRole("button", { name: "Run IncidentOS Export" }));
+    await screen.findByText("CTRL-1");
+    const button = screen.getByRole("button", { name: "Generate EvidenceOS Bundle" });
+    fireEvent.click(button);
 
-    const financeButton = screen.getByRole("button", { name: "Run FinanceOS Export" });
-    await waitFor(() => {
-      expect((financeButton as HTMLButtonElement).disabled).toBe(true);
-      expect(
-        (screen.getByRole("button", { name: "Generate EvidenceOS Bundle" }) as HTMLButtonElement)
-          .disabled,
-      ).toBe(true);
-    });
-    fireEvent.click(financeButton);
-    expect(invokeMock.mock.calls.filter(([command]) => command === "run_financeos")).toHaveLength(
-      0,
-    );
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    expect(button.textContent).toBe("Generating EvidenceOS Bundle…");
+    expect(screen.getByRole("main").getAttribute("aria-busy")).toBe("true");
+    fireEvent.click(button);
+    expect(
+      invokeMock.mock.calls.filter(([command]) => command === "generate_evidenceos_bundle"),
+    ).toHaveLength(1);
 
-    resolveIncident?.({ status: "SUCCESS", message: "Incident complete" });
-    await screen.findByText("Incident complete");
-    await waitFor(() => expect((financeButton as HTMLButtonElement).disabled).toBe(false));
+    rejectExport?.(new Error("fixture export failed"));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("fixture export failed");
+    expect((button as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.getByRole("main").getAttribute("aria-busy")).toBeNull();
+    expect(screen.queryByText(/Bundle path:/)).toBeNull();
+
+    invokeMock.mockImplementation(defaultInvoke);
+    fireEvent.click(button);
+    await screen.findByText("Bundle path: /tmp/evidence.zip");
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(
+      invokeMock.mock.calls.filter(([command]) => command === "generate_evidenceos_bundle"),
+    ).toHaveLength(2);
   });
 
   it("reports the network state as unresolved instead of fabricating OFFLINE_STRICT", async () => {
@@ -409,36 +257,5 @@ describe("App", () => {
     expect(networkBadge.querySelector("[data-status]")?.getAttribute("data-status")).toBe(
       "UNKNOWN",
     );
-  });
-
-  it("maps invoke runtime exceptions to failed pack status metadata", async () => {
-    invokeMock.mockImplementation(async (command: string) => {
-      if (command === "get_network_snapshot") {
-        return {
-          network_mode: "OFFLINE",
-          proof_level: "OFFLINE_STRICT",
-          ui_remote_fetch_disabled: true,
-        };
-      }
-      if (command === "list_control_library") {
-        return [];
-      }
-      if (command === "run_healthcareos") {
-        throw new Error("invoke exploded");
-      }
-      return { status: "SUCCESS", message: `${command} complete` };
-    });
-
-    render(<App />);
-    await screen.findByRole("heading", { level: 1, name: "AIGC Core" });
-
-    fireEvent.click(screen.getByRole("button", { name: "Load HealthcareOS sample data" }));
-    fireEvent.click(screen.getByRole("button", { name: "Run HealthcareOS Export" }));
-    await waitFor(() => {
-      const failedWord = screen.getByText("FAILED");
-      expect(failedWord.closest(".status-badge")?.getAttribute("data-tone")).toBe("bad");
-      expect(screen.getByText("Error code: INVOKE_RUNTIME_ERROR")).toBeTruthy();
-      expect(screen.getAllByText("Error: invoke exploded").length).toBeGreaterThanOrEqual(1);
-    });
   });
 });

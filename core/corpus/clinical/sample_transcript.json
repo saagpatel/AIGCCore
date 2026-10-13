@@ -1,8 +1,0 @@
-{
-  "patient_id": "PT-2026-001",
-  "date": "2026-02-12",
-  "provider": "Dr. Smith",
-  "specialty": "Cardiology",
-  "content": "Patient presents with chest pain. EKG normal. Recommend stress test. Patient has history of hypertension controlled with medication. Currently taking lisinopril 10mg daily. No known allergies. Vital signs stable.",
-  "confidence": 0.95
-}
