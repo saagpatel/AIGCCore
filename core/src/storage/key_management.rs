@@ -173,7 +173,7 @@ fn windows_get_or_create_kek_dpapi(vault_id: &str, path: &std::path::Path) -> Co
 #[cfg(target_os = "windows")]
 fn dpapi_protect(bytes: &[u8], entropy_label: &str) -> CoreResult<Vec<u8>> {
     use windows_sys::Win32::Foundation::LocalFree;
-    use windows_sys::Win32::Security::Cryptography::{CRYPT_INTEGER_BLOB, CryptProtectData};
+    use windows_sys::Win32::Security::Cryptography::{CryptProtectData, CRYPT_INTEGER_BLOB};
 
     let in_blob = CRYPT_INTEGER_BLOB {
         cbData: bytes.len() as u32,
@@ -216,7 +216,7 @@ fn dpapi_protect(bytes: &[u8], entropy_label: &str) -> CoreResult<Vec<u8>> {
 #[cfg(target_os = "windows")]
 fn dpapi_unprotect(bytes: &[u8], entropy_label: &str) -> CoreResult<Vec<u8>> {
     use windows_sys::Win32::Foundation::LocalFree;
-    use windows_sys::Win32::Security::Cryptography::{CRYPT_INTEGER_BLOB, CryptUnprotectData};
+    use windows_sys::Win32::Security::Cryptography::{CryptUnprotectData, CRYPT_INTEGER_BLOB};
 
     let mut input = bytes.to_vec();
     let in_blob = CRYPT_INTEGER_BLOB {
@@ -365,13 +365,10 @@ mod tests {
 
         let result = file_get_or_create_kek(&key_path);
         assert!(result.is_err());
-        assert!(
-            result
-                .err()
-                .expect("expected invalid length error")
-                .to_string()
-                .contains("invalid fallback KEK length")
-        );
+        assert!(result
+            .expect_err("expected invalid length error")
+            .to_string()
+            .contains("invalid fallback KEK length"));
     }
 
     #[test]
