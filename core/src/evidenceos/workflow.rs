@@ -18,6 +18,7 @@ pub struct EvidenceOsRequest {
     pub pack_version: String,
     pub run_id: String,
     pub policy_mode: PolicyMode,
+    pub determinism_enabled: bool,
     pub enabled_capabilities: Vec<String>,
     pub evidence_items: Vec<EvidenceItem>,
     pub narrative_claims: Vec<NarrativeClaimInput>,
@@ -93,9 +94,11 @@ pub fn generate_evidenceos_artifacts(req: &EvidenceOsRequest) -> CoreResult<Evid
     let missing_md = render_missing_checklist_markdown(&missing_control_ids, &mapping_rows);
     let (narrative_md, claim_ranges) = render_narrative_markdown(&req.narrative_claims);
 
-    let evidence_index_csv_path = format!("exports/{}/deliverables/evidence_index.csv", req.pack_id);
+    let evidence_index_csv_path =
+        format!("exports/{}/deliverables/evidence_index.csv", req.pack_id);
     let evidence_index_md_path = format!("exports/{}/deliverables/evidence_index.md", req.pack_id);
-    let evidence_index_pdf_path = format!("exports/{}/deliverables/evidence_index.pdf", req.pack_id);
+    let evidence_index_pdf_path =
+        format!("exports/{}/deliverables/evidence_index.pdf", req.pack_id);
     let missing_path = format!(
         "exports/{}/deliverables/missing_evidence_checklist.md",
         req.pack_id
@@ -115,12 +118,18 @@ pub fn generate_evidenceos_artifacts(req: &EvidenceOsRequest) -> CoreResult<Evid
     });
     let mapping_review_bytes = json_canonical::to_canonical_bytes(&mapping_review_json)?;
 
+    let generated_at_ms = if req.determinism_enabled {
+        0
+    } else {
+        u64::try_from(time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000)
+            .map_err(|_| CoreError::EvidenceOsValidation("generation time before epoch".into()))?
+    };
     let citations_map_json = json!({
         "schema_version": "LOCATOR_SCHEMA_V1",
         "pack_id": req.pack_id,
         "pack_version": req.pack_version,
         "run_id": req.run_id,
-        "generated_at_ms": 0,
+        "generated_at_ms": generated_at_ms,
         "claims": req.narrative_claims.iter().zip(claim_ranges.iter()).map(|(claim, range)| {
             json!({
                 "claim_id": claim.claim_id,
@@ -150,7 +159,7 @@ pub fn generate_evidenceos_artifacts(req: &EvidenceOsRequest) -> CoreResult<Evid
         "pack_id": req.pack_id,
         "pack_version": req.pack_version,
         "run_id": req.run_id,
-        "generated_at_ms": 0,
+        "generated_at_ms": generated_at_ms,
         "artifacts": []
     });
 
@@ -164,37 +173,37 @@ pub fn generate_evidenceos_artifacts(req: &EvidenceOsRequest) -> CoreResult<Evid
                 "template_id": "evidence_index_csv",
                 "template_version": "1.0.0",
                 "output_paths": [evidence_index_csv_path],
-                "render_engine": { "name": "core_template_renderer", "version": "0.0.0" }
+                "render_engine": { "name": "core_template_renderer", "version": env!("CARGO_PKG_VERSION") }
             },
             {
                 "template_id": "evidence_index_md",
                 "template_version": "1.0.0",
                 "output_paths": [evidence_index_md_path],
-                "render_engine": { "name": "core_template_renderer", "version": "0.0.0" }
+                "render_engine": { "name": "core_template_renderer", "version": env!("CARGO_PKG_VERSION") }
             },
             {
                 "template_id": "evidence_index_pdf",
                 "template_version": "1.0.0",
                 "output_paths": [evidence_index_pdf_path],
-                "render_engine": { "name": "core_template_renderer", "version": "0.0.0" }
+                "render_engine": { "name": "core_template_renderer", "version": env!("CARGO_PKG_VERSION") }
             },
             {
                 "template_id": "evidence_mapping_review_json",
                 "template_version": "1.0.0",
                 "output_paths": [review_path],
-                "render_engine": { "name": "core_template_renderer", "version": "0.0.0" }
+                "render_engine": { "name": "core_template_renderer", "version": env!("CARGO_PKG_VERSION") }
             },
             {
                 "template_id": "missing_evidence_checklist_md",
                 "template_version": "1.0.0",
                 "output_paths": [missing_path],
-                "render_engine": { "name": "core_template_renderer", "version": "0.0.0" }
+                "render_engine": { "name": "core_template_renderer", "version": env!("CARGO_PKG_VERSION") }
             },
             {
                 "template_id": "narrative_md",
                 "template_version": "1.0.0",
                 "output_paths": [narrative_path],
-                "render_engine": { "name": "core_template_renderer", "version": "0.0.0" }
+                "render_engine": { "name": "core_template_renderer", "version": env!("CARGO_PKG_VERSION") }
             }
         ]
     });

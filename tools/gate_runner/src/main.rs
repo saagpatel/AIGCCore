@@ -1,4 +1,3 @@
-use aigc_core::adapters::pinning::{classify_pinning_level, ModelSnapshot};
 use aigc_core::audit::event::{Actor, AuditEvent};
 use aigc_core::audit::log::AuditLog;
 use aigc_core::determinism::run_id::sha256_hex;
@@ -10,7 +9,7 @@ use aigc_core::evidence_bundle::schemas::*;
 use aigc_core::evidenceos::model::{CitationInput, EvidenceItem, NarrativeClaimInput};
 use aigc_core::evidenceos::workflow::{generate_evidenceos_artifacts, EvidenceOsRequest};
 use aigc_core::policy::allowlist::AllowlistEntry;
-use aigc_core::policy::network_snapshot::{AdapterEndpointSnapshot, NetworkSnapshot};
+use aigc_core::policy::network_snapshot::{NetworkProofSource, NetworkSnapshot};
 use aigc_core::policy::types::{InputExportProfile, NetworkMode, PolicyMode, ProofLevel};
 use aigc_core::run::lifecycle::{emit_vault_encryption_status, emit_vault_key_rotated};
 use aigc_core::storage::crypto::EncryptionAlgorithm;
@@ -97,8 +96,8 @@ fn run_pack_validation_cycle(
     inputs_2.eval_report = eval_report;
 
     EvidenceBundleBuilder::build_dir(bundle_root, &inputs).expect("build final bundle dir");
-    let zip_sha256 = EvidenceBundleBuilder::build_zip(bundle_root, bundle_zip)
-        .expect("zip final bundle");
+    let zip_sha256 =
+        EvidenceBundleBuilder::build_zip(bundle_root, bundle_zip).expect("zip final bundle");
     EvidenceBundleBuilder::build_dir(bundle_root_2, &inputs_2).expect("build final bundle dir 2");
     let zip_sha256_2 =
         EvidenceBundleBuilder::build_zip(bundle_root_2, bundle_zip_2).expect("zip final bundle 2");
@@ -255,24 +254,10 @@ fn make_self_audit_inputs(bundle_root: &PathBuf, policy_mode: PolicyMode) -> Evi
     let network_snapshot = NetworkSnapshot {
         network_mode: NetworkMode::OFFLINE,
         proof_level: ProofLevel::OFFLINE_STRICT,
+        proof_source: NetworkProofSource::POLICY_DECLARATION,
         allowlist,
         ui_remote_fetch_disabled: true,
-        adapter_endpoints: vec![AdapterEndpointSnapshot {
-            endpoint: "http://127.0.0.1:1234".to_string(),
-            is_loopback: true,
-            validation_error: None,
-        }],
-    };
-
-    let model_sha256 = Some(sha256_hex(b"dummy_model_snapshot"));
-    let pin = classify_pinning_level(model_sha256.as_deref(), "local_adapter", "1.0.0");
-    let model_snapshot = ModelSnapshot {
-        adapter_id: "local_adapter".to_string(),
-        adapter_version: "1.0.0".to_string(),
-        adapter_endpoint: "http://127.0.0.1:1234".to_string(),
-        model_id: "dummy-model".to_string(),
-        model_sha256,
-        pinning_level: pin,
+        adapter_endpoints: vec![],
     };
 
     let policy_snapshot = PolicySnapshot {
@@ -285,7 +270,7 @@ fn make_self_audit_inputs(bundle_root: &PathBuf, policy_mode: PolicyMode) -> Evi
             inputs: InputExportProfile::HASH_ONLY,
         },
         encryption_at_rest: true,
-        encryption_algorithm: "XCHACHA20_POLY1305".to_string(),
+        encryption_algorithm: Some("XCHACHA20_POLY1305".to_string()),
     };
 
     let artifact_list = ArtifactList {
@@ -416,7 +401,7 @@ fn make_self_audit_inputs(bundle_root: &PathBuf, policy_mode: PolicyMode) -> Evi
     .unwrap();
 
     let bundle_info = BundleInfo {
-        bundle_version: "1.0.0".to_string(),
+        bundle_version: "1.1.0".to_string(),
         schema_versions: SchemaVersions {
             run_manifest: "RUN_MANIFEST_V2".to_string(),
             eval_report: "EVAL_REPORT_V1".to_string(),
@@ -473,7 +458,7 @@ fn make_self_audit_inputs(bundle_root: &PathBuf, policy_mode: PolicyMode) -> Evi
         artifact_list,
         policy_snapshot,
         network_snapshot,
-        model_snapshot,
+        model_snapshot: None,
         pack_id: "self_audit".to_string(),
         pack_version: "0.0.0".to_string(),
         deliverables: vec![(
@@ -495,7 +480,8 @@ fn make_evidenceos_inputs(policy_mode: PolicyMode) -> EvidenceBundleInputs {
     let input_sha = sha256_hex(input_bytes);
     let artifact_id = "a_ev_0001".to_string();
 
-    let manifest_inputs_fingerprint = sha256_hex(format!("{}:{}", artifact_id, input_sha).as_bytes());
+    let manifest_inputs_fingerprint =
+        sha256_hex(format!("{}:{}", artifact_id, input_sha).as_bytes());
     let run_id = aigc_core::determinism::run_id::run_id_from_manifest_inputs_fingerprint_hex32(
         &manifest_inputs_fingerprint,
     )
@@ -505,6 +491,7 @@ fn make_evidenceos_inputs(policy_mode: PolicyMode) -> EvidenceBundleInputs {
     let pack_version = "1.0.0".to_string();
 
     let evidence_req = EvidenceOsRequest {
+        determinism_enabled: true,
         pack_id: pack_id.clone(),
         pack_version: pack_version.clone(),
         run_id: run_id.clone(),
@@ -536,26 +523,12 @@ fn make_evidenceos_inputs(policy_mode: PolicyMode) -> EvidenceBundleInputs {
             }],
         }],
     };
-    let generated = generate_evidenceos_artifacts(&evidence_req).expect("generate evidenceos outputs");
+    let generated =
+        generate_evidenceos_artifacts(&evidence_req).expect("generate evidenceos outputs");
 
     let audit_path = std::env::temp_dir().join(format!("audit_{}.ndjson", run_id));
     let mut audit = AuditLog::open_or_create(&audit_path).expect("open audit");
-    let _ = audit
-        .append(AuditEvent {
-            ts_utc: fixed_ts(),
-            event_type: "VAULT_ENCRYPTION_STATUS".to_string(),
-            run_id: run_id.clone(),
-            vault_id: vault_id.clone(),
-            actor: Actor::System,
-            details: json!({
-                "encryption_at_rest": true,
-                "algorithm": "XCHACHA20_POLY1305",
-                "key_storage": "FILE_FALLBACK"
-            }),
-            prev_event_hash: "".to_string(),
-            event_hash: "".to_string(),
-        })
-        .unwrap();
+
     let _ = audit
         .append(AuditEvent {
             ts_utc: fixed_ts(),
@@ -615,18 +588,15 @@ fn make_evidenceos_inputs(policy_mode: PolicyMode) -> EvidenceBundleInputs {
     let templates_rel = format!("exports/{}/attachments/templates_used.json", pack_id);
     let citations_rel = format!("exports/{}/attachments/citations_map.json", pack_id);
     let redactions_rel = format!("exports/{}/attachments/redactions_map.json", pack_id);
-    let templates_bytes = aigc_core::determinism::json_canonical::to_canonical_bytes(
-        &generated.templates_used_json,
-    )
-    .expect("templates bytes");
-    let citations_bytes = aigc_core::determinism::json_canonical::to_canonical_bytes(
-        &generated.citations_map_json,
-    )
-    .expect("citations bytes");
-    let redactions_bytes = aigc_core::determinism::json_canonical::to_canonical_bytes(
-        &generated.redactions_map_json,
-    )
-    .expect("redactions bytes");
+    let templates_bytes =
+        aigc_core::determinism::json_canonical::to_canonical_bytes(&generated.templates_used_json)
+            .expect("templates bytes");
+    let citations_bytes =
+        aigc_core::determinism::json_canonical::to_canonical_bytes(&generated.citations_map_json)
+            .expect("citations bytes");
+    let redactions_bytes =
+        aigc_core::determinism::json_canonical::to_canonical_bytes(&generated.redactions_map_json)
+            .expect("redactions bytes");
 
     let mut hash_rows = vec![ArtifactHashRow {
         artifact_id: artifact_id.clone(),
@@ -708,7 +678,7 @@ fn make_evidenceos_inputs(policy_mode: PolicyMode) -> EvidenceBundleInputs {
             },
         },
         bundle_info: BundleInfo {
-            bundle_version: "1.0.0".to_string(),
+            bundle_version: "1.1.0".to_string(),
             schema_versions: SchemaVersions {
                 run_manifest: "RUN_MANIFEST_V2".to_string(),
                 eval_report: "EVAL_REPORT_V1".to_string(),
@@ -749,28 +719,18 @@ fn make_evidenceos_inputs(policy_mode: PolicyMode) -> EvidenceBundleInputs {
             export_profile: ExportProfile {
                 inputs: InputExportProfile::HASH_ONLY,
             },
-            encryption_at_rest: true,
-            encryption_algorithm: "XCHACHA20_POLY1305".to_string(),
+            encryption_at_rest: false,
+            encryption_algorithm: None,
         },
         network_snapshot: NetworkSnapshot {
             network_mode: NetworkMode::OFFLINE,
             proof_level: ProofLevel::OFFLINE_STRICT,
+            proof_source: NetworkProofSource::POLICY_DECLARATION,
             allowlist: vec![],
             ui_remote_fetch_disabled: true,
-            adapter_endpoints: vec![AdapterEndpointSnapshot {
-                endpoint: "http://127.0.0.1:1234".to_string(),
-                is_loopback: true,
-                validation_error: None,
-            }],
+            adapter_endpoints: vec![],
         },
-        model_snapshot: ModelSnapshot {
-            adapter_id: "local_adapter".to_string(),
-            adapter_version: "1.0.0".to_string(),
-            adapter_endpoint: "http://127.0.0.1:1234".to_string(),
-            model_id: "dummy-model".to_string(),
-            model_sha256: Some(sha256_hex(b"dummy-model")),
-            pinning_level: classify_pinning_level(Some(&sha256_hex(b"dummy-model")), "local_adapter", "1.0.0"),
-        },
+        model_snapshot: None,
         pack_id,
         pack_version,
         deliverables: generated.deliverables,
