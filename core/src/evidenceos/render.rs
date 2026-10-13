@@ -18,7 +18,7 @@ pub fn render_evidence_index_csv(items: &[EvidenceItem]) -> CoreResult<String> {
     rows.sort_by(|a, b| a.artifact_id.cmp(&b.artifact_id));
 
     let mut wtr = csv::WriterBuilder::new().from_writer(vec![]);
-    wtr.write_record(&[
+    wtr.write_record([
         "artifact_id",
         "artifact_sha256",
         "title",
@@ -42,11 +42,12 @@ pub fn render_evidence_index_markdown(items: &[EvidenceItem]) -> String {
     let mut rows = items.to_vec();
     rows.sort_by(|a, b| a.artifact_id.cmp(&b.artifact_id));
 
-    let mut out = Vec::new();
-    out.push("# Evidence Index".to_string());
-    out.push("".to_string());
-    out.push("| Artifact ID | SHA-256 | Title | Tags | Control Families |".to_string());
-    out.push("|---|---|---|---|---|".to_string());
+    let mut out = vec![
+        "# Evidence Index".to_string(),
+        "".to_string(),
+        "| Artifact ID | SHA-256 | Title | Tags | Control Families |".to_string(),
+        "|---|---|---|---|---|".to_string(),
+    ];
     for row in rows {
         out.push(format!(
             "| {} | {} | {} | {} | {} |",

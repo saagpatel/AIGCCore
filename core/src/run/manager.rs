@@ -353,7 +353,11 @@ impl RunManager {
                 prev_event_hash: String::new(),
                 event_hash: String::new(),
             })?;
-            self.transition(req, RunState::FAILED, "final bundle directory rewrite errored")?;
+            self.transition(
+                req,
+                RunState::FAILED,
+                "final bundle directory rewrite errored",
+            )?;
             return Err(error);
         }
         let bundle_sha = match remove_stale_export_on_error(
@@ -577,19 +581,19 @@ fn remove_stale_export_on_error<T>(
 
 fn valid_transition(from: RunState, to: RunState) -> bool {
     use RunState::*;
-    match (from, to) {
-        (CREATED, INGESTING) => true,
-        (CREATED, READY) => true,
-        (READY, EXECUTING) => true,
-        (EXECUTING, EVALUATING) => true,
-        (READY, EVALUATING) => true,
-        (EVALUATING, EXPORTING) => true,
-        (EVALUATING, FAILED) => true,
-        (EXPORTING, COMPLETED) => true,
-        (EXPORTING, FAILED) => true,
-        (_, CANCELLED) => true,
-        _ => false,
-    }
+    matches!(
+        (from, to),
+        (CREATED, INGESTING)
+            | (CREATED, READY)
+            | (READY, EXECUTING)
+            | (EXECUTING, EVALUATING)
+            | (READY, EVALUATING)
+            | (EVALUATING, EXPORTING)
+            | (EVALUATING, FAILED)
+            | (EXPORTING, COMPLETED)
+            | (EXPORTING, FAILED)
+            | (_, CANCELLED)
+    )
 }
 
 fn now_rfc3339_utc() -> String {
@@ -615,6 +619,9 @@ mod tests {
         assert!(valid_transition(RunState::CREATED, RunState::READY));
         assert!(!valid_transition(RunState::CREATED, RunState::EXPORTING));
         assert!(!valid_transition(RunState::COMPLETED, RunState::EVALUATING));
+        assert!(valid_transition(RunState::FAILED, RunState::CANCELLED));
+        assert!(!valid_transition(RunState::FAILED, RunState::READY));
+        assert!(!valid_transition(RunState::CANCELLED, RunState::EXECUTING));
     }
 
     #[test]
@@ -633,8 +640,8 @@ mod tests {
 
     #[test]
     fn preflight_artifacts_permissions_hardened_when_supported() {
-        let preflight =
-            PreflightArtifacts::create("test_run_permissions").expect("preflight create should pass");
+        let preflight = PreflightArtifacts::create("test_run_permissions")
+            .expect("preflight create should pass");
 
         #[cfg(unix)]
         {
@@ -650,10 +657,11 @@ mod tests {
 
     #[test]
     fn preflight_zip_permissions_hardened_when_supported() {
-        let preflight =
-            PreflightArtifacts::create("test_run_zip_permissions").expect("preflight create should pass");
+        let preflight = PreflightArtifacts::create("test_run_zip_permissions")
+            .expect("preflight create should pass");
         std::fs::write(&preflight.zip, b"zip bytes").expect("zip fixture should be written");
-        harden_preflight_file_permissions(&preflight.zip).expect("zip permission hardening should pass");
+        harden_preflight_file_permissions(&preflight.zip)
+            .expect("zip permission hardening should pass");
 
         #[cfg(unix)]
         {
