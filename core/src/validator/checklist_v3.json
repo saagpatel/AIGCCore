@@ -41,6 +41,7 @@
       "validate": {
         "artifact_hashes_csv": {
           "hash_algo": "SHA-256",
+          "declared_hash_format": "64 lowercase hexadecimal characters",
           "input_export_profile_path": "inputs_snapshot/policy_snapshot.json:export_profile.inputs",
           "if_inputs_profile_hash_only": {
             "require_audit_ingest_anchor": true,
@@ -73,6 +74,7 @@
             "event_hash"
           ],
           "hash_algo": "SHA-256",
+          "declared_hash_format": "64 lowercase hexadecimal characters",
           "canonicalization": "PHASE_2_5_LOCK_ADDENDUM_V2_5_LOCK_4",
           "prev_hash_links_valid": true,
           "event_hash_recompute_match": true
@@ -138,11 +140,36 @@
       }
     },
     {
+      "check_id": "CHK.BUNDLE.VERSION_TRUTHFULNESS",
+      "severity": "INFO",
+      "description": "Bundles before 1.1.0 are inspectable but LEGACY_UNVERIFIABLE; they cannot pass as truthful.",
+      "validate": { "bundle_version_truthful_from": "1.1.0" }
+    },
+    {
+      "check_id": "CHK.RUN.SNAPSHOT_CONSISTENCY",
+      "severity": "BLOCKER",
+      "description": "Null model requires empty calls/endpoints; a used model requires matching model/version calls and the exact loopback endpoint.",
+      "validate": { "model_calls_and_adapter_endpoints_match_snapshot": true }
+    },
+    {
+      "check_id": "CHK.NETWORK.PROOF_SOURCE",
+      "severity": "BLOCKER",
+      "description": "Current offline snapshots explicitly declare policy-derived proof, not measured traffic.",
+      "validate": { "proof_source": "POLICY_DECLARATION" }
+    },
+    {
+      "check_id": "CHK.VAULT_CRYPTO.POLICY_SNAPSHOT",
+      "severity": "BLOCKER",
+      "description": "Unused encryption has no algorithm; encrypted snapshots match run/vault status, algorithm, and accepted key storage.",
+      "validate": { "snapshot_matches_recorded_vault_use": true }
+    },
+    {
       "check_id": "CHK.MODEL.PINNING_LEVEL",
       "severity": "BLOCKER",
-      "description": "Model snapshot includes sufficient pinning level for the active policy.",
+      "description": "Unused model is null with no calls/endpoints; a used model has consistent endpoints/calls and sufficient pinning for the active policy.",
       "validate": {
         "json_path": "inputs_snapshot/model_snapshot.json",
+        "unused_model_requires_null_snapshot_and_empty_calls_and_endpoints": true,
         "allowed_pinning_levels_by_policy": {
           "STRICT": ["CRYPTO_PINNED", "VERSION_PINNED"],
           "BALANCED": ["VERSION_PINNED", "CRYPTO_PINNED"],

@@ -1,5 +1,4 @@
 use crate::commands::evidenceos::{EvidenceOsRunInput, EvidenceOsRunResult};
-use aigc_core::adapters::pinning::{classify_pinning_level, PinningLevel};
 use aigc_core::audit::event::{Actor, AuditEvent};
 use aigc_core::audit::log::AuditLog;
 use aigc_core::determinism::json_canonical;
@@ -9,8 +8,8 @@ use aigc_core::evidence_bundle::authority::EvidenceAuthorityManifest;
 use aigc_core::evidence_bundle::schemas::*;
 use aigc_core::evidenceos::model::{CitationInput, EvidenceItem, NarrativeClaimInput};
 use aigc_core::evidenceos::workflow::{generate_evidenceos_artifacts, EvidenceOsRequest};
-use aigc_core::policy::network_snapshot::{AdapterEndpointSnapshot, NetworkSnapshot};
-use aigc_core::policy::types::{InputExportProfile, NetworkMode, PolicyMode, ProofLevel};
+use aigc_core::policy::network_snapshot::NetworkSnapshot;
+use aigc_core::policy::types::{InputExportProfile, PolicyMode};
 use aigc_core::run::manager::{ExportRequest, RunManager};
 use serde::Serialize;
 use serde_json::json;
@@ -23,61 +22,41 @@ pub(crate) fn generate_evidenceos_bundle(
     input: EvidenceOsRunInput,
 ) -> Result<EvidenceOsRunResult, String> {
     let invocation_arguments_sha256 = command_arguments_sha256(&input)?;
-    let runtime_dir = make_runtime_dir()?;
-    let bundle_root = runtime_dir.join("bundle_root");
-    let bundle_zip = runtime_dir.join("evidence_bundle_evidenceos_v1.zip");
-    let audit_path = runtime_dir.join("audit.ndjson");
 
-    let artifact_bytes = if input.artifact_body.trim().is_empty() {
-        b"default evidence artifact body".to_vec()
-    } else {
-        input.artifact_body.as_bytes().to_vec()
-    };
+    let artifact_bytes = input.artifact_body.as_bytes().to_vec();
     let artifact_sha = sha256_hex(&artifact_bytes);
+    verify_declared_input_hash(input.artifact_sha256.as_deref(), &artifact_sha)?;
+    let network_policy = NetworkSnapshot::offline_policy();
     let artifact_id = format!("a_ui_{}", &artifact_sha[..8]);
     let manifest_inputs_fingerprint =
         sha256_hex(format!("{}:{}", artifact_id, artifact_sha).as_bytes());
     let run_id = format!("r_{}", &manifest_inputs_fingerprint[..32]);
-    let vault_id = "v_ui_0001".to_string();
+    let vault_id = format!("v_local_{}", &manifest_inputs_fingerprint[..32]);
     let pack_id = "evidenceos".to_string();
     let pack_version = "1.0.0".to_string();
 
+    let runtime_dir = make_runtime_dir()?;
+    let bundle_root = runtime_dir.join("bundle_root");
+    let bundle_zip = runtime_dir.join("evidence_bundle_evidenceos_v1.zip");
+    let audit_path = runtime_dir.join("audit.ndjson");
     let mut audit = AuditLog::open_or_create(&audit_path).map_err(|e| e.to_string())?;
     let events = vec![
         (
-            "VAULT_ENCRYPTION_STATUS",
+            "NETWORK_MODE_SET",
             Actor::System,
             json!({
-                "encryption_at_rest": true,
-                "algorithm": "XCHACHA20_POLY1305",
-                "key_storage": "FILE_FALLBACK"
-            }),
-        ),
-        (
-            "NETWORK_MODE_SET",
-            Actor::User,
-            json!({
-                "network_mode":"OFFLINE",
-                "proof_level":"OFFLINE_STRICT",
-                "ui_remote_fetch_disabled":true
+                "network_mode":network_policy.network_mode,
+                "proof_level":network_policy.proof_level,
+                "proof_source":network_policy.proof_source,
+                "ui_remote_fetch_disabled":network_policy.ui_remote_fetch_disabled
             }),
         ),
         (
             "ALLOWLIST_UPDATED",
             Actor::System,
             json!({
-                "allowlist_hash_sha256": sha256_hex(b""),
-                "allowlist_count":0
-            }),
-        ),
-        (
-            "EGRESS_REQUEST_BLOCKED",
-            Actor::System,
-            json!({
-                "destination":{"scheme":"https","host":"example.invalid","port":443,"path":"/"},
-                "block_reason":"OFFLINE_MODE",
-                "request_hash_sha256": sha256_hex(b"blocked"),
-                "evidence_origin":"CONTROL_SIMULATION"
+                "allowlist_hash_sha256": sha256_hex(&json_canonical::to_canonical_bytes(&network_policy.allowlist).map_err(|e| e.to_string())?),
+                "allowlist_count":network_policy.allowlist.len()
             }),
         ),
     ];
@@ -104,13 +83,14 @@ pub(crate) fn generate_evidenceos_bundle(
         input.enabled_capabilities.clone()
     };
     let claim_text = if input.claim_text.trim().is_empty() {
-        "The controlled policy simulation exercised the offline block path; it did not observe live network traffic."
+        "EvidenceOS generated local artifacts under the declared offline policy; no model, adapter, vault encryption, or network traffic measurement was used."
             .to_string()
     } else {
         input.claim_text.clone()
     };
 
     let req = EvidenceOsRequest {
+        determinism_enabled: true,
         pack_id: pack_id.clone(),
         pack_version: pack_version.clone(),
         run_id: run_id.clone(),
@@ -216,7 +196,7 @@ pub(crate) fn generate_evidenceos_bundle(
         })
         .collect();
 
-    let evidence_authority = controlled_simulation_authority(
+    let evidence_authority = local_export_authority(
         &run_id,
         "generate_evidenceos_bundle",
         &invocation_arguments_sha256,
@@ -244,7 +224,7 @@ pub(crate) fn generate_evidenceos_bundle(
             },
         },
         bundle_info: BundleInfo {
-            bundle_version: "1.0.0".to_string(),
+            bundle_version: "1.1.0".to_string(),
             schema_versions: SchemaVersions {
                 run_manifest: "RUN_MANIFEST_V2".to_string(),
                 eval_report: "EVAL_REPORT_V1".to_string(),
@@ -253,7 +233,11 @@ pub(crate) fn generate_evidenceos_bundle(
             },
             pack_id: pack_id.clone(),
             pack_version: pack_version.clone(),
-            core_build: "dev".to_string(),
+            core_build: format!(
+                "{}+{}",
+                env!("CARGO_PKG_VERSION"),
+                env!("AIGC_SOURCE_REVISION")
+            ),
             run_id: run_id.clone(),
         },
         audit_log_ndjson: std::fs::read_to_string(&audit_path).map_err(|e| e.to_string())?,
@@ -285,31 +269,11 @@ pub(crate) fn generate_evidenceos_bundle(
             export_profile: ExportProfile {
                 inputs: InputExportProfile::HASH_ONLY,
             },
-            encryption_at_rest: true,
-            encryption_algorithm: "XCHACHA20_POLY1305".to_string(),
+            encryption_at_rest: false,
+            encryption_algorithm: None,
         },
-        network_snapshot: NetworkSnapshot {
-            network_mode: NetworkMode::OFFLINE,
-            proof_level: ProofLevel::OFFLINE_STRICT,
-            allowlist: vec![],
-            ui_remote_fetch_disabled: true,
-            adapter_endpoints: vec![AdapterEndpointSnapshot {
-                endpoint: "http://127.0.0.1:11434".to_string(),
-                is_loopback: true,
-                validation_error: None,
-            }],
-        },
-        model_snapshot: aigc_core::adapters::pinning::ModelSnapshot {
-            adapter_id: "local_adapter".to_string(),
-            adapter_version: "1.0.0".to_string(),
-            adapter_endpoint: "http://127.0.0.1:11434".to_string(),
-            model_id: "model-a".to_string(),
-            model_sha256: Some(sha256_hex(b"model-a")),
-            pinning_level: {
-                let m = sha256_hex(b"model-a");
-                classify_pinning_level(Some(&m), "local_adapter", "1.0.0")
-            },
-        },
+        network_snapshot: network_policy.clone(),
+        model_snapshot: None,
         pack_id: pack_id.clone(),
         pack_version,
         deliverables: generated.deliverables,
@@ -325,9 +289,9 @@ pub(crate) fn generate_evidenceos_bundle(
         run_id,
         vault_id,
         policy_mode: PolicyMode::STRICT,
-        network_mode: NetworkMode::OFFLINE,
-        proof_level: ProofLevel::OFFLINE_STRICT,
-        pinning_level: PinningLevel::CRYPTO_PINNED,
+        network_mode: network_policy.network_mode,
+        proof_level: network_policy.proof_level,
+        pinning_level: None,
         requested_by: "user".to_string(),
     };
 
@@ -348,7 +312,25 @@ pub(crate) fn generate_evidenceos_bundle(
         bundle_sha256: outcome.bundle_sha256.unwrap_or_default(),
         missing_control_ids: generated.missing_control_ids,
         evidence_authority,
+        encryption_at_rest: bundle_inputs.policy_snapshot.encryption_at_rest,
+        model_used: bundle_inputs.model_snapshot.is_some(),
     })
+}
+
+fn verify_declared_input_hash(declared: Option<&str>, actual: &str) -> Result<(), String> {
+    if let Some(hash) = declared {
+        if hash.len() != 64
+            || !hash
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        {
+            return Err("artifact_sha256 must be 64 lowercase hexadecimal characters".into());
+        }
+        if hash != actual {
+            return Err("artifact_sha256 does not match payload bytes".into());
+        }
+    }
+    Ok(())
 }
 
 fn make_runtime_dir() -> Result<std::path::PathBuf, String> {
@@ -398,7 +380,7 @@ fn command_arguments_sha256<T: Serialize>(input: &T) -> Result<String, String> {
     Ok(sha256_hex(&bytes))
 }
 
-fn controlled_simulation_authority(
+fn local_export_authority(
     run_id: &str,
     entrypoint: &str,
     arguments_sha256: &str,
@@ -420,7 +402,7 @@ fn controlled_simulation_authority(
     let valid_until = generated_at + time::Duration::hours(24);
     let format = &time::format_description::well_known::Rfc3339;
 
-    Ok(EvidenceAuthorityManifest::controlled_simulation(
+    Ok(EvidenceAuthorityManifest::controlled_local_export(
         run_id,
         format!("aigccore-tauri:{entrypoint}"),
         option_env!("AIGC_SOURCE_REVISION")
@@ -464,6 +446,31 @@ mod tests {
     use std::fs;
 
     #[test]
+    fn declared_input_hash_checks_exact_payload_and_rejects_malformed_or_mismatched_hash() {
+        let actual = sha256_hex("payload 🧭".as_bytes());
+        assert!(verify_declared_input_hash(Some(&actual), &actual).is_ok());
+        assert!(verify_declared_input_hash(None, &actual).is_ok());
+        for malformed in [
+            "",
+            "demo_sha256",
+            &"a".repeat(63),
+            &"A".repeat(64),
+            &"g".repeat(64),
+        ] {
+            assert!(verify_declared_input_hash(Some(malformed), &actual)
+                .unwrap_err()
+                .contains("64 lowercase"));
+        }
+        assert!(
+            verify_declared_input_hash(Some(&sha256_hex(b"different")), &actual)
+                .unwrap_err()
+                .contains("does not match payload")
+        );
+        let empty = sha256_hex(b"");
+        assert!(verify_declared_input_hash(Some(&empty), &empty).is_ok());
+    }
+
+    #[test]
     fn runtime_dir_permissions_hardened_when_supported() {
         let runtime_dir = make_runtime_dir().expect("runtime directory should be created");
         #[cfg(unix)]
@@ -498,6 +505,7 @@ mod tests {
             enabled_capabilities: vec!["Traceability".to_string()],
             artifact_title: "Controlled authority fixture".to_string(),
             artifact_body: "Bounded local evidence".to_string(),
+            artifact_sha256: Some(sha256_hex(b"Bounded local evidence")),
             artifact_tags_csv: "TEST".to_string(),
             control_families_csv: "Traceability".to_string(),
             claim_text: "The controlled bundle path was exercised.".to_string(),
@@ -526,6 +534,48 @@ mod tests {
         );
         assert!(!authority.production_equivalent);
         assert!(!authority.source.audit_log_sha256.is_empty());
+        assert!(!result.encryption_at_rest);
+        assert!(!result.model_used);
+
+        let summary = aigc_core::validator::BundleValidator::new_v3()
+            .validate_zip(
+                std::path::Path::new(&result.bundle_path),
+                PolicyMode::STRICT,
+            )
+            .expect("exported bundle should be inspectable");
+        assert_eq!(summary.overall, "PASS", "{:?}", summary.checks);
+
+        let root = std::path::Path::new(&result.bundle_path)
+            .parent()
+            .unwrap()
+            .join("bundle_root");
+        let read_json = |path: &str| -> serde_json::Value {
+            serde_json::from_slice(&fs::read(root.join(path)).unwrap()).unwrap()
+        };
+        let policy = read_json("inputs_snapshot/policy_snapshot.json");
+        assert_eq!(policy["encryption_at_rest"], false);
+        assert!(policy.get("encryption_algorithm").is_none());
+        assert!(read_json("inputs_snapshot/model_snapshot.json").is_null());
+        assert_eq!(
+            read_json("inputs_snapshot/network_snapshot.json")["adapter_endpoints"],
+            json!([])
+        );
+        assert_eq!(
+            read_json("inputs_snapshot/network_snapshot.json")["proof_source"],
+            "POLICY_DECLARATION"
+        );
+        assert_eq!(read_json("run_manifest.json")["model_calls"], json!([]));
+        assert_eq!(
+            read_json("BUNDLE_INFO.json")["core_build"],
+            format!(
+                "{}+{}",
+                env!("CARGO_PKG_VERSION"),
+                env!("AIGC_SOURCE_REVISION")
+            )
+        );
+        let audit_bytes = fs::read_to_string(root.join("audit_log.ndjson")).unwrap();
+        assert!(!audit_bytes.contains("VAULT_ENCRYPTION_STATUS"));
+        assert!(!audit_bytes.contains("EGRESS_REQUEST_BLOCKED"));
 
         let bundle_path = std::path::PathBuf::from(&result.bundle_path);
         let bundle_root = bundle_path

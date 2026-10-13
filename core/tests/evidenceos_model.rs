@@ -28,6 +28,7 @@ fn evidence_item_normalization_sorts_and_dedups_labels() {
 #[test]
 fn strict_mode_blocks_claim_without_citation() {
     let req = EvidenceOsRequest {
+        determinism_enabled: true,
         pack_id: "evidenceos".to_string(),
         pack_version: "1.0.0".to_string(),
         run_id: "r_test".to_string(),
@@ -53,7 +54,8 @@ fn strict_mode_blocks_claim_without_citation() {
 
 #[test]
 fn mapping_workflow_marks_missing_controls() {
-    let req = EvidenceOsRequest {
+    let mut req = EvidenceOsRequest {
+        determinism_enabled: true,
         pack_id: "evidenceos".to_string(),
         pack_version: "1.0.0".to_string(),
         run_id: "r_test".to_string(),
@@ -78,6 +80,8 @@ fn mapping_workflow_marks_missing_controls() {
     };
 
     let out = generate_evidenceos_artifacts(&req).unwrap();
+    assert_eq!(out.citations_map_json["generated_at_ms"], 0);
+    assert_eq!(out.redactions_map_json["generated_at_ms"], 0);
     assert!(!out.missing_control_ids.is_empty());
     assert!(out
         .mapping_review_rows
@@ -90,4 +94,28 @@ fn mapping_workflow_marks_missing_controls() {
         .map(|(_, bytes, _)| bytes.clone())
         .expect("expected evidence_index.pdf deliverable");
     assert!(pdf.starts_with(b"%PDF-1.4"));
+
+    req.determinism_enabled = false;
+    let before = time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
+    let timed = generate_evidenceos_artifacts(&req).unwrap();
+    let after = time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
+    let generated = timed.citations_map_json["generated_at_ms"]
+        .as_u64()
+        .unwrap() as i128;
+    assert!((before..=after).contains(&generated));
+    assert_eq!(
+        timed.citations_map_json["generated_at_ms"],
+        timed.redactions_map_json["generated_at_ms"]
+    );
+    req.pack_id.clear();
+    assert!(generate_evidenceos_artifacts(&req)
+        .unwrap_err()
+        .to_string()
+        .contains("pack_id cannot be empty"));
+    req.pack_id = "evidenceos".into();
+    req.run_id.clear();
+    assert!(generate_evidenceos_artifacts(&req)
+        .unwrap_err()
+        .to_string()
+        .contains("run_id cannot be empty"));
 }

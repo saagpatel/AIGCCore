@@ -57,6 +57,49 @@ fn controlled_simulation_authorizes_only_its_bounded_local_claim() {
 }
 
 #[test]
+fn local_export_authorizes_only_local_claims_without_inventing_egress() {
+    let audit = "{\"event_type\":\"NETWORK_MODE_SET\",\"run_id\":\"case-a\",\"details\":{}}\n";
+    let mut candidate = EvidenceAuthorityManifest::controlled_local_export(
+        "case-a",
+        "aigccore-test:authority",
+        "revision-a",
+        "aigccore-test",
+        sha256_hex(b"executable-a"),
+        sha256_hex(b"arguments-a"),
+        sha256_hex(b"environment-a"),
+        "2026-07-20T12:00:00Z",
+        "2026-07-20T13:00:00Z",
+    );
+    candidate.bind_audit_log(audit);
+    assert!(candidate.validate_internal("case-a", audit).is_ok());
+    assert_eq!(
+        candidate.evidence_origin,
+        EvidenceOrigin::LocalArtifactExport
+    );
+    let mut claim_context = context();
+    claim_context.expected_audit_log_sha256 = candidate.source.audit_log_sha256.clone();
+    assert_eq!(
+        candidate.evaluate_claim(CLAIM_LOCAL_CONTROLLED_EXECUTION, &claim_context),
+        EvidenceClaimDecision::Authorized
+    );
+    assert_eq!(
+        candidate.evaluate_claim(CLAIM_LIVE_EXECUTION, &claim_context),
+        EvidenceClaimDecision::Denied
+    );
+    candidate.bind_audit_log(AUDIT);
+    assert!(candidate
+        .validate_internal("case-a", AUDIT)
+        .unwrap_err()
+        .contains("cannot claim egress"));
+    let foreign = audit.replace("case-a", "case-b");
+    candidate.bind_audit_log(&foreign);
+    assert!(candidate.validate_internal("case-a", &foreign).is_err());
+    candidate.bind_audit_log(audit);
+    candidate.production_equivalent = true;
+    assert!(candidate.validate_internal("case-a", audit).is_err());
+}
+
+#[test]
 fn stale_or_future_evidence_remains_unknown() {
     let authority = authority();
     for as_of in ["2026-07-20T11:59:59Z", "2026-07-20T13:00:01Z"] {

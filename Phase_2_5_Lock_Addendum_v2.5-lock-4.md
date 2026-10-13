@@ -19,7 +19,7 @@ Scope: Locks enforcement mechanisms and canonicalization rules to eliminate rewi
 - Proven in bundle artifacts (snapshots + audit events),
 - Default-deny enforced (mechanical, not best-effort).
 
-**AIGC Core SHALL produce a provably-auditable Evidence Bundle** for every exported run, compliant with **Evidence Bundle v1**.
+**AIGC Core SHALL produce a provably-auditable Evidence Bundle** for every exported run, compliant with **Evidence Bundle v1.1.0**. Older bundle versions remain inspectable and are reported as `LEGACY_UNVERIFIABLE`; they do not pass the truthful-contract validation status.
 
 **AIGC Core SHALL be deterministic where determinism is claimed**, per Addendum A (Determinism Matrix v1).
 
@@ -63,6 +63,8 @@ Core records `proof_level` in `inputs_snapshot/network_snapshot.json`:
 
 Core MUST NOT claim a stronger proof level than it can enforce.
 
+If the snapshot describes an enforced application policy and no network probe was run, it MUST set `proof_source: POLICY_DECLARATION`. That value means the proof level is derived from policy; it is not a measurement of attempted or successful network traffic. A measured source may be recorded only when a measurement actually occurred.
+
 ### 1.4 Required Evidence (Bundle)
 **Default behavior (LOCKED):**
 - New vaults and new runs default to `network_mode=OFFLINE` with `proof_level=OFFLINE_STRICT`.
@@ -72,6 +74,7 @@ Every exported run MUST include:
 - `inputs_snapshot/network_snapshot.json` with:
   - `network_mode`
   - `proof_level`
+  - `proof_source` (`POLICY_DECLARATION` when derived from enforced policy rather than measurement)
   - `allowlist` (canonical entries; sorted)
   - `ui_remote_fetch_disabled: true/false`
   - `adapter_endpoints` (with loopback validation results)
@@ -79,6 +82,18 @@ Every exported run MUST include:
   - `NETWORK_MODE_SET`
   - `ALLOWLIST_UPDATED` (with allowlist hash)
   - `EGRESS_REQUEST_ALLOWED` / `EGRESS_REQUEST_BLOCKED`
+
+An adapter endpoint array is empty when the run used no adapter. Network posture defaults or application policy do not establish that an adapter was used.
+
+### 1.5 Truthful activity snapshots (LOCKED for bundle v1.1.0)
+- Bundle exporters MUST derive each snapshot field from the run, enforced policy, or build provenance. Examples and defaults MUST NOT be emitted as evidence of runtime activity.
+- `policy_snapshot.encryption_at_rest` is `false` when exported run data was not protected by the vault; `encryption_algorithm` is omitted in that state. A `true` value requires actual vault use, an accepted algorithm, and a matching `VAULT_ENCRYPTION_STATUS` audit event whose `encryption_at_rest`, `algorithm`, and accepted `key_storage` agree with the snapshot. The exporter MUST emit that event only when the vault was used.
+- `model_snapshot.json` is JSON `null` and `run_manifest.model_calls` is empty when inference did not run. If inference ran, `network_snapshot.adapter_endpoints` MUST contain exactly the endpoint in `model_snapshot.adapter_endpoint`, and at least one model call MUST be recorded. An adapter endpoint in the snapshot is run evidence and therefore requires a matching model snapshot and model call.
+- A declared SHA-256 is valid only when it is 64 lowercase hexadecimal characters. Missing values may follow the export profile's missing-hash semantics; malformed declared hashes are invalid and cannot be treated as legacy/missing.
+- `BUNDLE_INFO.core_build` identifies the package version and compiled source revision. It MUST NOT use placeholder build identifiers such as `dev`.
+- `bundle_version: "1.1.0"` identifies the truthful snapshot contract. Validators may inspect bundles at earlier versions but MUST report their truth status as `LEGACY_UNVERIFIABLE`, never as truthful.
+- A local EvidenceOS archive export MUST use `evidence_authority.evidence_origin: LOCAL_ARTIFACT_EXPORT`. `CONTROL_SIMULATION` remains for actual control-simulation runs and retains its blocked-egress evidence requirements. A local archive export MUST NOT fabricate a blocked-egress event to satisfy that simulation contract.
+- The required audit `vault_id` may be a logical namespace derived from the run input fingerprint. It identifies the audit namespace only and MUST NOT be treated as evidence of vault storage use or encryption.
 
 ---
 
@@ -109,6 +124,8 @@ To remain compatible with Annex A, each audit event MUST include at minimum:
 - `details` (object; may be empty)
 - `prev_event_hash` (hex 64)
 - `event_hash` (hex 64)
+
+`vault_id` identifies the event's logical audit namespace. It does not assert that the vault storage subsystem was used; encryption claims follow the separate vault-status requirements in §1.5.
 
 **Additional fields are allowed ONLY under** `details.meta` (e.g., `details.meta.event_id`, `details.meta.session_id`).
 
@@ -272,8 +289,9 @@ Strict policy requires “no citation, no claim.”
 ```
 
 **generated_at_ms rule (LOCKED):**
-- If determinism is enabled, `generated_at_ms` MUST be `LOCKED_EPOCH`.
-- Else, it MAY be wall-clock.
+- If determinism is enabled, `generated_at_ms` MUST be `LOCKED_EPOCH` as defined by Addendum A.
+- If determinism is disabled, `generated_at_ms` MUST be the actual wall-clock generation time.
+- Any literal `0` in a schema/example is an illustrative normalized epoch value only; it is not a permitted nondeterministic runtime timestamp.
 
 **Ordering (LOCKED):**
 - `claims[]` sorted by `claim_id` lexicographically.
@@ -335,8 +353,9 @@ Redaction map MUST be stored at:
 
 ### 6.1 `redactions_map.json` Envelope (LOCKED)
 **generated_at_ms rule (LOCKED):**
-- If determinism is enabled, `generated_at_ms` MUST be `LOCKED_EPOCH`.
-- Else, it MAY be wall-clock.
+- If determinism is enabled, `generated_at_ms` MUST be `LOCKED_EPOCH` as defined by Addendum A.
+- If determinism is disabled, `generated_at_ms` MUST be the actual wall-clock generation time.
+- Any literal `0` in a schema/example is an illustrative normalized epoch value only; it is not a permitted nondeterministic runtime timestamp.
 
 ```json
 {
@@ -391,6 +410,8 @@ If policy requires redaction:
 
 ## 7) Model Identity Pinning Rules (LOCKED; aligned to Annex B v1)
 Core records pinning in `inputs_snapshot/model_snapshot.json`.
+
+For bundle v1.1.0, `model_snapshot.json` is JSON `null` when no model ran. Pinning levels below apply only to recorded model activity; an absent model is not a `NAME_ONLY` model and does not assert adapter use.
 
 Pinning levels (locked enum):
 - `CRYPTO_PINNED` (best)

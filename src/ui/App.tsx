@@ -11,6 +11,7 @@ type NetworkSnapshot = {
   network_mode: "OFFLINE" | "ONLINE_ALLOWLISTED";
   proof_level:
     "OFFLINE_STRICT" | "ONLINE_ALLOWLIST_CORE_ONLY" | "ONLINE_ALLOWLIST_WITH_OS_FIREWALL_PROFILE";
+  proof_source: "POLICY_DECLARATION";
   ui_remote_fetch_disabled: boolean;
 };
 
@@ -26,6 +27,8 @@ type EvidenceOsRunResult = {
   status: EvidenceExportStatus;
   bundle_path: string;
   bundle_sha256: string;
+  encryption_at_rest?: boolean;
+  model_used?: boolean;
   missing_control_ids: string[];
   evidence_authority: EvidenceAuthorityManifest;
 };
@@ -34,6 +37,7 @@ type EvidenceOsRunInput = {
   enabled_capabilities: string[];
   artifact_title: string;
   artifact_body: string;
+  artifact_sha256?: string;
   artifact_tags_csv: string;
   control_families_csv: string;
   claim_text: string;
@@ -49,6 +53,20 @@ const evidenceFieldLabels = {
 
 type EvidenceFieldId = keyof typeof evidenceFieldLabels;
 
+async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  const ownedBytes = bytes.slice();
+  const digest = await globalThis.crypto.subtle.digest(
+    "SHA-256",
+    ownedBytes.buffer as ArrayBuffer,
+  );
+  const hash = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+  if (!/^[0-9a-f]{64}$/.test(hash)) {
+    throw new Error("Could not compute a valid SHA-256 for the artifact text.");
+  }
+  return hash;
+}
+
 export function App() {
   const [snap, setSnap] = useState<NetworkSnapshot | null>(null);
   const [snapError, setSnapError] = useState<string | null>(null);
@@ -62,14 +80,14 @@ export function App() {
   const [selectedCapability, setSelectedCapability] = useState("ALL");
   const [artifactTitle, setArtifactTitle] = useState("Network policy evidence");
   const [artifactBody, setArtifactBody] = useState(
-    "Audit log excerpt from a controlled offline-policy simulation.",
+    "Policy snapshot for an offline EvidenceOS export; no model, adapter, or vault was used.",
   );
   const [artifactTags, setArtifactTags] = useState("OPS,NETWORK");
   const [controlFamilies, setControlFamilies] = useState(
     "Auditability,NetworkGovernance,Traceability",
   );
   const [claimText, setClaimText] = useState(
-    "A controlled simulation exercised the offline block path; no live traffic.",
+    "Offline network posture is declared by policy; no runtime traffic was measured.",
   );
 
   const operationLockRef = useRef(false);
@@ -79,7 +97,16 @@ export function App() {
       return <StatusBadge status="UNKNOWN" detail="Enforcement layer unreachable, state unknown" />;
     }
     if (!snap) return <strong>Loading…</strong>;
-    return <strong>{`${snap.network_mode} (${snap.proof_level})`}</strong>;
+    return (
+      <span>
+        <strong>{`${snap.network_mode} (${snap.proof_level})`}</strong>
+        {snap.proof_source === "POLICY_DECLARATION" && (
+          <span className="status-source">
+            Declared by enforced policy; not runtime measured.
+          </span>
+        )}
+      </span>
+    );
   }, [snap, snapError]);
 
   const capabilities = useMemo(() => {
@@ -189,6 +216,7 @@ export function App() {
         enabled_capabilities: selectedCapability === "ALL" ? [] : [selectedCapability],
         artifact_title: artifactTitle,
         artifact_body: artifactBody,
+        artifact_sha256: await sha256Hex(new TextEncoder().encode(artifactBody)),
         artifact_tags_csv: artifactTags,
         control_families_csv: controlFamilies,
         claim_text: claimText,
@@ -384,6 +412,20 @@ export function App() {
               </p>
               <p>Bundle path: {runResult.bundle_path}</p>
               <p>Bundle SHA-256: {runResult.bundle_sha256}</p>
+              <p>
+                Encryption at rest: {runResult.encryption_at_rest == null
+                  ? "Unknown"
+                  : runResult.encryption_at_rest
+                    ? "Used"
+                    : "Not used"}
+              </p>
+              <p>
+                Model or adapter: {runResult.model_used == null
+                  ? "Unknown"
+                  : runResult.model_used
+                    ? "Used"
+                    : "Not run"}
+              </p>
               <p>
                 Missing controls:{" "}
                 {runResult.missing_control_ids.length > 0

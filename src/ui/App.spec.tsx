@@ -5,12 +5,12 @@ import { App } from "./App";
 
 const invokeMock = vi.fn();
 
-const controlledAuthority = {
+const localExportAuthority = {
   schema_version: "EVIDENCE_AUTHORITY_V1",
   case_id: "r_test",
   requested_execution_class: "CONTROLLED",
   observed_execution_class: "CONTROLLED",
-  evidence_origin: "CONTROL_SIMULATION",
+  evidence_origin: "LOCAL_ARTIFACT_EXPORT",
   production_equivalent: false,
   generated_at_utc: "2026-07-20T12:00:00Z",
   valid_until_utc: "2026-07-21T12:00:00Z",
@@ -44,7 +44,7 @@ const controlledAuthority = {
     may_satisfy: ["LOCAL_CONTROLLED_EXECUTION", "BUNDLE_INTEGRITY"],
     must_not_satisfy: ["LIVE_EXECUTION", "PRODUCTION_AUTHORITY", "EXTERNAL_MUTATION"],
   },
-  limitations: ["Blocked-egress evidence is simulated, not live traffic."],
+  limitations: ["Local artifact export only; no runtime network traffic was measured."],
 };
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -54,6 +54,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 describe("App", () => {
   afterEach(() => {
     cleanup();
+    vi.restoreAllMocks();
   });
 
   beforeEach(() => {
@@ -64,6 +65,7 @@ describe("App", () => {
           return {
             network_mode: "OFFLINE",
             proof_level: "OFFLINE_STRICT",
+            proof_source: "POLICY_DECLARATION",
             ui_remote_fetch_disabled: true,
           };
         case "list_control_library":
@@ -81,8 +83,10 @@ describe("App", () => {
             status: "COMPLETED",
             bundle_path: "/tmp/evidence.zip",
             bundle_sha256: "abc123",
+            encryption_at_rest: false,
+            model_used: false,
             missing_control_ids: ["CTRL-9"],
-            evidence_authority: controlledAuthority,
+            evidence_authority: localExportAuthority,
           };
         default:
           throw new Error(`Unexpected command: ${command}`);
@@ -105,8 +109,17 @@ describe("App", () => {
       expect(invokeMock).toHaveBeenCalledWith("generate_evidenceos_bundle", expect.any(Object));
     });
     await screen.findByText("Missing controls: CTRL-9");
+    expect(screen.getByText("Encryption at rest: Not used")).toBeTruthy();
+    expect(screen.getByText("Model or adapter: Not run")).toBeTruthy();
+    expect(screen.getByText(/Declared by enforced policy; not runtime measured/)).toBeTruthy();
+    const exportCall = invokeMock.mock.calls.find(
+      ([command]) => command === "generate_evidenceos_bundle",
+    );
+    expect(exportCall?.[1]).toMatchObject({
+      input: { artifact_sha256: "40b42acfb2d022e6e11ed46ddb9f3dcf4c3b3669bd7ac9520a15da393ff0d2f0" },
+    });
     expect(screen.getByText("Missing controls: CTRL-9").closest("[role='status']")).toBeTruthy();
-    await screen.findByText("CONTROLLED / CONTROL_SIMULATION");
+    await screen.findByText("CONTROLLED / LOCAL_ARTIFACT_EXPORT");
     await screen.findByText(
       "Must not satisfy: LIVE_EXECUTION, PRODUCTION_AUTHORITY, EXTERNAL_MUTATION",
     );
@@ -136,6 +149,7 @@ describe("App", () => {
     resolveNetwork?.({
       network_mode: "OFFLINE",
       proof_level: "OFFLINE_STRICT",
+      proof_source: "POLICY_DECLARATION",
       ui_remote_fetch_disabled: true,
     });
 
@@ -151,6 +165,7 @@ describe("App", () => {
         return {
           network_mode: "OFFLINE",
           proof_level: "OFFLINE_STRICT",
+          proof_source: "POLICY_DECLARATION",
           ui_remote_fetch_disabled: true,
         };
       }
@@ -191,6 +206,85 @@ describe("App", () => {
     expect(screen.queryByText(/Complete the required EvidenceOS fields/)).toBeNull();
   });
 
+  it("shows an error and skips export when the payload digest is malformed", async () => {
+    vi.spyOn(globalThis.crypto.subtle, "digest").mockResolvedValue(
+      new Uint8Array([1, 2, 3]).buffer,
+    );
+    render(<App />);
+    await screen.findByText("CTRL-1");
+
+    fireEvent.click(screen.getByRole("button", { name: "Generate EvidenceOS Bundle" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("Could not compute a valid SHA-256");
+    expect(
+      invokeMock.mock.calls.some(([command]) => command === "generate_evidenceos_bundle"),
+    ).toBe(false);
+    expect(
+      (screen.getByRole("button", { name: "Generate EvidenceOS Bundle" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+  });
+
+  it("shows an error and skips export when Web Crypto rejects the digest request", async () => {
+    vi.spyOn(globalThis.crypto.subtle, "digest").mockRejectedValue(
+      new Error("Web Crypto unavailable"),
+    );
+    render(<App />);
+    await screen.findByText("CTRL-1");
+
+    fireEvent.click(screen.getByRole("button", { name: "Generate EvidenceOS Bundle" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("Web Crypto unavailable");
+    expect(
+      invokeMock.mock.calls.some(([command]) => command === "generate_evidenceos_bundle"),
+    ).toBe(false);
+    expect(screen.getByRole("button", { name: "Generate EvidenceOS Bundle" })).toBeTruthy();
+  });
+
+  it("reports unavailable encryption and model state as unknown", async () => {
+    const defaultInvoke = invokeMock.getMockImplementation()!;
+    invokeMock.mockImplementation(async (command: string, ...args: unknown[]) => {
+      const result = await defaultInvoke(command, ...args);
+      if (command === "generate_evidenceos_bundle") {
+        return Object.fromEntries(
+          Object.entries(result as Record<string, unknown>).filter(
+            ([key]) => key !== "encryption_at_rest" && key !== "model_used",
+          ),
+        );
+      }
+      return result;
+    });
+    render(<App />);
+    await screen.findByText("CTRL-1");
+
+    fireEvent.click(screen.getByRole("button", { name: "Generate EvidenceOS Bundle" }));
+
+    expect(await screen.findByText("Encryption at rest: Unknown")).toBeTruthy();
+    expect(screen.getByText("Model or adapter: Unknown")).toBeTruthy();
+    expect(screen.queryByText("Encryption at rest: Not used")).toBeNull();
+    expect(screen.queryByText("Model or adapter: Not run")).toBeNull();
+  });
+
+  it("reports encryption and model use only when the result records them", async () => {
+    const defaultInvoke = invokeMock.getMockImplementation()!;
+    invokeMock.mockImplementation(async (command: string, ...args: unknown[]) => {
+      const result = await defaultInvoke(command, ...args);
+      if (command === "generate_evidenceos_bundle") {
+        return { ...(result as Record<string, unknown>), encryption_at_rest: true, model_used: true };
+      }
+      return result;
+    });
+    render(<App />);
+    await screen.findByText("CTRL-1");
+
+    fireEvent.click(screen.getByRole("button", { name: "Generate EvidenceOS Bundle" }));
+
+    expect(await screen.findByText("Encryption at rest: Used")).toBeTruthy();
+    expect(screen.getByText("Model or adapter: Used")).toBeTruthy();
+  });
+
   it("serializes EvidenceOS exports and releases the operation lock after failure", async () => {
     let rejectExport: ((reason: Error) => void) | undefined;
     const defaultInvoke = invokeMock.getMockImplementation()!;
@@ -208,7 +302,12 @@ describe("App", () => {
     const button = screen.getByRole("button", { name: "Generate EvidenceOS Bundle" });
     fireEvent.click(button);
 
-    expect((button as HTMLButtonElement).disabled).toBe(true);
+    await waitFor(() => {
+      expect((button as HTMLButtonElement).disabled).toBe(true);
+      expect(
+        invokeMock.mock.calls.filter(([command]) => command === "generate_evidenceos_bundle"),
+      ).toHaveLength(1);
+    });
     expect(button.textContent).toBe("Generating EvidenceOS Bundle…");
     expect(screen.getByRole("main").getAttribute("aria-busy")).toBe("true");
     fireEvent.click(button);

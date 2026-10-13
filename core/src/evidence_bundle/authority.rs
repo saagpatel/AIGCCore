@@ -62,6 +62,7 @@ pub enum EvidenceExecutionClass {
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum EvidenceOrigin {
     ControlSimulation,
+    LocalArtifactExport,
     RuntimeObservation,
     Fixture,
     Replay,
@@ -150,6 +151,39 @@ pub enum EvidenceClaimDecision {
 }
 
 impl EvidenceAuthorityManifest {
+    /// A controlled local artifact run with no model, adapter, or egress
+    /// execution. It grants the same bounded claims as control simulation.
+    #[allow(clippy::too_many_arguments)]
+    pub fn controlled_local_export(
+        case_id: impl Into<String>,
+        producer: impl Into<String>,
+        source_revision: impl Into<String>,
+        executable: impl Into<String>,
+        executable_sha256: impl Into<String>,
+        arguments_sha256: impl Into<String>,
+        environment_sha256: impl Into<String>,
+        generated_at_utc: impl Into<String>,
+        valid_until_utc: impl Into<String>,
+    ) -> Self {
+        let mut manifest = Self::controlled_simulation(
+            case_id,
+            producer,
+            source_revision,
+            executable,
+            executable_sha256,
+            arguments_sha256,
+            environment_sha256,
+            generated_at_utc,
+            valid_until_utc,
+        );
+        manifest.evidence_origin = EvidenceOrigin::LocalArtifactExport;
+        manifest.limitations = vec![
+            "Local artifact export only; no model, adapter, vault encryption, or runtime traffic measurement was used.".into(),
+            "This evidence cannot authorize live execution, production authority, or external mutation.".into(),
+        ];
+        manifest
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn controlled_simulation(
         case_id: impl Into<String>,
@@ -316,7 +350,10 @@ impl EvidenceAuthorityManifest {
             return Err("a downstream claim cannot be both permitted and prohibited".to_string());
         }
 
-        if self.evidence_origin != EvidenceOrigin::ControlSimulation {
+        if !matches!(
+            self.evidence_origin,
+            EvidenceOrigin::ControlSimulation | EvidenceOrigin::LocalArtifactExport
+        ) {
             return Err(format!(
                 "evidence origin {:?} has no authorizing manifest contract",
                 self.evidence_origin
@@ -384,7 +421,7 @@ impl EvidenceAuthorityManifest {
             false,
             false,
         )?;
-        validate_control_simulation_audit(audit_log_ndjson, expected_case_id)?;
+        validate_controlled_audit(audit_log_ndjson, expected_case_id, self.evidence_origin)?;
         Ok(())
     }
 
@@ -508,7 +545,10 @@ impl EvidenceAuthorityManifest {
         {
             return Err("downstream claim policy is ambiguous".to_string());
         }
-        if self.evidence_origin != EvidenceOrigin::ControlSimulation {
+        if !matches!(
+            self.evidence_origin,
+            EvidenceOrigin::ControlSimulation | EvidenceOrigin::LocalArtifactExport
+        ) {
             return Err("evidence origin has no authorizing manifest contract".to_string());
         }
         if self.production_equivalent
@@ -649,9 +689,10 @@ fn require_exact_tool_ids<const N: usize>(
     Ok(())
 }
 
-fn validate_control_simulation_audit(
+fn validate_controlled_audit(
     audit_log_ndjson: &str,
     expected_case_id: &str,
+    evidence_origin: EvidenceOrigin,
 ) -> Result<(), String> {
     let mut blocked_egress_event_count = 0usize;
     for (line_number, line) in audit_log_ndjson.lines().enumerate() {
@@ -682,6 +723,9 @@ fn validate_control_simulation_audit(
             event_type,
             "EGRESS_REQUEST_ALLOWED" | "EGRESS_REQUEST_BLOCKED"
         ) {
+            if evidence_origin == EvidenceOrigin::LocalArtifactExport {
+                return Err("local artifact export cannot claim egress execution".into());
+            }
             let origin = event
                 .pointer("/details/evidence_origin")
                 .and_then(serde_json::Value::as_str);
@@ -699,7 +743,7 @@ fn validate_control_simulation_audit(
             blocked_egress_event_count += 1;
         }
     }
-    if blocked_egress_event_count == 0 {
+    if evidence_origin == EvidenceOrigin::ControlSimulation && blocked_egress_event_count == 0 {
         return Err(
             "control-simulation authority requires a case-local blocked egress audit event"
                 .to_string(),
