@@ -2,7 +2,7 @@
 name = "bundle_validator"
 version = "0.0.0"
 edition = "2021"
-license = "UNLICENSED"
+license = "MIT"
 
 [dependencies]
 aigc_core = { path = "../../core" }
