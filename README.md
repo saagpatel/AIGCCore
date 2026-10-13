@@ -20,23 +20,30 @@ AIGCCore is a local-first governance and audit kernel for privacy-first desktop 
 AIGCCore is preparing OpenSSF Best Practices badge registration. The registration
 plan and closure criteria live in [`docs/openssf-best-practices.md`](docs/openssf-best-practices.md).
 
-## Quick Start
+## Setup
 
 ### Prerequisites
 
-- Rust stable toolchain (via [rustup](https://rustup.rs))
-- Node.js 22.12+ on the 22.x line (CI uses Node 22; the locked Vitest 5 also supports Node 24 and 26+)
-- pnpm 10.29.2, as pinned in `package.json`
-- macOS, Windows, or Linux
-- The [Tauri platform prerequisites](https://tauri.app/start/prerequisites/) for native tests and desktop builds
+- Rust **1.97.1**, pinned in `rust-toolchain.toml` with rustfmt and Clippy
+  (install [rustup](https://rustup.rs); Cargo selects the pin automatically).
+- Node.js **26.11.1**, pinned in `.node-version`; the supported major is 26.
+- pnpm **10.29.2**, pinned by `packageManager` in `package.json`.
+- Make and the [Tauri platform prerequisites](https://tauri.app/start/prerequisites/)
+  for macOS, Windows, or Linux. On Windows, use a Make-compatible shell.
 
-### Installation
+After cloning, one command installs the committed dependency graph and Chromium,
+then checks every shipped language surface:
 
 ```bash
-git clone https://github.com/saagpatel/AIGCCore.git
-cd AIGCCore
-pnpm install --frozen-lockfile
+make setup && make check
 ```
+
+`make setup` uses only frozen pnpm installs. `make check` checks Rust formatting
+and Clippy, lint/typecheck, Rust and JS tests, authority integrity, integration
+gates, and UI regression without rewriting source or lockfiles. `make test`
+runs just the tests; `make build` builds the desktop app. Native platform
+dependencies must be installed first; Linux browser hosts may additionally need
+`pnpm exec playwright install-deps chromium`.
 
 ### Usage
 
@@ -81,7 +88,13 @@ AIGCCore does not currently claim an in-app Tauri updater, automatic upgrade,
 downgrade, or rollback channel. A rollback is a manual reinstall of a separately
 qualified prior artifact and requires its own execution receipt.
 
-## Tech Stack
+## Status
+
+Active infrastructure development is focused on the governance kernel and its sole
+pack, EvidenceOS. The Rust core owns governance logic, audit canonicalization,
+hash chaining, determinism enforcement, and bundle assembly.
+
+### Stack
 
 | Layer          | Technology                                |
 | -------------- | ----------------------------------------- |
@@ -92,6 +105,21 @@ qualified prior artifact and requires its own execution receipt.
 | Storage        | File-backed vault for SQLite bytes and blob artifacts |
 | Cryptography   | AES-256-GCM, XChaCha20-Poly1305, SHA-256   |
 | Audit chaining | Custom hash-chain canonicalization (Rust) |
+
+### Known risks
+
+- Any online capability must remain explicitly gated and allowlisted.
+- Audit canonicalization and hash chaining must remain deterministic.
+- Evidence Bundle v1 validity requires the validator checklist to pass.
+- The React frontend must use the Tauri command surface to modify audit state.
+- Desktop builds regenerate the tracked Tauri permission schemas from the locked
+  dependencies. CI checks that this deterministic regeneration leaves no diff.
+
+### Next steps
+
+Keep future work focused on deterministic bundle validation, audit-chain integrity,
+and offline enforcement. Dependency major upgrades and robustness work are
+separate follow-up waves.
 
 ## Architecture
 
