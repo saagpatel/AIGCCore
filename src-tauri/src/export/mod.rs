@@ -18,7 +18,7 @@ use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 static RUNTIME_DIR_SEQUENCE: AtomicU64 = AtomicU64::new(0);
-static EXECUTABLE_SHA256: OnceLock<Result<String, String>> = OnceLock::new();
+static EXECUTABLE_SHA256: OnceLock<String> = OnceLock::new();
 
 pub(crate) fn generate_evidenceos_bundle(
     input: EvidenceOsRunInput,
@@ -50,6 +50,7 @@ pub(crate) fn generate_evidenceos_bundle(
             .as_nanos(),
         output_sequence
     ));
+    reserve_private_output(&bundle_zip)?;
     let mut output_guard = ExportOutputGuard {
         path: bundle_zip.clone(),
         keep: false,
@@ -417,6 +418,22 @@ impl Drop for ExportOutputGuard {
     }
 }
 
+/// Reserve the export path with `create_new` (so a pre-planted file or symlink
+/// is refused) and, on unix, mode 0600 before any data is written to it.
+fn reserve_private_output(path: &std::path::Path) -> Result<(), String> {
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    options
+        .open(path)
+        .map(drop)
+        .map_err(|error| format!("cannot reserve export archive: {}", error.kind()))
+}
+
 fn harden_runtime_dir_permissions(path: &std::path::Path) -> Result<(), String> {
     #[cfg(unix)]
     {
@@ -454,9 +471,7 @@ fn local_export_authority(
 ) -> Result<EvidenceAuthorityManifest, String> {
     let executable_path = std::env::current_exe()
         .map_err(|error| format!("current executable unavailable: {error}"))?;
-    let executable_hash = EXECUTABLE_SHA256
-        .get_or_init(|| hash_file(&executable_path))
-        .clone()?;
+    let executable_hash = cached_success(&EXECUTABLE_SHA256, || hash_file(&executable_path))?;
     let environment = json!({
         "network_mode": "OFFLINE",
         "proof_level": "OFFLINE_STRICT",
@@ -486,6 +501,19 @@ fn local_export_authority(
             .format(format)
             .map_err(|error| error.to_string())?,
     ))
+}
+
+/// Return the cached value, or compute it. Only a success is cached, so a
+/// transient failure (for example the file briefly unreadable) is retried.
+fn cached_success(
+    cell: &OnceLock<String>,
+    compute: impl FnOnce() -> Result<String, String>,
+) -> Result<String, String> {
+    if let Some(value) = cell.get() {
+        return Ok(value.clone());
+    }
+    let value = compute()?;
+    Ok(cell.get_or_init(|| value).clone())
 }
 
 fn hash_file(path: &std::path::Path) -> Result<String, String> {
@@ -605,6 +633,57 @@ mod tests {
         let expected = sha256_hex(&fs::read(&path).unwrap());
         assert_eq!(hash_file(&path).unwrap(), expected);
         fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn executable_hash_cache_keeps_successes_and_retries_failures() {
+        let cell = OnceLock::new();
+        assert_eq!(
+            cached_success(&cell, || Err("unreadable".into())).unwrap_err(),
+            "unreadable"
+        );
+        assert!(cell.get().is_none(), "a failure must not be cached");
+        assert_eq!(cached_success(&cell, || Ok("abc".into())).unwrap(), "abc");
+        assert_eq!(
+            cached_success(&cell, || Err("must not run".into())).unwrap(),
+            "abc"
+        );
+    }
+
+    #[test]
+    fn export_output_reservation_refuses_an_existing_path() {
+        let path = std::env::temp_dir().join(format!(
+            "aigc-reserve-test-{}-{}",
+            std::process::id(),
+            RUNTIME_DIR_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        ));
+        reserve_private_output(&path).unwrap();
+        let error = reserve_private_output(&path).unwrap_err();
+        fs::remove_file(&path).unwrap();
+        assert!(error.contains("already exists"), "{error}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn exported_archive_is_private_to_the_current_user() {
+        use std::os::unix::fs::PermissionsExt;
+        let result = generate_evidenceos_bundle(EvidenceOsRunInput {
+            enabled_capabilities: vec!["Traceability".to_string()],
+            artifact_title: "Private export fixture".to_string(),
+            artifact_body: "Mode check".to_string(),
+            artifact_sha256: None,
+            artifact_tags_csv: "TEST".to_string(),
+            control_families_csv: "Traceability".to_string(),
+            claim_text: "Mode check.".to_string(),
+        })
+        .expect("export completes");
+        let mode = fs::metadata(&result.bundle_path)
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
+        fs::remove_file(&result.bundle_path).unwrap();
+        assert_eq!(mode, 0o600);
     }
 
     #[test]
