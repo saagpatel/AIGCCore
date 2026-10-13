@@ -12,7 +12,12 @@ pub fn emit_source_revision_rerun_inputs(repository_root: &Path) {
         .split(|byte| *byte == 0)
         .filter(|path| !path.is_empty())
     {
-        let path = String::from_utf8(path.to_vec()).expect("tracked paths must be UTF-8");
+        let Ok(path) = std::str::from_utf8(path) else {
+            continue;
+        };
+        if !should_rerun_for_tracked_path(Path::new(path)) {
+            continue;
+        }
         assert!(
             !path.contains(['\n', '\r']),
             "tracked path contains a Cargo directive delimiter"
@@ -51,6 +56,12 @@ pub fn emit_source_revision_rerun_inputs(repository_root: &Path) {
         );
         println!("cargo:rerun-if-changed={absolute_path}");
     }
+}
+
+pub fn should_rerun_for_tracked_path(path: &Path) -> bool {
+    ["core/src", "src-tauri/src", "tools", "src"]
+        .iter()
+        .any(|directory| path.starts_with(directory))
 }
 
 pub fn source_revision(repository_root: &Path) -> String {

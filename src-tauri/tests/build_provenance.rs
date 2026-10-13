@@ -29,6 +29,22 @@ fn explicit_revision_supports_source_tree_without_git_metadata() {
 }
 
 #[test]
+fn rerun_inputs_exclude_documentation_and_include_source_directories() {
+    assert!(!build_provenance::should_rerun_for_tracked_path(Path::new(
+        "docs/guide.md"
+    )));
+    assert!(!build_provenance::should_rerun_for_tracked_path(Path::new(
+        "README.md"
+    )));
+    assert!(build_provenance::should_rerun_for_tracked_path(Path::new(
+        "core/src/storage/vault.rs"
+    )));
+    assert!(build_provenance::should_rerun_for_tracked_path(Path::new(
+        "src-tauri/src/lib.rs"
+    )));
+}
+
+#[test]
 fn environment_revision_takes_priority_without_git_metadata() {
     // A child process isolates environment overrides from concurrently running tests.
     if std::env::var("AIGC_TEST_REVISION_CHILD").as_deref() == Ok("1") {
