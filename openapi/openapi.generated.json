@@ -176,7 +176,6 @@
           "network_mode",
           "proof_level",
           "proof_source",
-          "adapter_endpoints",
           "ui_remote_fetch_disabled"
         ],
         "properties": {
@@ -195,17 +194,9 @@
           "proof_source": {
             "type": "string",
             "enum": [
-              "POLICY_DECLARATION",
-              "MEASURED"
+              "POLICY_DECLARATION"
             ],
             "description": "POLICY_DECLARATION means the posture comes from enforced policy and is not a network measurement."
-          },
-          "adapter_endpoints": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Endpoints used by an adapter in the relevant run; empty when no adapter ran."
           },
           "ui_remote_fetch_disabled": {
             "type": "boolean",
@@ -216,7 +207,6 @@
           "network_mode": "OFFLINE",
           "proof_level": "OFFLINE_STRICT",
           "proof_source": "POLICY_DECLARATION",
-          "adapter_endpoints": [],
           "ui_remote_fetch_disabled": true
         }
       },
@@ -346,29 +336,60 @@
       "TruthfulNetworkSnapshot": {
         "type": "object",
         "required": [
+          "network_mode",
           "proof_level",
           "proof_source",
+          "allowlist",
+          "ui_remote_fetch_disabled",
           "adapter_endpoints"
         ],
         "properties": {
           "proof_level": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "OFFLINE_STRICT",
+              "ONLINE_ALLOWLIST_CORE_ONLY",
+              "ONLINE_ALLOWLIST_WITH_OS_FIREWALL_PROFILE"
+            ]
           },
           "proof_source": {
             "type": "string",
             "enum": [
-              "POLICY_DECLARATION",
-              "MEASURED"
+              "POLICY_DECLARATION"
             ]
           },
           "adapter_endpoints": {
             "type": "array",
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/AdapterEndpointSnapshot"
             }
+          },
+          "network_mode": {
+            "type": "string",
+            "enum": [
+              "OFFLINE",
+              "ONLINE_ALLOWLISTED"
+            ]
+          },
+          "allowlist": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AllowlistEntry"
+            }
+          },
+          "ui_remote_fetch_disabled": {
+            "type": "boolean"
           }
         },
-        "description": "POLICY_DECLARATION records enforced policy, not measured traffic. The endpoint list is empty when no adapter ran."
+        "description": "POLICY_DECLARATION records enforced policy, not measured traffic. The endpoint list is empty when no adapter ran.",
+        "example": {
+          "network_mode": "OFFLINE",
+          "proof_level": "OFFLINE_STRICT",
+          "proof_source": "POLICY_DECLARATION",
+          "allowlist": [],
+          "ui_remote_fetch_disabled": true,
+          "adapter_endpoints": []
+        }
       },
       "TruthfulModelSnapshot": {
         "type": [
@@ -771,6 +792,61 @@
           "adapter_id": "authority-integrity-probe",
           "endpoint": "http://127.0.0.1:49152",
           "dependency_path_reached": true
+        }
+      },
+      "AdapterEndpointSnapshot": {
+        "type": "object",
+        "required": [
+          "endpoint",
+          "is_loopback"
+        ],
+        "properties": {
+          "endpoint": {
+            "type": "string"
+          },
+          "is_loopback": {
+            "type": "boolean"
+          },
+          "validation_error": {
+            "type": "string",
+            "description": "Omitted when endpoint validation succeeded."
+          }
+        }
+      },
+      "AllowlistEntry": {
+        "type": "object",
+        "required": [
+          "scheme",
+          "host",
+          "port",
+          "purpose",
+          "policy_pack_id",
+          "policy_pack_version"
+        ],
+        "properties": {
+          "scheme": {
+            "type": "string"
+          },
+          "host": {
+            "type": "string"
+          },
+          "path_prefix": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string"
+          },
+          "policy_pack_id": {
+            "type": "string"
+          },
+          "policy_pack_version": {
+            "type": "string"
+          },
+          "port": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 65535
+          }
         }
       }
     }

@@ -4,7 +4,10 @@ AIGCCore exposes the governance kernel and EvidenceOS only. The app is wired in
 `src-tauri/src/lib.rs`; commands live in `src-tauri/src/commands/`, and the
 EvidenceOS bundle path lives in `src-tauri/src/export/`. Invocations use
 `invoke(command, arguments)`; these are local IPC commands, not HTTP endpoints.
-The documentation contract is `openapi/openapi.generated.json`.
+The documentation contract is `openapi/openapi.generated.json`. Despite its
+filename, this contract is hand-maintained; no generator is defined in the repo.
+Rust DTO serialization is checked against its network schemas by a Cargo test
+using Ajv (run `pnpm install --frozen-lockfile` before Rust tests).
 
 ## Command: `get_network_snapshot`
 
@@ -18,14 +21,15 @@ Response:
   "network_mode": "OFFLINE",
   "proof_level": "OFFLINE_STRICT",
   "proof_source": "POLICY_DECLARATION",
-  "adapter_endpoints": [],
   "ui_remote_fetch_disabled": true
 }
 ```
 
 `POLICY_DECLARATION` means this response reports the enforced offline policy;
-it does not report a network measurement. `adapter_endpoints` is empty until an
-adapter actually runs during the relevant run.
+it does not report a network measurement. This command reports policy only.
+The bundle network snapshot separately records `adapter_endpoints` as objects
+with `endpoint`, `is_loopback`, and an optional `validation_error`; its list is
+empty when no adapter ran.
 
 ## Command: `list_control_library`
 
