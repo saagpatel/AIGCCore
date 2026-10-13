@@ -590,10 +590,26 @@ fn check_artifact_hashes<R: Read + Seek>(
         );
     }
 
-    // Declared input hashes in both canonical JSON indexes must be well-formed.
-    for (path, collection) in [
-        ("run_manifest.json", "inputs"),
-        ("inputs_snapshot/artifact_list.json", "artifacts"),
+    // Every declared digest uses the same format check; absent optional digests
+    // (including a null model snapshot) make no hash claim.
+    for (path, collection, hash_fields) in [
+        ("run_manifest.json", Some("inputs"), &["sha256"][..]),
+        ("run_manifest.json", Some("outputs"), &["sha256"][..]),
+        (
+            "run_manifest.json",
+            Some("model_calls"),
+            &["input_hash", "output_hash"][..],
+        ),
+        (
+            "inputs_snapshot/artifact_list.json",
+            Some("artifacts"),
+            &["sha256"][..],
+        ),
+        (
+            "inputs_snapshot/model_snapshot.json",
+            None,
+            &["model_sha256"][..],
+        ),
     ] {
         let index = match read_zip_entry_json(zip, path) {
             Ok(value) => value,
@@ -604,19 +620,27 @@ fn check_artifact_hashes<R: Read + Seek>(
                 );
             }
         };
-        if let Some(entries) = index.get(collection).and_then(|value| value.as_array()) {
-            for entry in entries {
-                if let Some(hash_value) = entry.get("sha256") {
+        let entries = match collection {
+            Some(name) => index
+                .get(name)
+                .and_then(|value| value.as_array())
+                .map(Vec::as_slice)
+                .unwrap_or(&[]),
+            None => std::slice::from_ref(&index),
+        };
+        for entry in entries {
+            for field in hash_fields {
+                if let Some(hash_value) = entry.get(*field) {
                     let Some(hash) = hash_value.as_str() else {
                         return fail(
                             "CHK.ARTIFACT_HASHES.VERIFY",
-                            format!("declared sha256 is not a string in {path}"),
+                            format!("declared {field} is not a string in {path}"),
                         );
                     };
                     if !is_sha256_hex(hash) {
                         return fail(
                             "CHK.ARTIFACT_HASHES.VERIFY",
-                            format!("malformed declared sha256 in {path}"),
+                            format!("malformed declared {field} in {path}"),
                         );
                     }
                 }

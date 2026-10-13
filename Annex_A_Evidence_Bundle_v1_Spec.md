@@ -83,7 +83,7 @@
 - `model_calls[]`: summary (no raw prompts required); empty when no model call ran.
 - `eval.gate_status`: PASS|FAIL|WARN
 
-Declared SHA-256 values MUST be exactly 64 lowercase hexadecimal characters. A missing hash may be treated according to the selected export profile, but a present malformed value is invalid and MUST NOT be downgraded to “legacy/missing.”
+Declared SHA-256 values MUST be exactly 64 lowercase hexadecimal characters. This includes manifest input/output hashes, artifact-list hashes, model-call input/output hashes, and the optional model snapshot digest. An absent model digest or a null (unused) model snapshot declares no digest. A missing hash may be treated according to the selected export profile, but a present malformed value is invalid and MUST NOT be downgraded to “legacy/missing.”
 
 ### `inputs_snapshot/policy_snapshot.json`
 - `encryption_at_rest`: `false` when the run's exported storage was not encrypted at rest. In this case `encryption_algorithm` is omitted.

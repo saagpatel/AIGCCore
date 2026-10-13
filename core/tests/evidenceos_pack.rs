@@ -165,6 +165,109 @@ fn placeholder_eval_report_is_rejected_by_final_validation() {
 }
 
 #[test]
+fn final_validation_checks_every_declared_sha256_location() {
+    use aigc_core::adapters::pinning::{ModelSnapshot, PinningLevel};
+    use aigc_core::policy::network_snapshot::AdapterEndpointSnapshot;
+
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("hash_bundle");
+    let zip = temp.path().join("hash_bundle.zip");
+    let mut inputs = make_inputs(&root).unwrap();
+    inputs.model_snapshot = Some(ModelSnapshot {
+        adapter_id: "test-adapter".into(),
+        adapter_version: "1.0".into(),
+        adapter_endpoint: "http://127.0.0.1:11434".into(),
+        model_id: "test-model".into(),
+        model_sha256: Some(sha256_hex(b"model")),
+        pinning_level: PinningLevel::CRYPTO_PINNED,
+    });
+    inputs
+        .network_snapshot
+        .adapter_endpoints
+        .push(AdapterEndpointSnapshot {
+            endpoint: "http://127.0.0.1:11434".into(),
+            is_loopback: true,
+            validation_error: None,
+        });
+    inputs.run_manifest.model_calls.push(ModelCallSummary {
+        call_id: "test-call".into(),
+        model_id: "test-model".into(),
+        adapter_version: "1.0".into(),
+        status: "COMPLETED".into(),
+        input_hash: sha256_hex(b"input"),
+        output_hash: sha256_hex(b"output"),
+    });
+    EvidenceBundleBuilder::build_dir(&root, &inputs).unwrap();
+    EvidenceBundleBuilder::build_zip(&root, &zip).unwrap();
+    let eval = EvalRunner::new_v3().unwrap();
+    let gates = eval.run_all_for_bundle(&zip, PolicyMode::STRICT).unwrap();
+    inputs.eval_report = eval
+        .report_from_results(&gates, PolicyMode::STRICT, "evidenceos")
+        .unwrap();
+    inputs.run_manifest.eval.gate_status = inputs.eval_report.overall_status.clone();
+
+    let validate = |inputs: &EvidenceBundleInputs| {
+        EvidenceBundleBuilder::build_dir(&root, inputs).unwrap();
+        EvidenceBundleBuilder::build_zip(&root, &zip).unwrap();
+        BundleValidator::new_v3()
+            .validate_zip(&zip, PolicyMode::STRICT)
+            .unwrap()
+    };
+    assert_eq!(validate(&inputs).overall, "PASS");
+    for (path, pointer) in [
+        ("run_manifest.json", "/inputs/0/sha256"),
+        ("run_manifest.json", "/outputs/0/sha256"),
+        ("run_manifest.json", "/model_calls/0/input_hash"),
+        ("run_manifest.json", "/model_calls/0/output_hash"),
+        ("inputs_snapshot/artifact_list.json", "/artifacts/0/sha256"),
+        ("inputs_snapshot/model_snapshot.json", "/model_sha256"),
+    ] {
+        for malformed in [
+            json!("demo_sha256"),
+            json!("A".repeat(64)),
+            json!("g".repeat(64)),
+            json!("a".repeat(63)),
+            json!("a".repeat(65)),
+            json!(42),
+            json!(null),
+        ] {
+            // Restore a fully valid archive before independently corrupting each declaration.
+            assert_eq!(validate(&inputs).overall, "PASS");
+            let json_path = root.join(path);
+            let mut document: serde_json::Value =
+                serde_json::from_slice(&fs::read(&json_path).unwrap()).unwrap();
+            *document.pointer_mut(pointer).unwrap() = malformed;
+            fs::write(&json_path, serde_json::to_vec(&document).unwrap()).unwrap();
+            EvidenceBundleBuilder::build_zip(&root, &zip).unwrap();
+            let rejected = BundleValidator::new_v3()
+                .validate_zip(&zip, PolicyMode::STRICT)
+                .unwrap();
+            assert_eq!(rejected.overall, "FAIL", "{path}{pointer}");
+            assert_eq!(
+                rejected.result_for_check("CHK.ARTIFACT_HASHES.VERIFY").0,
+                "FAIL",
+                "{path}{pointer}"
+            );
+        }
+    }
+    inputs.model_snapshot.as_mut().unwrap().model_sha256 = None;
+    inputs.model_snapshot.as_mut().unwrap().pinning_level = PinningLevel::VERSION_PINNED;
+    assert_eq!(
+        validate(&inputs).overall,
+        "PASS",
+        "model digest is optional"
+    );
+    inputs.model_snapshot = None;
+    inputs.run_manifest.model_calls.clear();
+    inputs.network_snapshot.adapter_endpoints.clear();
+    assert_eq!(
+        validate(&inputs).overall,
+        "PASS",
+        "unused model declares no digest"
+    );
+}
+
+#[test]
 fn legacy_run_manifest_v1_is_inspectable_but_non_authorizing() {
     let temp = tempfile::tempdir().unwrap();
     let bundle_root = temp.path().join("legacy_bundle");
