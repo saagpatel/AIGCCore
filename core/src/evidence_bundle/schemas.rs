@@ -79,7 +79,8 @@ pub struct PolicySnapshot {
     pub determinism: DeterminismPolicy,
     pub export_profile: ExportProfile,
     pub encryption_at_rest: bool,
-    pub encryption_algorithm: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub encryption_algorithm: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -153,7 +154,7 @@ pub struct EvidenceBundleInputs {
     pub artifact_list: ArtifactList,
     pub policy_snapshot: PolicySnapshot,
     pub network_snapshot: NetworkSnapshot,
-    pub model_snapshot: ModelSnapshot,
+    pub model_snapshot: Option<ModelSnapshot>,
     pub pack_id: String,
     pub pack_version: String,
     pub deliverables: Vec<(String, Vec<u8>, String)>, // rel path, bytes, content_type
