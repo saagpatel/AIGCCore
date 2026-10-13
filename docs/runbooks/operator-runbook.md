@@ -1,15 +1,13 @@
-# Operator Runbook: Pack Execution and Recovery
+# Operator Runbook: EvidenceOS Export and Recovery
 
 ## Scope
 
-This runbook covers local operator actions for diagnosing failed pack runs and recovering safely.
+This runbook covers local operator actions for diagnosing failed EvidenceOS exports and recovering safely. See `docs/command-surface.md` for the current IPC contract.
 
 ## Common Failure Signals
 
-- `status = BLOCKED` from pack command response.
-- `status = FAILED` from pack command response.
-- `error_code` is present on `BLOCKED`/`FAILED` response.
-- `run_id`/`audit_path` are present for failures that progressed into export/audit initialization.
+- Rejected `generate_evidenceos_bundle` invocation with a string error.
+- A completed command returns `status = COMPLETED`; blocked/failed exports reject.
 - Bundle missing or bundle validation failure.
 - Required CI gates fail (`quality-gates`, `ui-quality`, `codex-quality-security`).
 
@@ -41,47 +39,22 @@ This runbook covers local operator actions for diagnosing failed pack runs and r
    - Bundle format/validator failure
    - UI regression or packaging failure
 
-## Error Code Triage Map
+## Command Error Triage
 
-- `ARTIFACT_PAYLOAD_MISSING`: artifact referenced in command input does not have a matching payload entry.
-  - Action: ensure each declared artifact has one payload object with matching `artifact_id`.
-- `ARTIFACT_PAYLOAD_DUPLICATE`: multiple payload entries exist for the same artifact.
-  - Action: submit exactly one payload entry per `artifact_id`.
-- `ARTIFACT_PAYLOAD_EMPTY`: payload exists but does not include non-empty content.
-  - Action: populate `content_text` or `content_base64`.
-- `ARTIFACT_PAYLOAD_INVALID_BASE64`: payload bytes are malformed base64.
-  - Action: regenerate payload bytes and re-encode base64.
-- `ARTIFACT_PAYLOAD_INVALID_UTF8`: text payload cannot be decoded.
-  - Action: provide UTF-8 text in `content_text` or binary-safe `content_base64`.
-- `ARTIFACT_PAYLOAD_TOO_LARGE`: payload exceeds runtime size limits.
-  - Action: reduce payload size (text <= 5 MiB, binary <= 20 MiB) or split artifacts.
-- `ARTIFACT_SHA256_INVALID`: declared hash is present but not valid 64-hex.
-  - Action: provide valid lowercase/uppercase 64-hex hash or use approved legacy placeholder format.
-- `ARTIFACT_SHA256_MISMATCH`: declared valid hash does not match decoded payload bytes.
-  - Action: recompute hash from source artifact bytes and update request.
-- `ARTIFACT_CONTENT_TYPE_UNSUPPORTED`: artifact payload field shape does not match expected type.
-  - Action: send binary artifacts via `content_base64`; send text artifacts via `content_text` (or UTF-8 base64).
-- `REDLINE_ARTIFACT_NOT_PDF`: Redline artifact bytes failed PDF preflight.
-  - Action: ensure uploaded bytes are real PDF content and base64-encoded.
-- `INCIDENT_LOG_INVALID_FORMAT`: IncidentOS log payload cannot be parsed as JSON/NDJSON.
-  - Action: validate log schema and line delimiters.
-- `FINANCE_STATEMENT_INVALID_FORMAT`: FinanceOS statement JSON invalid/missing required fields.
-  - Action: validate statement schema before invoke.
-- `HEALTHCAREOS_WORKFLOW_INVALID_INPUT`: HealthcareOS rejected transcript/consent policy conditions.
-  - Action: validate consent status/patient alignment and transcript schema.
-- `EXPORT_BLOCKED`: policy/eval gate blocked export after workflow.
-  - Action: inspect `audit.ndjson` and gate results for citations/redaction/determinism reasons.
-- `EXPORT_FAILED`: export pipeline/runtime failure.
-  - Action: inspect `audit.ndjson`, bundle validator output, and retry after root-cause fix.
+The EvidenceOS command rejects with a string on artifact generation, filesystem,
+audit, export, or bound-manifest errors. It has no pack error-code response.
+For `EvidenceOS export did not complete`, inspect the reported status/block
+reason and the runtime audit log. For `failed to export EvidenceOS bundle`,
+inspect the underlying kernel error. Preserve the original inputs and evidence
+before retrying.
 
 ## Recovery Actions
 
-### Input Payload Issues
+### Input Issues
 
-- Verify payload IDs match artifact IDs in command input.
-- Verify `content_base64` for binary payloads (RedlineOS).
-- Verify `content_text` is valid JSON/NDJSON for structured packs.
-- If 64-hex `sha256` is provided, verify exact byte hash parity before invoke.
+- Check the six EvidenceOS input fields against `docs/command-surface.md`.
+- Confirm capability and control-family selection, evidence text, and claim.
+- Inspect citation mapping and missing-control output for completed exports.
 
 ### Policy or Gate Blocks
 
@@ -120,8 +93,7 @@ This runbook covers local operator actions for diagnosing failed pack runs and r
 
 | Area                               | Primary Owner        | Backup Owner       | Escalation Trigger                                        |
 | ---------------------------------- | -------------------- | ------------------ | --------------------------------------------------------- |
-| Runtime command failures (`run_*`) | Core runtime owner   | QA owner           | `FAILED` status on required command path                  |
-| Ingestion contract failures        | Data ingestion owner | Core runtime owner | repeated `BLOCKED` with same `error_code` after input fix |
+| EvidenceOS command failures | Core runtime owner   | QA owner           | rejected EvidenceOS invocation                  |
 | CI/gate pipeline failures          | Release owner        | Core runtime owner | required CI check red for release branch                  |
 | Release packaging/signing failures | Release owner        | Repo admin         | release workflow fails its platform-specific artifact gates |
 | Security/compliance incidents      | Security owner       | Repo admin         | policy/gate bypass, audit-chain anomaly, secret leak risk |

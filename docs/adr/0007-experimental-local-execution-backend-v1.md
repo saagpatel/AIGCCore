@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted as an experimental, feature-gated qualification surface.
+Superseded by [ADR 0011](0011-scope-kernel-and-evidenceos.md) (2026-10-12). The qualification surface described below is historical and has been removed.
 
 ## Context
 

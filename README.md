@@ -4,7 +4,7 @@
 
 > Most AI apps leak data by default and audit by accident. AIGCCore flips that — offline-first, hash-chained audit trail, deterministic artifact serialization
 
-AIGCCore is a local-first governance and audit engine for privacy-first desktop AI applications. It acts as a shared backbone for multiple specialized desktop Packs — each Pack inherits strict privacy boundaries, deterministic artifact generation, and a tamper-evident audit trail without rebuilding that infrastructure from scratch.
+AIGCCore is a local-first governance and audit kernel for privacy-first desktop AI applications, with EvidenceOS as its sole pack. EvidenceOS maps evidence to capability-based controls and produces citation-grounded exports through the kernel's deterministic bundle and audit pipeline. The scope decision is recorded in [ADR 0011](docs/adr/0011-scope-kernel-and-evidenceos.md).
 
 ## Features
 
@@ -95,7 +95,7 @@ qualified prior artifact and requires its own execution receipt.
 
 ## Architecture
 
-The Rust `aigc_core` crate in `core/` is the single source of truth for all governance logic — audit event canonicalization, hash chaining, determinism enforcement, and bundle assembly. It has no network access; any adapter that needs to call a local model does so only through the allowlisted loopback adapter interface defined in Annex B. The Tauri shell exposes a minimal command surface to the React frontend; the frontend cannot directly modify audit state. Evidence bundles are assembled by `EvidenceBundleBuilder` in the Rust core; `RunManager` runs eval gates and v3 bundle validation before finalizing exports. The `bundle_validator` tool validates existing ZIPs and reports results; bundle ZIPs are SHA-256 hashed, without cryptographic signatures.
+The Rust `aigc_core` crate in `core/` is the single source of truth for all governance logic — audit event canonicalization, hash chaining, determinism enforcement, and bundle assembly. It has no network access; any adapter that needs to call a local model does so only through the allowlisted loopback adapter interface defined in Annex B. The Tauri shell exposes a minimal [command surface](docs/command-surface.md) to the React frontend; the frontend cannot directly modify audit state. `src-tauri/src/lib.rs` wires the app, `commands/` owns the entry points, and `export/` owns the EvidenceOS bundle path. Evidence bundles are assembled by `EvidenceBundleBuilder` in the Rust core; `RunManager` runs eval gates and v3 bundle validation before finalizing exports. The `bundle_validator` tool validates existing ZIPs and reports results; bundle ZIPs are SHA-256 hashed, without cryptographic signatures.
 
 ## License
 

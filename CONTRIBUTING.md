@@ -65,6 +65,6 @@ Cover loading, empty, error, success, disabled, and keyboard-focus states; UI ch
 also require the Lighthouse workflow in [AGENTS.md](AGENTS.md#ui-hard-gates-required-for-frontendui-changes).
 Pure documentation changes do not require a browser walkthrough.
 
-Do not run `release:macos`, cleanup scripts, rollback, or live local-execution
-qualification to validate these instructions. Those operations have separate
+Do not run `release:macos`, cleanup scripts, or rollback to validate these
+instructions. Those operations have separate
 credentials, data, signing, or deletion boundaries.
