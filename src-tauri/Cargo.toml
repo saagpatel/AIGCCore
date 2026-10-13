@@ -28,4 +28,4 @@ authority-integrity-test-hooks = []
 
 [dev-dependencies]
 tauri = { version = "2.12.3", features = ["test"] }
-zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
+zip = { version = "9.0.0", default-features = false, features = ["deflate"] }
