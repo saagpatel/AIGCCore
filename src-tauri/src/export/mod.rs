@@ -17,6 +17,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+const LOG_TARGET: &str = "aigc_core_tauri::export::cleanup";
 static RUNTIME_DIR_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 static EXECUTABLE_SHA256: OnceLock<String> = OnceLock::new();
 
@@ -366,9 +367,10 @@ fn make_runtime_dir() -> Result<std::path::PathBuf, String> {
     std::fs::create_dir(&path).map_err(|e| e.to_string())?;
     if let Err(error) = harden_runtime_dir_permissions(&path) {
         if let Err(cleanup_error) = std::fs::remove_dir_all(&path) {
-            eprintln!(
-                "failed to clean export working directory after permission error {}: {cleanup_error}",
-                path.display()
+            log::warn!(
+                target: LOG_TARGET,
+                "clean export working directory after permission error failed: {:?}",
+                cleanup_error.kind()
             );
         }
         return Err(error);
@@ -390,9 +392,10 @@ impl RuntimeDirGuard {
 impl Drop for RuntimeDirGuard {
     fn drop(&mut self) {
         if let Err(error) = std::fs::remove_dir_all(&self.0) {
-            eprintln!(
-                "failed to clean export working directory {}: {error}",
-                self.0.display()
+            log::warn!(
+                target: LOG_TARGET,
+                "clean export working directory failed: {:?}",
+                error.kind()
             );
         }
     }
@@ -408,9 +411,10 @@ impl Drop for ExportOutputGuard {
         if !self.keep {
             if let Err(error) = std::fs::remove_file(&self.path) {
                 if error.kind() != std::io::ErrorKind::NotFound {
-                    eprintln!(
-                        "failed to clean incomplete export {}: {error}",
-                        self.path.display()
+                    log::warn!(
+                        target: LOG_TARGET,
+                        "clean incomplete export failed: {:?}",
+                        error.kind()
                     );
                 }
             }
