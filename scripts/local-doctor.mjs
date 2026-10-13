@@ -72,8 +72,8 @@ function main() {
   );
 
   const toolPlans = [
-    ["node", process.execPath, ["--version"], "v22."],
-    ["pnpm", "pnpm", ["--version"], "10.29.2"],
+    ["node", process.execPath, ["--version"], "v26.11.1"],
+    ["pnpm", "pnpm", ["--version"], "11.28.5"],
     ["rustc", "rustc", ["--version"], "rustc 1.97.1"],
     ["cargo", "cargo", ["--version"], "cargo 1.97.1"],
     ["xcode", "/usr/bin/xcodebuild", ["-version"], "Xcode 26.6"],
