@@ -115,7 +115,7 @@ fn audit_log_reopen_rejects_tampered_event_hash() {
     let append_error = stale_writer
         .append(audit_event("RUN_COMPLETED", serde_json::json!({})))
         .unwrap_err();
-    assert!(append_error.to_string().contains("event_hash"));
+    assert!(append_error.to_string().contains("AUDIT_INVALID_TAIL"));
 
     let error = AuditLog::open_or_create(&path).unwrap_err();
     assert!(error.to_string().contains("line 1"));
@@ -187,6 +187,56 @@ fn audit_log_reopen_rejects_broken_links_and_extra_top_level_keys() {
     let error = AuditLog::open_or_create(&path).unwrap_err();
     assert!(error.to_string().contains("line 1"));
     assert!(error.to_string().contains("locked event envelope"));
+}
+
+#[test]
+fn concurrent_audit_appenders_serialize_into_one_valid_chain() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("concurrent.ndjson");
+    let first = AuditLog::open_or_create(&path).unwrap();
+    let second = AuditLog::open_or_create(&path).unwrap();
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(3));
+    let make_event = |name: &'static str| {
+        audit_event(
+            "RUN_STATE_CHANGED",
+            serde_json::json!({"from_state":"CREATED","to_state":"INGESTING","reason":name}),
+        )
+    };
+    let first_barrier = barrier.clone();
+    let first_thread = std::thread::spawn(move || {
+        let mut log = first;
+        first_barrier.wait();
+        log.append(make_event("first"))
+    });
+    let second_barrier = barrier.clone();
+    let second_thread = std::thread::spawn(move || {
+        let mut log = second;
+        second_barrier.wait();
+        log.append(make_event("second"))
+    });
+    barrier.wait();
+    first_thread.join().unwrap().unwrap();
+    second_thread.join().unwrap().unwrap();
+    let contents = fs::read_to_string(&path).unwrap();
+    let lines: Vec<_> = contents.lines().collect();
+    assert_eq!(lines.len(), 2);
+    let mut expected = aigc_core::audit::event::ZERO_HASH_64.to_string();
+    for line in lines {
+        let event: AuditEvent = serde_json::from_str(line).unwrap();
+        assert_eq!(event.prev_event_hash, expected);
+        expected = event.event_hash;
+    }
+    assert!(AuditLog::open_or_create(&path).is_ok());
+}
+
+#[test]
+fn audit_log_rejects_unterminated_tail_without_repairing_evidence() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("unterminated.ndjson");
+    fs::write(&path, "{}").unwrap();
+    let error = AuditLog::open_or_create(&path).unwrap_err().to_string();
+    assert!(error.contains("AUDIT_UNTERMINATED_TAIL"));
+    assert_eq!(fs::read_to_string(path).unwrap(), "{}");
 }
 
 #[test]
