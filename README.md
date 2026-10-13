@@ -96,15 +96,15 @@ hash chaining, determinism enforcement, and bundle assembly.
 
 ### Stack
 
-| Layer          | Technology                                |
-| -------------- | ----------------------------------------- |
-| Desktop shell  | Tauri 2                                   |
-| Core logic     | Rust (aes-gcm, sha2, serde)               |
-| UI             | React + TypeScript                        |
-| Build          | Vite                                      |
-| Storage        | File-backed vault for SQLite bytes and blob artifacts |
-| Cryptography   | AES-256-GCM, XChaCha20-Poly1305, SHA-256   |
-| Audit chaining | Custom hash-chain canonicalization (Rust) |
+| Layer          | Technology                                                                                             |
+| -------------- | ------------------------------------------------------------------------------------------------------ |
+| Desktop shell  | Tauri 2                                                                                                |
+| Core logic     | Rust (aes-gcm, sha2, serde)                                                                            |
+| UI             | React + TypeScript                                                                                     |
+| Build          | Vite                                                                                                   |
+| Storage        | Vault library in the core crate (SQLite bytes and blob artifacts); the desktop app does not use it yet |
+| Cryptography   | AES-256-GCM, XChaCha20-Poly1305, SHA-256                                                               |
+| Audit chaining | Custom hash-chain canonicalization (Rust)                                                              |
 
 ### Known risks
 
