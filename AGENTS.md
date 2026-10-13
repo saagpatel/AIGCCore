@@ -1,4 +1,4 @@
-# AGENTS.md (Repo Root) — AIGC Core
+# AIGC Core agent instructions
 
 <!-- comm-contract:start -->
 
@@ -9,139 +9,64 @@
 - Honor toggles literally: `simple mode`, `show receipts`, `tech mode`, `debug mode`.
 <!-- comm-contract:end -->
 
-This file defines canonical project commands, paths, and repo-specific conventions for this workspace.
+## Purpose
 
-## Canonical Paths
+Keep changes scoped, reviewable, and consistent with the local-first kernel contracts.
+Product scope and current status live in README.md.
 
-- Rust domain core: `core/`
-- Tauri shell + command handlers: `src-tauri/`
-- React UI: `src/`
-- Local validator CLI(s): `tools/`
-- Packet-driven docs created in-repo: `docs/`
+## Layout
 
-## Canonical Commands
+- `core/`: Rust governance, audit, determinism, and bundle assembly.
+- `src-tauri/`: desktop shell and command handlers.
+- `src/`: React UI; `tools/`: validators and gate runner.
+- `docs/`: packet contracts, command examples, and ADRs.
 
-Primary runner is `pnpm` and Rust `cargo`.
+## Setup
 
-- Install deps: `pnpm install`
-- Dev (desktop): `pnpm dev`
-- Build (desktop): `pnpm build`
-- Run all eval gates locally: `pnpm gate:all`
-- Rust tests: `cargo test --workspace`
+Use the pins in `rust-toolchain.toml`, `.node-version`, and `package.json`.
+Install the README platform prerequisites, then run `make setup`.
+All pnpm installs must use `--frozen-lockfile`; Cargo verification uses `--locked`.
+Package scripts in `package.json` are the command source of truth.
 
-Source of truth for scripts is the repository-root `package.json`.
+## Checks
 
-## Hard Rules (Packet-Aligned)
+- `make check`: Rust fmt/clippy, lint/typecheck, Rust and JS tests, authority-integrity,
+  integration gates, and UI regression. Checks must not rewrite source or lockfiles.
+- `make test`: Rust/JS tests and the authority-integrity suite.
+- `make build`: desktop build; tracked files must remain unchanged.
+- Run `bash .codex/scripts/run_verify_commands.sh` for canonical verification;
+  `.codex/verify.commands` lists its commands.
+- For UI changes, a read-only reviewer emits `UIFindingV1[]` using
+  `~/.codex/contracts/UIFindingV1.schema.json`; fix accepted findings P0 through P3.
+  Cover loading, empty, error, success, disabled, and focus-visible states.
+  `pnpm ui:gate:static`, `pnpm ui:gate:regression`, and the Lighthouse CI workflow
+  are required; any failed or unrun UI gate blocks done.
+- Production code changes require meaningful test updates in the same PR:
+  one primary behavior assertion and two edge, boundary, invalid-input, or failure assertions.
+  No trivial, snapshot-only, or render-only tests. Mock only external boundaries,
+  never the unit under test.
+- Lint, typecheck, tests, coverage, diff coverage, and docs checks block delivery
+  when failed or unrun.
+
+## Boundaries
 
 - Offline-by-default is enforced in Rust core; UI must not have direct egress.
 - Adapters are loopback-only (literal IPv4 loopback addresses or `::1`) and must implement Annex B v1.
 - Evidence Bundle exports must comply with Annex A v1 + Phase 2.5 lock addendum.
 - Determinism mode must follow Addendum A + ZIP hardening rules.
 - Audit trail must be canonicalized and hash-chained per lock addendum and taxonomy.
+- Preserve unrelated changes. The UI must use Tauri commands to modify audit state.
+- Toolchain pins describe the verified baseline, not a claimed minimum Rust version.
 
-## Codex Reliability Contract
+## Delivery
 
-### Canonical Verification Commands (Source of Truth)
-
-Source: `.codex/verify.commands` (derived from `AGENTS.md` and `package.json`)
-
-- lint: `pnpm lint`
-- format-check: `N/A (no standalone formatter check defined in AGENTS/CI)`
-- typecheck: `pnpm ui:gate:static` (includes `pnpm ui:typecheck`)
-- unit-test: `pnpm test`; `pnpm test:build:desktop`; `cargo test --workspace`
-- authority-integrity-test: `cargo test --locked -p aigc_core_tauri --features authority-integrity-test-hooks authority_integrity_tests -- --show-output`
-- integration-test (additional gate in `package.json`): `pnpm gate:all`
-- build: `pnpm build`
-
-### Definition of Done
-
-- All commands in `.codex/verify.commands` pass via `.codex/scripts/run_verify_commands.sh`.
-- No open `critical` or `high` `ReviewFindingV1` findings.
-- Diff scope matches approved task scope.
-- Security checks (secrets, dependency, and SAST) are clean or explicitly waived with owner + expiry.
-
-### Agent Contract
-
-- Reviewer agent: read-only and emits only `ReviewFindingV1` findings.
-- Fixer agent: applies accepted findings in severity order and reports exact file patches + verification.
-- Final verifier: re-runs `.codex/scripts/run_verify_commands.sh` and summarizes `GateReportV1`.
-
-## UI Hard Gates (Required for frontend/UI changes)
-
-1. Read-only reviewer outputs `UIFindingV1[]` (`~/.codex/contracts/UIFindingV1.schema.json`).
-2. Fixer applies accepted findings in severity order: `P0 -> P1 -> P2 -> P3`.
-3. Required state coverage per changed UI surface: loading, empty, error, success, disabled, focus-visible.
-4. Required pre-done gates:
-   - `pnpm ui:gate:static`
-   - `pnpm ui:gate:regression`
-   - Lighthouse CI workflow (`.github/workflows/lighthouse.yml`)
-5. Done-state is blocked if any required UI gate is `fail` or `not-run`.
-
-## Definition of Done: Tests + Docs (Blocking)
-
-- Any production code change must include meaningful test updates in the same PR.
-- Meaningful tests must include at least:
-  - one primary behavior assertion
-  - two non-happy-path assertions (edge, boundary, invalid input, or failure mode)
-- Trivial assertions are forbidden (`expect(true).toBe(true)`, snapshot-only without semantic assertions, render-only smoke tests without behavior checks).
-- Mock only external boundaries (network, clock, randomness, third-party SDKs). Do not mock the unit under test.
-- UI changes must cover state matrix: loading, empty, error, success, disabled, focus-visible.
-- API/command surface changes must update generated contract artifacts and request/response examples.
-- Architecture-impacting changes must include an ADR in `/docs/adr/`.
-- Required checks are blocking when `fail` or `not-run`: lint, typecheck, tests, coverage, diff coverage, docs check.
-- Reviewer -> fixer -> reviewer loop is required before merge.
-
-<!-- portfolio-context:start -->
-# Portfolio Context
-
-## What This Project Is
-
-AIGCCore is a local-first governance and audit backbone for privacy-first desktop AI applications. It provides offline-by-default enforcement, deterministic artifact generation, evidence bundle exports, and tamper-evident hash-chained audit trails for specialized desktop packs.
-
-## Current State
-
-The repo is active infrastructure work. The Rust core is the source of truth for governance logic, audit canonicalization, hash chaining, determinism enforcement, and bundle assembly. Context recovery should not stage unrelated files.
-
-## Stack
-
-| Layer | Technology |
-|-------|------------|
-| Desktop shell | Tauri 2 |
-| Core logic | Rust (aes-gcm, sha2, serde) |
-| UI | React + TypeScript |
-| Build | Vite |
-| Storage | File-backed vault for SQLite bytes and blob artifacts |
-| Cryptography | AES-256-GCM, XChaCha20-Poly1305, SHA-256 |
-| Audit chaining | Custom hash-chain canonicalization (Rust) |
-
-## How To Run
-
-```bash
-# Development mode
-pnpm dev
-
-# Low-disk development mode
-pnpm lean:dev
-
-# Run tests
-pnpm test
-
-# Production build
-pnpm tauri build
-
-# Clean heavy build artifacts
-pnpm clean:heavy
-```
-
-## Known Risks
-
-- Offline-by-default is a core safety contract; any online capability must be explicitly gated and allowlisted.
-- Audit event canonicalization and hash chaining must remain deterministic.
-- Evidence Bundle v1 exports should not be considered valid unless the validator checklist passes.
-- Do not let the React frontend bypass the Tauri command surface to modify audit state directly.
-
-## Next Recommended Move
-
-Keep future work focused on deterministic bundle validation, audit-chain integrity, and offline enforcement.
-
-<!-- portfolio-context:end -->
+- Keep the diff within approved scope. No open critical/high `ReviewFindingV1` findings.
+- Reviewers are read-only and emit `ReviewFindingV1`; fix accepted findings in severity
+  order and report exact patches and verification. Reviewer → fixer → reviewer is
+  required before merge.
+- The final verifier reruns the canonical script and reports `GateReportV1`.
+- Security checks (secrets, dependencies, SAST) must pass or have an explicit waiver
+  with owner and expiry.
+- API/command changes update generated contracts and request/response examples.
+  Architecture changes require an ADR in `docs/adr/`.
+- Distinguish local verification from hosted CI, deployment, and human acceptance.
