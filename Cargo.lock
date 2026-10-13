@@ -62,6 +62,7 @@ dependencies = [
  "hex",
  "idna",
  "libc",
+ "log",
  "rand 0.10.3",
  "regex",
  "serde",
