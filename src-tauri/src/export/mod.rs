@@ -14,9 +14,11 @@ use aigc_core::run::manager::{ExportRequest, RunManager};
 use serde::Serialize;
 use serde_json::json;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 static RUNTIME_DIR_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+static EXECUTABLE_SHA256: OnceLock<Result<String, String>> = OnceLock::new();
 
 pub(crate) fn generate_evidenceos_bundle(
     input: EvidenceOsRunInput,
@@ -35,9 +37,23 @@ pub(crate) fn generate_evidenceos_bundle(
     let pack_id = "evidenceos".to_string();
     let pack_version = "1.0.0".to_string();
 
-    let runtime_dir = make_runtime_dir()?;
+    let runtime_guard = RuntimeDirGuard::create()?;
+    let runtime_dir = runtime_guard.path().to_path_buf();
     let bundle_root = runtime_dir.join("bundle_root");
-    let bundle_zip = runtime_dir.join("evidence_bundle_evidenceos_v1.zip");
+    let output_sequence = RUNTIME_DIR_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let bundle_zip = std::env::temp_dir().join(format!(
+        "aigc_evidenceos_export_{}_{}_{}.zip",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|e| e.to_string())?
+            .as_nanos(),
+        output_sequence
+    ));
+    let mut output_guard = ExportOutputGuard {
+        path: bundle_zip.clone(),
+        keep: false,
+    };
     let audit_path = runtime_dir.join("audit.ndjson");
     let mut audit = AuditLog::open_or_create(&audit_path).map_err(|e| e.to_string())?;
     let events = vec![
@@ -306,6 +322,7 @@ pub(crate) fn generate_evidenceos_bundle(
     }
     let evidence_authority = read_bound_evidence_authority(&bundle_root)?;
 
+    output_guard.keep = true;
     Ok(EvidenceOsRunResult {
         status: outcome.status,
         bundle_path: outcome.bundle_path.unwrap_or_default(),
@@ -346,8 +363,58 @@ fn make_runtime_dir() -> Result<std::path::PathBuf, String> {
         sequence
     ));
     std::fs::create_dir(&path).map_err(|e| e.to_string())?;
-    harden_runtime_dir_permissions(&path)?;
+    if let Err(error) = harden_runtime_dir_permissions(&path) {
+        if let Err(cleanup_error) = std::fs::remove_dir_all(&path) {
+            eprintln!(
+                "failed to clean export working directory after permission error {}: {cleanup_error}",
+                path.display()
+            );
+        }
+        return Err(error);
+    }
     Ok(path)
+}
+
+struct RuntimeDirGuard(std::path::PathBuf);
+
+impl RuntimeDirGuard {
+    fn create() -> Result<Self, String> {
+        make_runtime_dir().map(Self)
+    }
+    fn path(&self) -> &std::path::Path {
+        &self.0
+    }
+}
+
+impl Drop for RuntimeDirGuard {
+    fn drop(&mut self) {
+        if let Err(error) = std::fs::remove_dir_all(&self.0) {
+            eprintln!(
+                "failed to clean export working directory {}: {error}",
+                self.0.display()
+            );
+        }
+    }
+}
+
+struct ExportOutputGuard {
+    path: std::path::PathBuf,
+    keep: bool,
+}
+
+impl Drop for ExportOutputGuard {
+    fn drop(&mut self) {
+        if !self.keep {
+            if let Err(error) = std::fs::remove_file(&self.path) {
+                if error.kind() != std::io::ErrorKind::NotFound {
+                    eprintln!(
+                        "failed to clean incomplete export {}: {error}",
+                        self.path.display()
+                    );
+                }
+            }
+        }
+    }
 }
 
 fn harden_runtime_dir_permissions(path: &std::path::Path) -> Result<(), String> {
@@ -387,8 +454,9 @@ fn local_export_authority(
 ) -> Result<EvidenceAuthorityManifest, String> {
     let executable_path = std::env::current_exe()
         .map_err(|error| format!("current executable unavailable: {error}"))?;
-    let executable_bytes = std::fs::read(&executable_path)
-        .map_err(|error| format!("current executable unreadable: {error}"))?;
+    let executable_hash = EXECUTABLE_SHA256
+        .get_or_init(|| hash_file(&executable_path))
+        .clone()?;
     let environment = json!({
         "network_mode": "OFFLINE",
         "proof_level": "OFFLINE_STRICT",
@@ -408,7 +476,7 @@ fn local_export_authority(
         option_env!("AIGC_SOURCE_REVISION")
             .unwrap_or(concat!("aigccore-package-", env!("CARGO_PKG_VERSION"))),
         executable_path.display().to_string(),
-        sha256_hex(&executable_bytes),
+        executable_hash,
         arguments_sha256,
         sha256_hex(&environment_bytes),
         generated_at
@@ -418,6 +486,25 @@ fn local_export_authority(
             .format(format)
             .map_err(|error| error.to_string())?,
     ))
+}
+
+fn hash_file(path: &std::path::Path) -> Result<String, String> {
+    use sha2::Digest;
+    use std::io::Read;
+    let mut file = std::fs::File::open(path)
+        .map_err(|error| format!("current executable unreadable: {error}"))?;
+    let mut hasher = sha2::Sha256::new();
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let count = file
+            .read(&mut buffer)
+            .map_err(|error| format!("current executable unreadable: {error}"))?;
+        if count == 0 {
+            break;
+        }
+        hasher.update(&buffer[..count]);
+    }
+    Ok(hex::encode(hasher.finalize()))
 }
 
 fn read_bound_evidence_authority(
@@ -500,6 +587,27 @@ mod tests {
     }
 
     #[test]
+    fn runtime_guard_removes_work_directory_when_scope_exits() {
+        let guard = RuntimeDirGuard::create().unwrap();
+        let path = guard.path().to_path_buf();
+        assert!(path.is_dir());
+        drop(guard);
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn executable_file_hash_is_streamed_and_matches_sha256() {
+        let path = std::env::temp_dir().join(format!(
+            "aigc-hash-test-{}",
+            RUNTIME_DIR_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::write(&path, vec![0x5a; 150_000]).unwrap();
+        let expected = sha256_hex(&fs::read(&path).unwrap());
+        assert_eq!(hash_file(&path).unwrap(), expected);
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
     fn evidenceos_command_returns_bound_non_live_authority() {
         let result = generate_evidenceos_bundle(EvidenceOsRunInput {
             enabled_capabilities: vec!["Traceability".to_string()],
@@ -511,6 +619,7 @@ mod tests {
             claim_text: "The controlled bundle path was exercised.".to_string(),
         })
         .expect("controlled EvidenceOS export should complete");
+        assert!(std::path::Path::new(&result.bundle_path).is_file());
 
         let authority = &result.evidence_authority;
         let context = EvidenceClaimContext {
@@ -545,12 +654,13 @@ mod tests {
             .expect("exported bundle should be inspectable");
         assert_eq!(summary.overall, "PASS", "{:?}", summary.checks);
 
-        let root = std::path::Path::new(&result.bundle_path)
-            .parent()
-            .unwrap()
-            .join("bundle_root");
         let read_json = |path: &str| -> serde_json::Value {
-            serde_json::from_slice(&fs::read(root.join(path)).unwrap()).unwrap()
+            let file = fs::File::open(&result.bundle_path).unwrap();
+            let mut archive = zip::ZipArchive::new(file).unwrap();
+            let mut entry = archive.by_name(path).unwrap();
+            let mut bytes = Vec::new();
+            std::io::Read::read_to_end(&mut entry, &mut bytes).unwrap();
+            serde_json::from_slice(&bytes).unwrap()
         };
         let policy = read_json("inputs_snapshot/policy_snapshot.json");
         assert_eq!(policy["encryption_at_rest"], false);
@@ -573,14 +683,18 @@ mod tests {
                 env!("AIGC_SOURCE_REVISION")
             )
         );
-        let audit_bytes = fs::read_to_string(root.join("audit_log.ndjson")).unwrap();
+        let audit_bytes = {
+            let file = fs::File::open(&result.bundle_path).unwrap();
+            let mut archive = zip::ZipArchive::new(file).unwrap();
+            let mut entry = archive.by_name("audit_log.ndjson").unwrap();
+            let mut bytes = String::new();
+            std::io::Read::read_to_string(&mut entry, &mut bytes).unwrap();
+            bytes
+        };
         assert!(!audit_bytes.contains("VAULT_ENCRYPTION_STATUS"));
         assert!(!audit_bytes.contains("EGRESS_REQUEST_BLOCKED"));
 
-        let bundle_path = std::path::PathBuf::from(&result.bundle_path);
-        let bundle_root = bundle_path
-            .parent()
-            .expect("bundle should have a runtime parent");
-        let _ = fs::remove_dir_all(bundle_root);
+        assert!(std::path::Path::new(&result.bundle_path).is_file());
+        fs::remove_file(&result.bundle_path).unwrap();
     }
 }
