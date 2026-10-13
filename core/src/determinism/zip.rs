@@ -18,8 +18,7 @@ pub fn zip_dir_deterministic(root_dir: &Path, out_zip: &Path) -> CoreResult<Stri
     let mut entries: Vec<(PathBuf, String)> = Vec::new();
 
     for e in WalkDir::new(root_dir) {
-        let e =
-            e.map_err(|err| CoreError::Io(std::io::Error::new(std::io::ErrorKind::Other, err)))?;
+        let e = e.map_err(|err| CoreError::Io(std::io::Error::other(err)))?;
         let p = e.path();
         if p == root_dir {
             continue;

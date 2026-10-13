@@ -18,7 +18,7 @@ pub fn render_artifact_hashes_csv(mut rows: Vec<ArtifactHashRow>) -> CoreResult<
     });
 
     let mut wtr = csv::WriterBuilder::new().from_writer(vec![]);
-    wtr.write_record(&[
+    wtr.write_record([
         "artifact_id",
         "bundle_rel_path",
         "sha256",
