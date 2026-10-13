@@ -4,7 +4,9 @@ This is the operator path for reproducible local setup, bounded development, ver
 
 ## Bootstrap
 
-Use Node 22, pnpm 10.29.2, and the repository's Rust stable toolchain, then install the frozen dependency graph:
+Use Node 26.11.1 and pnpm 11.28.5, pinned by `.node-version` and
+`package.json`, with the repository's Rust toolchain, then install the frozen
+dependency graph:
 
 ```sh
 pnpm install --frozen-lockfile

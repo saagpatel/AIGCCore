@@ -27,7 +27,7 @@ plan and closure criteria live in [`docs/openssf-best-practices.md`](docs/openss
 - Rust **1.97.1**, pinned in `rust-toolchain.toml` with rustfmt and Clippy
   (install [rustup](https://rustup.rs); Cargo selects the pin automatically).
 - Node.js **26.11.1**, pinned in `.node-version`; the supported major is 26.
-- pnpm **10.29.2**, pinned by `packageManager` in `package.json`.
+- pnpm **11.28.5**, pinned by `packageManager` in `package.json`.
 - Make and the [Tauri platform prerequisites](https://tauri.app/start/prerequisites/)
   for macOS, Windows, or Linux. On Windows, use a Make-compatible shell.
 
@@ -98,10 +98,10 @@ hash chaining, determinism enforcement, and bundle assembly.
 
 | Layer          | Technology                                                                                             |
 | -------------- | ------------------------------------------------------------------------------------------------------ |
-| Desktop shell  | Tauri 2                                                                                                |
+| Desktop shell  | Tauri 2.12                                                                                             |
 | Core logic     | Rust (aes-gcm, sha2, serde)                                                                            |
-| UI             | React + TypeScript                                                                                     |
-| Build          | Vite                                                                                                   |
+| UI             | React 19.3 + TypeScript 5.9                                                                            |
+| Build          | Vite 8.3                                                                                               |
 | Storage        | Vault library in the core crate (SQLite bytes and blob artifacts); the desktop app does not use it yet |
 | Cryptography   | AES-256-GCM, XChaCha20-Poly1305, SHA-256                                                               |
 | Audit chaining | Custom hash-chain canonicalization (Rust)                                                              |
@@ -118,8 +118,8 @@ hash chaining, determinism enforcement, and bundle assembly.
 ### Next steps
 
 Keep future work focused on deterministic bundle validation, audit-chain integrity,
-and offline enforcement. Dependency major upgrades and robustness work are
-separate follow-up waves.
+and offline enforcement. pnpm 11, React 19, Vite 8, Vitest 5, Playwright 1.64,
+and Tauri 2.12 now define the frontend and desktop dependency baseline.
 
 ## Architecture
 
