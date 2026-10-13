@@ -3,7 +3,7 @@ name = "aigc_core_tauri"
 version = "0.1.0"
 description = "AIGC Core desktop shell"
 edition = "2021"
-license = "UNLICENSED"
+license = "MIT"
 
 [[bin]]
 name = "aigc_core_tauri"

@@ -2,10 +2,13 @@
 node_modules/
 dist/
 .vite/
+coverage/
 
 # Tauri / Rust
 target/
 src-tauri/target/
+# Additional platform schemas are generated; tracked schemas remain diff-checked.
+src-tauri/gen/schemas/
 
 # OS / tooling
 .DS_Store

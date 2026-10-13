@@ -16,7 +16,7 @@ use aigc_core::storage::crypto::EncryptionAlgorithm;
 use aigc_core::storage::vault::{VaultConfig, VaultStorage};
 use aigc_core::validator::BundleValidator;
 use serde_json::json;
-use std::path::PathBuf;
+use std::path::Path;
 
 fn controlled_gate_authority(run_id: &str, producer: &str) -> EvidenceAuthorityManifest {
     EvidenceAuthorityManifest::controlled_simulation(
@@ -43,10 +43,14 @@ fn main() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let self_audit_ok = run_pack_validation_cycle(
         "SELF_AUDIT",
-        &tmp.path().join("bundle_root"),
-        &tmp.path().join("bundle_root_2"),
-        &tmp.path().join("evidence_bundle_self_audit_v1.zip"),
-        &tmp.path().join("evidence_bundle_self_audit_v1_2.zip"),
+        (
+            &tmp.path().join("bundle_root"),
+            &tmp.path().join("bundle_root_2"),
+        ),
+        (
+            &tmp.path().join("evidence_bundle_self_audit_v1.zip"),
+            &tmp.path().join("evidence_bundle_self_audit_v1_2.zip"),
+        ),
         make_self_audit_inputs(&tmp.path().join("bundle_root"), policy),
         make_self_audit_inputs(&tmp.path().join("bundle_root_2"), policy),
         policy,
@@ -54,10 +58,14 @@ fn main() {
 
     let evidenceos_ok = run_pack_validation_cycle(
         "EVIDENCEOS",
-        &tmp.path().join("evidenceos_bundle_root"),
-        &tmp.path().join("evidenceos_bundle_root_2"),
-        &tmp.path().join("evidence_bundle_evidenceos_v1.zip"),
-        &tmp.path().join("evidence_bundle_evidenceos_v1_2.zip"),
+        (
+            &tmp.path().join("evidenceos_bundle_root"),
+            &tmp.path().join("evidenceos_bundle_root_2"),
+        ),
+        (
+            &tmp.path().join("evidence_bundle_evidenceos_v1.zip"),
+            &tmp.path().join("evidence_bundle_evidenceos_v1_2.zip"),
+        ),
         make_evidenceos_inputs(policy),
         make_evidenceos_inputs(policy),
         policy,
@@ -70,14 +78,14 @@ fn main() {
 
 fn run_pack_validation_cycle(
     label: &str,
-    bundle_root: &PathBuf,
-    bundle_root_2: &PathBuf,
-    bundle_zip: &PathBuf,
-    bundle_zip_2: &PathBuf,
+    bundle_roots: (&Path, &Path),
+    bundle_zips: (&Path, &Path),
     mut inputs: EvidenceBundleInputs,
     mut inputs_2: EvidenceBundleInputs,
     policy: PolicyMode,
 ) -> bool {
+    let (bundle_root, bundle_root_2) = bundle_roots;
+    let (bundle_zip, bundle_zip_2) = bundle_zips;
     // Build one non-authorizing preflight bundle so the evaluator can compute the
     // report that will be embedded in both deterministic final bundles.
     EvidenceBundleBuilder::build_dir(bundle_root, &inputs).expect("build bundle dir");
@@ -131,7 +139,7 @@ fn run_pack_validation_cycle(
     !any_blocker_fail && summary.overall == "PASS"
 }
 
-fn make_self_audit_inputs(bundle_root: &PathBuf, policy_mode: PolicyMode) -> EvidenceBundleInputs {
+fn make_self_audit_inputs(bundle_root: &Path, policy_mode: PolicyMode) -> EvidenceBundleInputs {
     // Determinism enabled self-audit.
     let determinism_enabled = true;
 

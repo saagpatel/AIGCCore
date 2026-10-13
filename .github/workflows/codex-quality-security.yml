@@ -28,18 +28,12 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
+          node-version-file: .node-version
           cache: pnpm
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable pinned 2026-10-06
+        run: rustup show active-toolchain
       - name: Install dependencies
-        run: |
-          if [ -f package.json ]; then
-            pnpm install --frozen-lockfile || pnpm install
-          fi
-          if [ -f ui/package.json ]; then
-            pnpm -C ui install --frozen-lockfile || pnpm -C ui install
-          fi
+        run: pnpm install --frozen-lockfile
       - name: Ensure cargo-audit when required
         run: |
           if grep -q "cargo audit" .codex/verify.commands; then

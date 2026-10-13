@@ -32,7 +32,7 @@ jobs:
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
+          node-version-file: .node-version
           cache: pnpm
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -44,11 +44,27 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # rustup reads the channel and components from rust-toolchain.toml.
+      - name: Setup pinned Rust
+        run: rustup show active-toolchain
+
+      - name: Check Rust formatting
+        run: cargo fmt --all --check
+
+      - name: Lint Rust
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Test Rust
+        run: cargo test --workspace --locked
+
       - name: Policy checks
         run: node scripts/ci/require-tests-and-docs.mjs
 
       - name: Verify commands
         run: bash .codex/scripts/run_verify_commands.sh
+
+      - name: Check build leaves tracked files unchanged
+        run: git diff --exit-code
 
       - name: Run integration gates
         run: pnpm gate:all

@@ -47,11 +47,11 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
+          node-version-file: .node-version
           cache: pnpm
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable pinned 2026-10-06
+        run: rustup show active-toolchain
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile

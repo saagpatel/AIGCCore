@@ -582,7 +582,7 @@ fn check_artifact_hashes<R: Read + Seek>(
 
     // Verify ordering
     let mut sorted = rows.clone();
-    sorted.sort_by(|a, b| (a.0.clone(), a.1.clone()).cmp(&(b.0.clone(), b.1.clone())));
+    sorted.sort_by_key(|a| (a.0.clone(), a.1.clone()));
     if sorted != rows {
         return fail(
             "CHK.ARTIFACT_HASHES.VERIFY",
@@ -1777,8 +1777,7 @@ fn check_network_proof_source<R: Read + Seek>(
                             .get("endpoint")
                             .and_then(|value| value.as_str())
                             .is_some_and(|value| {
-                                crate::adapters::interface::enforce_loopback_endpoint(value)
-                                    .is_ok()
+                                crate::adapters::interface::enforce_loopback_endpoint(value).is_ok()
                             })
                 })
             });
@@ -2017,18 +2016,9 @@ mod tests {
     #[test]
     fn unused_model_requires_explicit_model_and_adapter_arrays() {
         let cases = [
-            (
-                r#"{"adapter_endpoints":[]}"#,
-                r#"{"model_calls":{}}"#,
-            ),
-            (
-                r#"{"adapter_endpoints":[]}"#,
-                r#"{}"#,
-            ),
-            (
-                r#"{}"#,
-                r#"{"model_calls":[]}"#,
-            ),
+            (r#"{"adapter_endpoints":[]}"#, r#"{"model_calls":{}}"#),
+            (r#"{"adapter_endpoints":[]}"#, r#"{}"#),
+            (r#"{}"#, r#"{"model_calls":[]}"#),
         ];
         for (network, manifest) in cases {
             let mut zip = archive(&[
