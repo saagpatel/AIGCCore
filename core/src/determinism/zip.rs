@@ -1,3 +1,5 @@
+//! Deterministic ZIP output pins member order, timestamps, compression, permissions, and comments.
+
 use crate::error::{CoreError, CoreResult};
 use sha2::{Digest, Sha256};
 use std::fs::File;

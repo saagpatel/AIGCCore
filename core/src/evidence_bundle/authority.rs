@@ -1,3 +1,5 @@
+//! Evidence origins authorize only the bounded claims defined by the matching manifest contract.
+
 use crate::determinism::run_id::sha256_hex;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;

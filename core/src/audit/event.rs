@@ -1,3 +1,5 @@
+//! Event hashes cover the canonical envelope with `event_hash` set to the zero hash.
+
 use crate::determinism::json_canonical;
 use crate::error::{CoreError, CoreResult};
 use serde::{Deserialize, Serialize};

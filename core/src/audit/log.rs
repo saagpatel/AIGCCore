@@ -1,3 +1,5 @@
+//! Reopened logs are accepted only when every canonical event hash and previous-hash link verifies.
+
 use crate::audit::event::{finalize_event, AuditEvent, ZERO_HASH_64};
 use crate::error::{CoreError, CoreResult};
 use serde_json::Value;
