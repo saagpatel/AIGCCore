@@ -18,6 +18,15 @@ minimumReleaseAgeExclude:
   - "@vitest/spy@5.0.4"
   - vitest@5.0.4
 
+# Audit waiver for `pnpm audit --audit-level high` (also run in CI).
+# GHSA-vfj7-8cjw-p6xm: braces <=3.0.3 stack exhaustion on deeply nested patterns.
+#   No patched release exists. Reaches us only through dev tooling (commitizen,
+#   eslint-plugin-tailwindcss) that never handles untrusted input.
+#   Owner: repo maintainer. Expires: 2027-01-13. Remove when braces publishes a fix.
+auditConfig:
+  ignoreGhsas:
+    - GHSA-vfj7-8cjw-p6xm
+
 # Every override below is verified against pnpm-lock.yaml: "Forces" entries change
 # the resolved version if deleted and re-locked; "Guard" entries already match the
 # lockfile and only stop a fresh resolve from picking an older release.
