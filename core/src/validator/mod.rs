@@ -149,6 +149,7 @@ impl BundleValidator {
             ));
         }
         validate_archive_limits(archive_bytes, &entry_limits)?;
+        verify_actual_decompressed_sizes(&mut zip)?;
 
         // Build entry set for existence checks.
         let mut paths: BTreeSet<String> = BTreeSet::new();
@@ -285,6 +286,37 @@ fn validate_archive_limits(archive_bytes: u64, entries: &[(String, u64, u64)]) -
     Ok(())
 }
 
+/// Decompress every entry once, bounded by its declared size, and enforce the
+/// total on bytes actually produced. Declared sizes in the headers are
+/// attacker-controlled, so `validate_archive_limits` alone cannot bound work.
+fn verify_actual_decompressed_sizes<R: Read + Seek>(zip: &mut ZipArchive<R>) -> CoreResult<()> {
+    let mut total_read = 0u64;
+    for index in 0..zip.len() {
+        let entry = zip
+            .by_index(index)
+            .map_err(|error| CoreError::Zip(error.to_string()))?;
+        let declared = entry.size();
+        let name = entry.name().to_string();
+        let read = std::io::copy(
+            &mut entry.take(declared.saturating_add(1)),
+            &mut std::io::sink(),
+        )
+        .map_err(|error| CoreError::Zip(format!("ENTRY_READ_FAILED: {name}: {error}")))?;
+        if read > declared {
+            return Err(CoreError::Zip(format!(
+                "ENTRY_SIZE_MISMATCH: {name} decompresses past its declared size of {declared} bytes"
+            )));
+        }
+        total_read = total_read.saturating_add(read);
+        if total_read > MAX_TOTAL_UNCOMPRESSED_BYTES {
+            return Err(CoreError::Zip(format!(
+                "TOTAL_SIZE_LIMIT: decompressed bytes exceed {MAX_TOTAL_UNCOMPRESSED_BYTES}"
+            )));
+        }
+    }
+    Ok(())
+}
+
 fn check_required_files(paths: &BTreeSet<String>) -> CheckResult {
     let must = [
         "BUNDLE_INFO.json",
@@ -367,11 +399,13 @@ fn read_zip_entry_bytes<R: Read + Seek>(
             f.name()
         )));
     }
+    let declared = f.size();
+    let name = f.name().to_string();
     let mut out = Vec::new();
-    f.take(MAX_ENTRY_BYTES + 1).read_to_end(&mut out)?;
-    if out.len() as u64 > MAX_ENTRY_BYTES {
+    f.take(declared.saturating_add(1)).read_to_end(&mut out)?;
+    if out.len() as u64 > declared {
         return Err(CoreError::Zip(format!(
-            "ENTRY_SIZE_LIMIT: exceeds {MAX_ENTRY_BYTES} bytes"
+            "ENTRY_SIZE_MISMATCH: {name} decompresses past its declared size of {declared} bytes"
         )));
     }
     Ok(out)
