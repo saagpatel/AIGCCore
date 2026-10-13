@@ -10,10 +10,10 @@ name = "aigc_core_tauri"
 path = "src/main.rs"
 
 [build-dependencies]
-tauri-build = { version = "2.6.3", features = [] }
+tauri-build = { version = "2.7.2", features = [] }
 
 [dependencies]
-tauri = { version = "2.11.3", features = [] }
+tauri = { version = "2.12.3", features = [] }
 serde = { version = "1.0.203", features = ["derive"] }
 serde_json = "1.0.120"
 aigc_core = { path = "../core" }
@@ -27,5 +27,5 @@ default = []
 authority-integrity-test-hooks = []
 
 [dev-dependencies]
-tauri = { version = "2.11.3", features = ["test"] }
+tauri = { version = "2.12.3", features = ["test"] }
 zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
