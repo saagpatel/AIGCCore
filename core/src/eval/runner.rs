@@ -317,7 +317,52 @@ fn evaluate_offline_allowlist_gate(bundle_zip: &Path) -> CoreResult<(String, Str
         .map_err(|e| crate::error::CoreError::Zip(e.to_string()))?;
     let mut ndjson = String::new();
     f.read_to_string(&mut ndjson)?;
+    drop(f);
+    let mut network_json = String::new();
+    if let Ok(mut network) = zip.by_name("inputs_snapshot/network_snapshot.json") {
+        network.read_to_string(&mut network_json)?;
+    }
+    if let Ok(network) = serde_json::from_str::<Value>(&network_json) {
+        if policy_declares_no_egress_observation(&ndjson, &network) {
+            return Ok((
+                "NOT_APPLICABLE".into(),
+                "No egress was attempted; offline posture is declared by policy, not measured"
+                    .into(),
+            ));
+        }
+    }
     Ok(evaluate_offline_allowlist_from_ndjson(&ndjson))
+}
+
+fn policy_declares_no_egress_observation(ndjson: &str, network: &Value) -> bool {
+    let declaration = network.get("proof_source").and_then(Value::as_str)
+        == Some("POLICY_DECLARATION")
+        && network.get("network_mode").and_then(Value::as_str) == Some("OFFLINE")
+        && network.get("proof_level").and_then(Value::as_str) == Some("OFFLINE_STRICT")
+        && network
+            .get("ui_remote_fetch_disabled")
+            .and_then(Value::as_bool)
+            == Some(true)
+        && network
+            .get("allowlist")
+            .and_then(Value::as_array)
+            .is_some_and(|items| items.is_empty())
+        && network
+            .get("adapter_endpoints")
+            .and_then(Value::as_array)
+            .is_some_and(|items| items.is_empty());
+    declaration
+        && ndjson
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .all(|line| {
+                serde_json::from_str::<Value>(line).is_ok_and(|event| {
+                    !event
+                        .get("event_type")
+                        .and_then(Value::as_str)
+                        .is_some_and(|event_type| event_type.starts_with("EGRESS_REQUEST_"))
+                })
+            })
 }
 
 fn evaluate_evidenceos_outputs_gate(bundle_zip: &Path) -> CoreResult<(String, String)> {
@@ -534,6 +579,30 @@ mod tests {
     use crate::policy::types::PolicyMode;
     use crate::validator::ValidationSummary;
 
+    #[test]
+    fn unused_egress_is_not_reported_as_runtime_proof() {
+        let mut network = serde_json::to_value(
+            crate::policy::network_snapshot::NetworkSnapshot::offline_policy(),
+        )
+        .unwrap();
+        let audit = r#"{"event_type":"NETWORK_MODE_SET"}"#;
+        assert!(super::policy_declares_no_egress_observation(
+            audit, &network
+        ));
+        assert!(!super::policy_declares_no_egress_observation(
+            r#"{"event_type":"EGRESS_REQUEST_ALLOWED","details":{}}"#,
+            &network
+        ));
+        assert!(!super::policy_declares_no_egress_observation(
+            "invalid JSON",
+            &network
+        ));
+        network.as_object_mut().unwrap().remove("proof_source");
+        assert!(!super::policy_declares_no_egress_observation(
+            audit, &network
+        ));
+    }
+
     fn map_single_gate(
         gate_id: &str,
         severity: &str,
@@ -666,11 +735,7 @@ mod tests {
             .expect("audit gate");
         audit_gate.result = "NOT_APPLICABLE".to_string();
         let not_applicable_error = runner
-            .report_from_results(
-                &unapproved_not_applicable,
-                PolicyMode::STRICT,
-                "self_audit",
-            )
+            .report_from_results(&unapproved_not_applicable, PolicyMode::STRICT, "self_audit")
             .expect_err("NOT_APPLICABLE must be gate-specific");
         assert!(not_applicable_error
             .to_string()
@@ -696,7 +761,9 @@ mod tests {
                 "",
             )
             .expect_err("pack identity is required");
-        assert!(missing_pack_error.to_string().contains("pack_id is required"));
+        assert!(missing_pack_error
+            .to_string()
+            .contains("pack_id is required"));
     }
 
     #[test]

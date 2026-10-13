@@ -17,7 +17,7 @@ pub enum ExportBlockReason {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExportGateInputs {
     pub policy_mode: PolicyMode,
-    pub pinning_level: PinningLevel,
+    pub pinning_level: Option<PinningLevel>,
     pub citations_required_passed: bool,
     pub redactions_required_passed: bool,
     pub blocker_gate_failures: Vec<String>,
@@ -35,13 +35,14 @@ pub fn evaluate_export_gate(i: &ExportGateInputs) -> Result<(), ExportBlockReaso
     }
 
     // Pinning rules from lock addendum §7.
-    let pin_ok = match i.policy_mode {
-        PolicyMode::STRICT | PolicyMode::BALANCED => {
-            i.pinning_level == PinningLevel::CRYPTO_PINNED
-                || i.pinning_level == PinningLevel::VERSION_PINNED
-        }
-        PolicyMode::DRAFT_ONLY => true,
-    };
+    let pin_ok = i.pinning_level.is_none()
+        || match i.policy_mode {
+            PolicyMode::STRICT | PolicyMode::BALANCED => {
+                i.pinning_level == Some(PinningLevel::CRYPTO_PINNED)
+                    || i.pinning_level == Some(PinningLevel::VERSION_PINNED)
+            }
+            PolicyMode::DRAFT_ONLY => true,
+        };
     if !pin_ok {
         return Err(ExportBlockReason::INSUFFICIENT_PINNING);
     }

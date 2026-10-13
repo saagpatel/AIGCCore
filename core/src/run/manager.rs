@@ -18,7 +18,7 @@ pub struct ExportRequest {
     pub policy_mode: PolicyMode,
     pub network_mode: NetworkMode,
     pub proof_level: ProofLevel,
-    pub pinning_level: PinningLevel,
+    pub pinning_level: Option<PinningLevel>,
     pub requested_by: String, // user|system
 }
 
@@ -171,7 +171,10 @@ impl RunManager {
 
         if let Err(reason) = evaluate_export_gate(&ExportGateInputs {
             policy_mode: req.policy_mode,
-            pinning_level: req.pinning_level,
+            pinning_level: bundle_inputs
+                .model_snapshot
+                .as_ref()
+                .map(|model| model.pinning_level),
             citations_required_passed: citations_ok,
             redactions_required_passed: redactions_ok,
             blocker_gate_failures: blocker_fails.clone(),

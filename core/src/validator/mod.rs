@@ -67,7 +67,7 @@ impl ValidationSummary {
     }
 
     pub fn vault_crypto_gate_result(&self) -> String {
-        // Phase 2: we validate policy_snapshot says encryption_at_rest=true and algorithm allowed.
+        // This gate passes when the bundle truthfully records that encryption was unused.
         self.result_for_check("CHK.VAULT_CRYPTO.POLICY_SNAPSHOT").0
     }
 
@@ -132,6 +132,15 @@ impl BundleValidator {
             paths.insert(f.name().to_string());
         }
 
+        let legacy_bundle = match read_zip_entry_json(&mut zip, "BUNDLE_INFO.json") {
+            Ok(info) => info
+                .get("bundle_version")
+                .and_then(|v| v.as_str())
+                .map(is_legacy_bundle_version)
+                .unwrap_or(true),
+            Err(_) => false,
+        };
+
         let mut checks_out: Vec<CheckResult> = Vec::new();
 
         // CHK.BUNDLE.REQUIRED_FILES
@@ -151,7 +160,22 @@ impl BundleValidator {
                 "ui_remote_fetch_disabled",
                 "adapter_endpoints",
             ],
+            legacy_bundle,
         ));
+
+        // CHK.BUNDLE.VERSION_TRUTHFULNESS
+        checks_out.push(if legacy_bundle {
+            CheckResult {
+                check_id: "CHK.BUNDLE.VERSION_TRUTHFULNESS".to_string(),
+                severity: "INFO".to_string(),
+                result: "PASS".to_string(),
+                message:
+                    "legacy bundle inspected; its snapshot claims cannot be treated as truthful"
+                        .to_string(),
+            }
+        } else {
+            pass("CHK.BUNDLE.VERSION_TRUTHFULNESS")
+        });
 
         // CHK.AUDIT.REQUIRED_KEYS_AND_CHAIN
         checks_out.push(check_audit_chain(&mut zip));
@@ -183,14 +207,10 @@ impl BundleValidator {
         // Vault crypto minimal policy snapshot check (gate expects it)
         checks_out.push(check_vault_crypto_policy_snapshot(&mut zip));
 
-        let overall = if checks_out
-            .iter()
-            .any(|c| c.severity == "BLOCKER" && c.result != "PASS")
-        {
-            "FAIL"
-        } else {
-            "PASS"
-        };
+        checks_out.push(check_run_snapshot_consistency(&mut zip));
+        checks_out.push(check_network_proof_source(&mut zip, legacy_bundle));
+
+        let overall = overall_validation_status(&checks_out, legacy_bundle);
 
         Ok(ValidationSummary {
             checklist_version: self.checklist.checklist_version.clone(),
@@ -311,12 +331,10 @@ fn check_evidence_authority_contract<R: Read + Seek>(zip: &mut ZipArchive<R>) ->
         );
     }
     if bundle_info.schema_versions.run_manifest != "RUN_MANIFEST_V2" {
-        return fail(
-            format!(
-                "unsupported run manifest schema {}; RUN_MANIFEST_V2 is required for evidence authority",
-                bundle_info.schema_versions.run_manifest
-            ),
-        );
+        return fail(format!(
+            "unsupported run manifest schema {}; RUN_MANIFEST_V2 is required for evidence authority",
+            bundle_info.schema_versions.run_manifest
+        ));
     }
     let run_manifest: RunManifest = match read_zip_entry_json(zip, "run_manifest.json")
         .and_then(|value| Ok(serde_json::from_value(value)?))
@@ -353,6 +371,7 @@ fn check_json_required_fields<R: Read + Seek>(
     zip: &mut ZipArchive<R>,
     path: &str,
     required: &[&str],
+    legacy_bundle: bool,
 ) -> CheckResult {
     let v = match read_zip_entry_json(zip, path) {
         Ok(v) => v,
@@ -370,6 +389,9 @@ fn check_json_required_fields<R: Read + Seek>(
         if v.get(*k).is_none() {
             missing.push((*k).to_string());
         }
+    }
+    if !legacy_bundle && v.get("proof_source").is_none() {
+        missing.push("proof_source".to_string());
     }
     // Lock addendum: ui_remote_fetch_disabled_must_be_true and adapter loopback validation results present.
     if v.get("ui_remote_fetch_disabled").and_then(|x| x.as_bool()) != Some(true) {
@@ -479,7 +501,7 @@ fn check_audit_chain<R: Read + Seek>(zip: &mut ZipArchive<R>) -> CheckResult {
                 return fail(
                     "CHK.AUDIT.REQUIRED_KEYS_AND_CHAIN",
                     format!("canonicalize error: {}", e),
-                )
+                );
             }
         };
         let mut h = sha2::Sha256::new();
@@ -511,7 +533,7 @@ fn check_artifact_hashes<R: Read + Seek>(
             return fail(
                 "CHK.ARTIFACT_HASHES.VERIFY",
                 format!("failed to read artifact_hashes.csv: {}", e),
-            )
+            );
         }
     };
     let s = String::from_utf8_lossy(&bytes).to_string();
@@ -523,7 +545,7 @@ fn check_artifact_hashes<R: Read + Seek>(
             return fail(
                 "CHK.ARTIFACT_HASHES.VERIFY",
                 format!("failed to read policy_snapshot: {}", e),
-            )
+            );
         }
     };
     let profile = policy
@@ -541,12 +563,18 @@ fn check_artifact_hashes<R: Read + Seek>(
                 return fail(
                     "CHK.ARTIFACT_HASHES.VERIFY",
                     format!("csv parse error: {}", e),
-                )
+                );
             }
         };
         let artifact_id = rec.get(0).unwrap_or("").to_string();
         let bundle_rel_path = rec.get(1).unwrap_or("").to_string();
         let sha256 = rec.get(2).unwrap_or("").to_string();
+        if !is_sha256_hex(&sha256) {
+            return fail(
+                "CHK.ARTIFACT_HASHES.VERIFY",
+                format!("malformed declared sha256 for {}", bundle_rel_path),
+            );
+        }
         let bytes_s = rec.get(3).unwrap_or("0");
         let bytes_v: u64 = bytes_s.parse().unwrap_or(0);
         rows.push((artifact_id, bundle_rel_path, sha256, bytes_v));
@@ -560,6 +588,40 @@ fn check_artifact_hashes<R: Read + Seek>(
             "CHK.ARTIFACT_HASHES.VERIFY",
             "rows not sorted by artifact_id then path".to_string(),
         );
+    }
+
+    // Declared input hashes in both canonical JSON indexes must be well-formed.
+    for (path, collection) in [
+        ("run_manifest.json", "inputs"),
+        ("inputs_snapshot/artifact_list.json", "artifacts"),
+    ] {
+        let index = match read_zip_entry_json(zip, path) {
+            Ok(value) => value,
+            Err(error) => {
+                return fail(
+                    "CHK.ARTIFACT_HASHES.VERIFY",
+                    format!("failed to read {path}: {error}"),
+                );
+            }
+        };
+        if let Some(entries) = index.get(collection).and_then(|value| value.as_array()) {
+            for entry in entries {
+                if let Some(hash_value) = entry.get("sha256") {
+                    let Some(hash) = hash_value.as_str() else {
+                        return fail(
+                            "CHK.ARTIFACT_HASHES.VERIFY",
+                            format!("declared sha256 is not a string in {path}"),
+                        );
+                    };
+                    if !is_sha256_hex(hash) {
+                        return fail(
+                            "CHK.ARTIFACT_HASHES.VERIFY",
+                            format!("malformed declared sha256 in {path}"),
+                        );
+                    }
+                }
+            }
+        }
     }
 
     // Verify each path present and hash matches when path is non-empty.
@@ -579,7 +641,7 @@ fn check_artifact_hashes<R: Read + Seek>(
                 return fail(
                     "CHK.ARTIFACT_HASHES.VERIFY",
                     format!("failed to read {}: {}", p, e),
-                )
+                );
             }
         };
         if entry_bytes.len() as u64 != *bytes_expected {
@@ -620,9 +682,12 @@ fn check_model_pinning<R: Read + Seek>(zip: &mut ZipArchive<R>, policy: PolicyMo
             return fail(
                 "CHK.MODEL.PINNING_LEVEL",
                 format!("failed to read model_snapshot: {}", e),
-            )
+            );
         }
     };
+    if v.is_null() {
+        return pass("CHK.MODEL.PINNING_LEVEL");
+    }
     let lvl = v
         .get("pinning_level")
         .and_then(|x| x.as_str())
@@ -642,6 +707,136 @@ fn check_model_pinning<R: Read + Seek>(zip: &mut ZipArchive<R>, policy: PolicyMo
             "CHK.MODEL.PINNING_LEVEL",
             format!("pinning_level {} insufficient for policy", lvl),
         )
+    }
+}
+
+fn check_run_snapshot_consistency<R: Read + Seek>(zip: &mut ZipArchive<R>) -> CheckResult {
+    let model = match read_zip_entry_json(zip, "inputs_snapshot/model_snapshot.json") {
+        Ok(value) => value,
+        Err(error) => {
+            return fail(
+                "CHK.RUN.SNAPSHOT_CONSISTENCY",
+                format!("failed to read model snapshot: {error}"),
+            );
+        }
+    };
+    let network = match read_zip_entry_json(zip, "inputs_snapshot/network_snapshot.json") {
+        Ok(value) => value,
+        Err(error) => {
+            return fail(
+                "CHK.RUN.SNAPSHOT_CONSISTENCY",
+                format!("failed to read network snapshot: {error}"),
+            );
+        }
+    };
+    let manifest = match read_zip_entry_json(zip, "run_manifest.json") {
+        Ok(value) => value,
+        Err(error) => {
+            return fail(
+                "CHK.RUN.SNAPSHOT_CONSISTENCY",
+                format!("failed to read run manifest: {error}"),
+            );
+        }
+    };
+    let Some(endpoints) = network.get("adapter_endpoints").and_then(|v| v.as_array()) else {
+        return fail(
+            "CHK.RUN.SNAPSHOT_CONSISTENCY",
+            "adapter_endpoints must be an array".to_string(),
+        );
+    };
+    let Some(calls) = manifest.get("model_calls").and_then(|v| v.as_array()) else {
+        return fail(
+            "CHK.RUN.SNAPSHOT_CONSISTENCY",
+            "model_calls must be an array".to_string(),
+        );
+    };
+    if model.is_null() {
+        if !endpoints.is_empty() || !calls.is_empty() {
+            return fail(
+                "CHK.RUN.SNAPSHOT_CONSISTENCY",
+                "model is absent but adapter endpoints or model calls were recorded".to_string(),
+            );
+        }
+        return pass("CHK.RUN.SNAPSHOT_CONSISTENCY");
+    }
+    let endpoint = model
+        .get("adapter_endpoint")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let model_id = model.get("model_id").and_then(|v| v.as_str()).unwrap_or("");
+    let adapter_version = model
+        .get("adapter_version")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if endpoint.is_empty() || model_id.is_empty() || adapter_version.is_empty() {
+        return fail(
+            "CHK.RUN.SNAPSHOT_CONSISTENCY",
+            "model snapshot is missing endpoint, model_id, or adapter_version".to_string(),
+        );
+    }
+    if endpoints.len() != 1
+        || endpoints[0].get("endpoint").and_then(|v| v.as_str()) != Some(endpoint)
+    {
+        return fail(
+            "CHK.RUN.SNAPSHOT_CONSISTENCY",
+            "model endpoint and adapter_endpoints must match exactly".to_string(),
+        );
+    }
+    if crate::adapters::interface::enforce_loopback_endpoint(endpoint).is_err() {
+        return fail(
+            "CHK.RUN.SNAPSHOT_CONSISTENCY",
+            "model adapter endpoint is not loopback".to_string(),
+        );
+    }
+    if calls.is_empty()
+        || calls.iter().any(|call| {
+            call.get("model_id").and_then(|v| v.as_str()) != Some(model_id)
+                || call.get("adapter_version").and_then(|v| v.as_str()) != Some(adapter_version)
+        })
+    {
+        return fail(
+            "CHK.RUN.SNAPSHOT_CONSISTENCY",
+            "model calls are absent or disagree with model/version snapshot".to_string(),
+        );
+    }
+    pass("CHK.RUN.SNAPSHOT_CONSISTENCY")
+}
+
+fn is_sha256_hex(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+fn is_legacy_bundle_version(version: &str) -> bool {
+    let mut parts = version.split('.').map(str::parse::<u64>);
+    let (Some(Ok(major)), Some(Ok(minor)), Some(Ok(patch)), None) =
+        (parts.next(), parts.next(), parts.next(), parts.next())
+    else {
+        return true;
+    };
+    (major, minor, patch) < (1, 1, 0)
+}
+
+fn overall_validation_status(checks: &[CheckResult], legacy_bundle: bool) -> &'static str {
+    let has_blocker_failure = checks.iter().any(|check| {
+        check.severity == "BLOCKER"
+            && check.result != "PASS"
+            && !(legacy_bundle
+                && matches!(
+                    check.check_id.as_str(),
+                    "CHK.VAULT_CRYPTO.POLICY_SNAPSHOT"
+                        | "CHK.RUN.SNAPSHOT_CONSISTENCY"
+                        | "CHK.NETWORK.PROOF_SOURCE"
+                ))
+    });
+    if has_blocker_failure {
+        "FAIL"
+    } else if legacy_bundle {
+        "LEGACY_UNVERIFIABLE"
+    } else {
+        "PASS"
     }
 }
 
@@ -668,7 +863,7 @@ fn check_citations_strict<R: Read + Seek>(
             return fail(
                 "CHK.CITATIONS.STRICT",
                 "missing citations_map.json".to_string(),
-            )
+            );
         }
     };
     let v = match read_zip_entry_json(zip, &citations_path) {
@@ -677,7 +872,7 @@ fn check_citations_strict<R: Read + Seek>(
             return fail(
                 "CHK.CITATIONS.STRICT",
                 format!("failed to read citations_map: {}", e),
-            )
+            );
         }
     };
     let schema = v
@@ -782,7 +977,7 @@ fn check_redaction_policy_gate<R: Read + Seek>(
             return fail(
                 "CHK.REDACTION.POLICY_GATE",
                 format!("failed to read redactions_map: {}", e),
-            )
+            );
         }
     };
     let schema = v
@@ -805,7 +1000,7 @@ fn check_redaction_policy_gate<R: Read + Seek>(
             return fail(
                 "CHK.REDACTION.POLICY_GATE",
                 "missing citations_map.json".to_string(),
-            )
+            );
         }
     };
     let citations = match read_zip_entry_json(zip, &citations_path) {
@@ -814,7 +1009,7 @@ fn check_redaction_policy_gate<R: Read + Seek>(
             return fail(
                 "CHK.REDACTION.POLICY_GATE",
                 format!("failed to read citations_map: {}", e),
-            )
+            );
         }
     };
     let artifact_list = match read_zip_entry_json(zip, "inputs_snapshot/artifact_list.json") {
@@ -823,7 +1018,7 @@ fn check_redaction_policy_gate<R: Read + Seek>(
             return fail(
                 "CHK.REDACTION.POLICY_GATE",
                 format!("failed to read artifact_list.json: {}", e),
-            )
+            );
         }
     };
 
@@ -997,7 +1192,7 @@ fn check_eval_report<R: Read + Seek>(zip: &mut ZipArchive<R>, policy: PolicyMode
             return fail(
                 "CHK.EVAL.REPORT_AND_GATES",
                 format!("failed to read eval_report.json: {}", error),
-            )
+            );
         }
     };
     let manifest = match read_zip_entry_json(zip, "run_manifest.json") {
@@ -1006,16 +1201,19 @@ fn check_eval_report<R: Read + Seek>(zip: &mut ZipArchive<R>, policy: PolicyMode
             return fail(
                 "CHK.EVAL.REPORT_AND_GATES",
                 format!("failed to read run_manifest.json: {}", error),
-            )
+            );
         }
     };
-    let manifest_gate_status = match manifest.pointer("/eval/gate_status").and_then(|v| v.as_str()) {
+    let manifest_gate_status = match manifest
+        .pointer("/eval/gate_status")
+        .and_then(|v| v.as_str())
+    {
         Some(status) => status,
         None => {
             return fail(
                 "CHK.EVAL.REPORT_AND_GATES",
                 "run_manifest.json is missing string eval.gate_status".to_string(),
-            )
+            );
         }
     };
     let bundle_info = match read_zip_entry_json(zip, "BUNDLE_INFO.json") {
@@ -1024,7 +1222,7 @@ fn check_eval_report<R: Read + Seek>(zip: &mut ZipArchive<R>, policy: PolicyMode
             return fail(
                 "CHK.EVAL.REPORT_AND_GATES",
                 format!("failed to read BUNDLE_INFO.json: {}", error),
-            )
+            );
         }
     };
     let pack_id = match bundle_info.get("pack_id").and_then(|v| v.as_str()) {
@@ -1033,7 +1231,7 @@ fn check_eval_report<R: Read + Seek>(zip: &mut ZipArchive<R>, policy: PolicyMode
             return fail(
                 "CHK.EVAL.REPORT_AND_GATES",
                 "BUNDLE_INFO.json is missing string pack_id".to_string(),
-            )
+            );
         }
     };
 
@@ -1052,7 +1250,7 @@ fn check_eval_report_preflight<R: Read + Seek>(zip: &mut ZipArchive<R>) -> Check
             return fail(
                 "CHK.EVAL.REPORT_AND_GATES",
                 format!("failed to read preflight eval_report.json: {}", error),
-            )
+            );
         }
     };
     if report.registry_version != "gates_registry_v3" {
@@ -1084,7 +1282,7 @@ fn validate_eval_report(
             return Err(format!(
                 "legacy {} is inspectable but non-authorizing; re-evaluate with gates_registry_v3",
                 report.registry_version
-            ))
+            ));
         }
         other => return Err(format!("unsupported registry_version {}", other)),
     }
@@ -1240,7 +1438,7 @@ fn check_zip_determinism<R: Read + Seek>(zip: &mut ZipArchive<R>) -> CheckResult
             return fail(
                 "CHK.DETERMINISM.ZIP_RULES",
                 format!("failed to read policy_snapshot: {}", e),
-            )
+            );
         }
     };
     let determinism_enabled = policy
@@ -1271,7 +1469,7 @@ fn check_zip_determinism<R: Read + Seek>(zip: &mut ZipArchive<R>) -> CheckResult
             return fail(
                 "CHK.DETERMINISM.ZIP_RULES",
                 "failed to construct fixed timestamp for comparison".to_string(),
-            )
+            );
         }
     };
 
@@ -1283,7 +1481,7 @@ fn check_zip_determinism<R: Read + Seek>(zip: &mut ZipArchive<R>) -> CheckResult
                 return fail(
                     "CHK.DETERMINISM.ZIP_RULES",
                     format!("zip read error: {}", e),
-                )
+                );
             }
         };
         names.push(f.name().to_string());
@@ -1300,7 +1498,7 @@ fn check_zip_determinism<R: Read + Seek>(zip: &mut ZipArchive<R>) -> CheckResult
                 return fail(
                     "CHK.DETERMINISM.ZIP_RULES",
                     format!("entry {} missing last_modified timestamp", f.name()),
-                )
+                );
             }
         };
         if lm != fixed_time {
@@ -1344,24 +1542,78 @@ fn check_vault_crypto_policy_snapshot<R: Read + Seek>(zip: &mut ZipArchive<R>) -
             return fail(
                 "CHK.VAULT_CRYPTO.POLICY_SNAPSHOT",
                 format!("failed to read policy_snapshot: {}", e),
-            )
+            );
         }
     };
-    let enc = v
-        .get("encryption_at_rest")
-        .and_then(|x| x.as_bool())
+    let Some(enc) = v.get("encryption_at_rest").and_then(|x| x.as_bool()) else {
+        return fail(
+            "CHK.VAULT_CRYPTO.POLICY_SNAPSHOT",
+            "encryption_at_rest must be present and boolean".to_string(),
+        );
+    };
+    let alg_value = v.get("encryption_algorithm");
+    if let Some(value) = alg_value {
+        if !value.is_null() && !value.is_string() {
+            return fail(
+                "CHK.VAULT_CRYPTO.POLICY_SNAPSHOT",
+                "encryption_algorithm must be a string or null".to_string(),
+            );
+        }
+    }
+    let alg = alg_value.and_then(|x| x.as_str());
+    let accepted_alg = alg
+        .map(|value| value == "XCHACHA20_POLY1305" || value == "AES_256_GCM")
         .unwrap_or(false);
-    let alg = v
-        .get("encryption_algorithm")
-        .and_then(|x| x.as_str())
-        .unwrap_or("");
-    let ok_alg = alg == "XCHACHA20_POLY1305" || alg == "AES_256_GCM";
-    if !(enc && ok_alg) {
+    if !enc && alg.is_some() {
         fail(
             "CHK.VAULT_CRYPTO.POLICY_SNAPSHOT",
-            "encryption_at_rest or algorithm invalid".to_string(),
+            "encryption algorithm is present while encryption_at_rest is false".to_string(),
+        )
+    } else if !enc {
+        let events = vault_status_events(zip);
+        if events.iter().any(|event| {
+            event
+                .get("details")
+                .and_then(|d| d.get("encryption_at_rest"))
+                .and_then(|x| x.as_bool())
+                == Some(true)
+        }) {
+            fail(
+                "CHK.VAULT_CRYPTO.POLICY_SNAPSHOT",
+                "vault status claims encryption while snapshot says it was unused".to_string(),
+            )
+        } else {
+            pass("CHK.VAULT_CRYPTO.POLICY_SNAPSHOT")
+        }
+    } else if !accepted_alg {
+        fail(
+            "CHK.VAULT_CRYPTO.POLICY_SNAPSHOT",
+            "encryption_at_rest requires an accepted encryption algorithm".to_string(),
         )
     } else {
+        let manifest = match read_zip_entry_json(zip, "run_manifest.json") {
+            Ok(value) => value,
+            Err(error) => {
+                return fail(
+                    "CHK.VAULT_CRYPTO.POLICY_SNAPSHOT",
+                    format!("failed to read run_manifest.json: {error}"),
+                );
+            }
+        };
+        let run_id = manifest
+            .get("run_id")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
+        let vault_id = manifest
+            .get("vault_id")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
+        if run_id.is_empty() || vault_id.is_empty() {
+            return fail(
+                "CHK.VAULT_CRYPTO.POLICY_SNAPSHOT",
+                "encrypted vault evidence requires manifest run_id and vault_id".to_string(),
+            );
+        }
         // Ensure audit has VAULT_ENCRYPTION_STATUS and accepted key_storage values.
         let bytes = match read_zip_entry_bytes(zip, "audit_log.ndjson") {
             Ok(b) => b,
@@ -1369,7 +1621,7 @@ fn check_vault_crypto_policy_snapshot<R: Read + Seek>(zip: &mut ZipArchive<R>) -
                 return fail(
                     "CHK.VAULT_CRYPTO.POLICY_SNAPSHOT",
                     format!("failed to read audit_log.ndjson: {}", e),
-                )
+                );
             }
         };
         let s = String::from_utf8_lossy(&bytes);
@@ -1388,7 +1640,21 @@ fn check_vault_crypto_policy_snapshot<R: Read + Seek>(zip: &mut ZipArchive<R>) -
                     .and_then(|d| d.get("key_storage"))
                     .and_then(|x| x.as_str())
                     .unwrap_or("");
-                if ks == "MACOS_KEYCHAIN" || ks == "WINDOWS_DPAPI" || ks == "FILE_FALLBACK" {
+                let event_alg = v
+                    .get("details")
+                    .and_then(|d| d.get("algorithm"))
+                    .and_then(|x| x.as_str());
+                let event_encrypted = v
+                    .get("details")
+                    .and_then(|d| d.get("encryption_at_rest"))
+                    .and_then(|x| x.as_bool());
+                let ids_match = v.get("run_id").and_then(|x| x.as_str()) == Some(run_id)
+                    && v.get("vault_id").and_then(|x| x.as_str()) == Some(vault_id);
+                if (ks == "MACOS_KEYCHAIN" || ks == "WINDOWS_DPAPI" || ks == "FILE_FALLBACK")
+                    && event_encrypted == Some(true)
+                    && event_alg == alg
+                    && ids_match
+                {
                     found = true;
                     break;
                 }
@@ -1401,6 +1667,101 @@ fn check_vault_crypto_policy_snapshot<R: Read + Seek>(zip: &mut ZipArchive<R>) -
             );
         }
         pass("CHK.VAULT_CRYPTO.POLICY_SNAPSHOT")
+    }
+}
+
+fn vault_status_events<R: Read + Seek>(zip: &mut ZipArchive<R>) -> Vec<serde_json::Value> {
+    let Ok(manifest) = read_zip_entry_json(zip, "run_manifest.json") else {
+        return Vec::new();
+    };
+    let run_id = manifest.get("run_id").and_then(|value| value.as_str());
+    let vault_id = manifest.get("vault_id").and_then(|value| value.as_str());
+    if run_id.is_none_or(str::is_empty) || vault_id.is_none_or(str::is_empty) {
+        return Vec::new();
+    }
+    let Ok(bytes) = read_zip_entry_bytes(zip, "audit_log.ndjson") else {
+        return Vec::new();
+    };
+    String::from_utf8_lossy(&bytes)
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .filter(|event| {
+            event.get("event_type").and_then(|value| value.as_str())
+                == Some("VAULT_ENCRYPTION_STATUS")
+                && event.get("run_id").and_then(|value| value.as_str()) == run_id
+                && event.get("vault_id").and_then(|value| value.as_str()) == vault_id
+        })
+        .collect()
+}
+
+fn check_network_proof_source<R: Read + Seek>(
+    zip: &mut ZipArchive<R>,
+    legacy_bundle: bool,
+) -> CheckResult {
+    let network = match read_zip_entry_json(zip, "inputs_snapshot/network_snapshot.json") {
+        Ok(value) => value,
+        Err(error) => {
+            return fail(
+                "CHK.NETWORK.PROOF_SOURCE",
+                format!("failed to read network snapshot: {error}"),
+            );
+        }
+    };
+    let Some(source) = network.get("proof_source").and_then(|value| value.as_str()) else {
+        return if legacy_bundle {
+            CheckResult {
+                check_id: "CHK.NETWORK.PROOF_SOURCE".to_string(),
+                severity: "INFO".to_string(),
+                result: "PASS".to_string(),
+                message:
+                    "legacy network snapshot has no proof_source; its claims remain unverifiable"
+                        .to_string(),
+            }
+        } else {
+            fail(
+                "CHK.NETWORK.PROOF_SOURCE",
+                "proof_source must be POLICY_DECLARATION".to_string(),
+            )
+        };
+    };
+    if source != "POLICY_DECLARATION" {
+        return fail(
+            "CHK.NETWORK.PROOF_SOURCE",
+            format!("unsupported proof_source {source}"),
+        );
+    }
+    let offline = network.get("network_mode").and_then(|value| value.as_str()) == Some("OFFLINE")
+        && network.get("proof_level").and_then(|value| value.as_str()) == Some("OFFLINE_STRICT")
+        && network
+            .get("allowlist")
+            .and_then(|value| value.as_array())
+            .is_some_and(Vec::is_empty)
+        && network
+            .get("ui_remote_fetch_disabled")
+            .and_then(|value| value.as_bool())
+            == Some(true)
+        && network
+            .get("adapter_endpoints")
+            .and_then(|value| value.as_array())
+            .is_some_and(|endpoints| {
+                endpoints.iter().all(|endpoint| {
+                    endpoint
+                        .get("is_loopback")
+                        .and_then(|value| value.as_bool())
+                        == Some(true)
+                        && endpoint
+                            .get("endpoint")
+                            .and_then(|value| value.as_str())
+                            .is_some_and(|value| {
+                                crate::adapters::interface::enforce_loopback_endpoint(value)
+                                    .is_ok()
+                            })
+                })
+            });
+    if offline {
+        pass("CHK.NETWORK.PROOF_SOURCE")
+    } else {
+        fail("CHK.NETWORK.PROOF_SOURCE", "POLICY_DECLARATION requires OFFLINE/OFFLINE_STRICT, an empty allowlist, and disabled UI remote fetch".to_string())
     }
 }
 
@@ -1424,9 +1785,342 @@ fn fail(check_id: &str, msg: String) -> CheckResult {
 
 #[cfg(test)]
 mod tests {
-    use super::{validate_eval_report, ValidationSummary};
+    use super::{
+        check_model_pinning, check_network_proof_source, check_run_snapshot_consistency,
+        check_vault_crypto_policy_snapshot, is_legacy_bundle_version, is_sha256_hex,
+        overall_validation_status, validate_eval_report, ValidationSummary,
+    };
     use crate::evidence_bundle::schemas::{EvalGateResult, EvalReport};
     use crate::policy::types::PolicyMode;
+    use std::io::{Cursor, Write};
+    use zip::{write::FileOptions, ZipArchive, ZipWriter};
+
+    fn archive(entries: &[(&str, &str)]) -> ZipArchive<Cursor<Vec<u8>>> {
+        let cursor = Cursor::new(Vec::new());
+        let mut writer = ZipWriter::new(cursor);
+        for (path, contents) in entries {
+            writer
+                .start_file(path, FileOptions::<()>::default())
+                .unwrap();
+            writer.write_all(contents.as_bytes()).unwrap();
+        }
+        ZipArchive::new(writer.finish().unwrap()).unwrap()
+    }
+
+    #[test]
+    fn truthful_unused_crypto_and_no_model_are_accepted() {
+        let mut zip = archive(&[
+            (
+                "inputs_snapshot/policy_snapshot.json",
+                r#"{"encryption_at_rest":false,"encryption_algorithm":null}"#,
+            ),
+            ("audit_log.ndjson", ""),
+            ("inputs_snapshot/model_snapshot.json", "null"),
+            (
+                "inputs_snapshot/network_snapshot.json",
+                r#"{"adapter_endpoints":[]}"#,
+            ),
+            ("run_manifest.json", r#"{"model_calls":[]}"#),
+        ]);
+        assert_eq!(check_vault_crypto_policy_snapshot(&mut zip).result, "PASS");
+        assert_eq!(check_run_snapshot_consistency(&mut zip).result, "PASS");
+        assert_eq!(
+            check_model_pinning(&mut zip, PolicyMode::STRICT).result,
+            "PASS"
+        );
+    }
+
+    #[test]
+    fn crypto_claim_requires_matching_encrypted_vault_status() {
+        let mut zip = archive(&[
+            (
+                "inputs_snapshot/policy_snapshot.json",
+                r#"{"encryption_at_rest":true,"encryption_algorithm":"AES_256_GCM"}"#,
+            ),
+            (
+                "audit_log.ndjson",
+                r#"{"event_type":"VAULT_ENCRYPTION_STATUS","run_id":"run-1","vault_id":"vault-1","details":{"encryption_at_rest":true,"algorithm":"XCHACHA20_POLY1305","key_storage":"MACOS_KEYCHAIN"}}"#,
+            ),
+            (
+                "run_manifest.json",
+                r#"{"run_id":"run-1","vault_id":"vault-1"}"#,
+            ),
+        ]);
+        let result = check_vault_crypto_policy_snapshot(&mut zip);
+        assert_eq!(result.result, "FAIL");
+        assert!(result.message.contains("missing VAULT_ENCRYPTION_STATUS"));
+
+        let mut contradictory_unused = archive(&[
+            (
+                "inputs_snapshot/policy_snapshot.json",
+                r#"{"encryption_at_rest":false,"encryption_algorithm":null}"#,
+            ),
+            (
+                "audit_log.ndjson",
+                r#"{"event_type":"VAULT_ENCRYPTION_STATUS","run_id":"run-1","vault_id":"vault-1","details":{"encryption_at_rest":true,"algorithm":"AES_256_GCM","key_storage":"MACOS_KEYCHAIN"}}"#,
+            ),
+            (
+                "run_manifest.json",
+                r#"{"run_id":"run-1","vault_id":"vault-1"}"#,
+            ),
+        ]);
+        let contradictory = check_vault_crypto_policy_snapshot(&mut contradictory_unused);
+        assert_eq!(contradictory.result, "FAIL");
+        assert!(contradictory
+            .message
+            .contains("snapshot says it was unused"));
+    }
+
+    #[test]
+    fn crypto_event_must_match_run_and_vault_identity() {
+        let policy = r#"{"encryption_at_rest":true,"encryption_algorithm":"AES_256_GCM"}"#;
+        let event = r#"{"event_type":"VAULT_ENCRYPTION_STATUS","run_id":"run-1","vault_id":"vault-1","details":{"encryption_at_rest":true,"algorithm":"AES_256_GCM","key_storage":"MACOS_KEYCHAIN"}}"#;
+        let manifest = r#"{"run_id":"run-1","vault_id":"vault-1"}"#;
+        let mut matching = archive(&[
+            ("inputs_snapshot/policy_snapshot.json", policy),
+            ("run_manifest.json", manifest),
+            ("audit_log.ndjson", event),
+        ]);
+        assert_eq!(
+            check_vault_crypto_policy_snapshot(&mut matching).result,
+            "PASS"
+        );
+
+        let wrong_run = event.replace("run-1", "run-other");
+        let mut wrong_run_archive = archive(&[
+            ("inputs_snapshot/policy_snapshot.json", policy),
+            ("run_manifest.json", manifest),
+            ("audit_log.ndjson", &wrong_run),
+        ]);
+        assert_eq!(
+            check_vault_crypto_policy_snapshot(&mut wrong_run_archive).result,
+            "FAIL"
+        );
+
+        let wrong_vault = event.replace("vault-1", "vault-other");
+        let mut wrong_vault_archive = archive(&[
+            ("inputs_snapshot/policy_snapshot.json", policy),
+            ("run_manifest.json", manifest),
+            ("audit_log.ndjson", &wrong_vault),
+        ]);
+        assert_eq!(
+            check_vault_crypto_policy_snapshot(&mut wrong_vault_archive).result,
+            "FAIL"
+        );
+    }
+
+    #[test]
+    fn encryption_fields_must_have_explicit_types() {
+        for snapshot in [
+            r#"{"encryption_algorithm":null}"#,
+            r#"{"encryption_at_rest":"false","encryption_algorithm":null}"#,
+            r#"{"encryption_at_rest":false,"encryption_algorithm":5}"#,
+        ] {
+            let mut zip = archive(&[("inputs_snapshot/policy_snapshot.json", snapshot)]);
+            assert_eq!(check_vault_crypto_policy_snapshot(&mut zip).result, "FAIL");
+        }
+    }
+
+    #[test]
+    fn model_endpoint_must_match_the_single_recorded_adapter_and_call() {
+        let snapshot = r#"{"adapter_endpoint":"http://127.0.0.1:11434","adapter_version":"1.0","model_id":"model-a","pinning_level":"VERSION_PINNED"}"#;
+        let call = r#"{"model_id":"model-a","adapter_version":"1.0"}"#;
+        let mut missing = archive(&[
+            ("inputs_snapshot/model_snapshot.json", snapshot),
+            (
+                "inputs_snapshot/network_snapshot.json",
+                r#"{"adapter_endpoints":[]}"#,
+            ),
+            (
+                "run_manifest.json",
+                r#"{"model_calls":[{"model_id":"model-a","adapter_version":"1.0"}]}"#,
+            ),
+        ]);
+        assert_eq!(check_run_snapshot_consistency(&mut missing).result, "FAIL");
+
+        let mut extra = archive(&[
+            ("inputs_snapshot/model_snapshot.json", snapshot),
+            (
+                "inputs_snapshot/network_snapshot.json",
+                r#"{"adapter_endpoints":[{"endpoint":"http://127.0.0.1:11434"},{"endpoint":"http://127.0.0.1:11435"}]}"#,
+            ),
+            (
+                "run_manifest.json",
+                r#"{"model_calls":[{"model_id":"model-a","adapter_version":"1.0"}]}"#,
+            ),
+        ]);
+        assert_eq!(check_run_snapshot_consistency(&mut extra).result, "FAIL");
+
+        let mut matching = archive(&[
+            ("inputs_snapshot/model_snapshot.json", snapshot),
+            (
+                "inputs_snapshot/network_snapshot.json",
+                r#"{"adapter_endpoints":[{"endpoint":"http://127.0.0.1:11434"}]}"#,
+            ),
+            (
+                "run_manifest.json",
+                &format!(r#"{{"model_calls":[{}]}}"#, call),
+            ),
+        ]);
+        assert_eq!(check_run_snapshot_consistency(&mut matching).result, "PASS");
+    }
+
+    #[test]
+    fn model_endpoint_uses_shared_literal_loopback_validation() {
+        for (endpoint, expected) in [
+            ("http://127.2.3.4:11434", "PASS"),
+            ("http://192.168.1.2:11434", "FAIL"),
+            ("http://127.0.0.1.evil:11434", "FAIL"),
+        ] {
+            let model = format!(
+                r#"{{"adapter_endpoint":"{endpoint}","adapter_version":"1.0","model_id":"model-a","pinning_level":"VERSION_PINNED"}}"#
+            );
+            let network = format!(
+                r#"{{"adapter_endpoints":[{{"endpoint":"{endpoint}","is_loopback":true}}]}}"#
+            );
+            let mut zip = archive(&[
+                ("inputs_snapshot/model_snapshot.json", &model),
+                ("inputs_snapshot/network_snapshot.json", &network),
+                (
+                    "run_manifest.json",
+                    r#"{"model_calls":[{"model_id":"model-a","adapter_version":"1.0"}]}"#,
+                ),
+            ]);
+            assert_eq!(check_run_snapshot_consistency(&mut zip).result, expected);
+        }
+    }
+
+    #[test]
+    fn unused_model_requires_explicit_model_and_adapter_arrays() {
+        let cases = [
+            (
+                r#"{"adapter_endpoints":[]}"#,
+                r#"{"model_calls":{}}"#,
+            ),
+            (
+                r#"{"adapter_endpoints":[]}"#,
+                r#"{}"#,
+            ),
+            (
+                r#"{}"#,
+                r#"{"model_calls":[]}"#,
+            ),
+        ];
+        for (network, manifest) in cases {
+            let mut zip = archive(&[
+                ("inputs_snapshot/model_snapshot.json", "null"),
+                ("inputs_snapshot/network_snapshot.json", network),
+                ("run_manifest.json", manifest),
+            ]);
+            assert_eq!(check_run_snapshot_consistency(&mut zip).result, "FAIL");
+        }
+    }
+
+    #[test]
+    fn declared_sha256_and_legacy_version_are_explicitly_classified() {
+        assert!(is_sha256_hex(&"a".repeat(64)));
+        assert!(!is_sha256_hex(&"A".repeat(64)));
+        assert!(!is_sha256_hex("demo_sha256"));
+        assert!(is_legacy_bundle_version("1.0.0"));
+        assert!(!is_legacy_bundle_version("1.1.0"));
+        assert!(!is_legacy_bundle_version("1.2.0"));
+    }
+
+    #[test]
+    fn malformed_declared_hash_is_rejected_from_artifact_hash_csv() {
+        let mut zip = archive(&[
+            (
+                "artifact_hashes.csv",
+                "artifact_id,bundle_rel_path,sha256,bytes\na,,demo_sha256,0\n",
+            ),
+            (
+                "inputs_snapshot/policy_snapshot.json",
+                r#"{"export_profile":{"inputs":"OMIT_INPUT_BYTES"}}"#,
+            ),
+            ("run_manifest.json", r#"{"inputs":[]}"#),
+            ("inputs_snapshot/artifact_list.json", r#"{"artifacts":[]}"#),
+        ]);
+        let result = super::check_artifact_hashes(&mut zip, &std::collections::BTreeSet::new());
+        assert_eq!(result.result, "FAIL");
+        assert!(result.message.contains("malformed declared sha256"));
+
+        let mut empty = archive(&[
+            (
+                "artifact_hashes.csv",
+                "artifact_id,bundle_rel_path,sha256,bytes\na,, ,0\n",
+            ),
+            (
+                "inputs_snapshot/policy_snapshot.json",
+                r#"{"export_profile":{"inputs":"OMIT_INPUT_BYTES"}}"#,
+            ),
+            ("run_manifest.json", r#"{"inputs":[]}"#),
+            ("inputs_snapshot/artifact_list.json", r#"{"artifacts":[]}"#),
+        ]);
+        assert_eq!(
+            super::check_artifact_hashes(&mut empty, &std::collections::BTreeSet::new()).result,
+            "FAIL"
+        );
+    }
+
+    #[test]
+    fn legacy_old_model_stamp_is_inspectable_but_never_truthful() {
+        let mut old_bundle = archive(&[
+            ("BUNDLE_INFO.json", r#"{"bundle_version":"1.0.0"}"#),
+            (
+                "inputs_snapshot/model_snapshot.json",
+                r#"{"adapter_endpoint":"http://127.0.0.1:11434","adapter_version":"1.0.0","model_id":"model-a","pinning_level":"VERSION_PINNED"}"#,
+            ),
+            (
+                "inputs_snapshot/network_snapshot.json",
+                r#"{"adapter_endpoints":[]}"#,
+            ),
+            ("run_manifest.json", r#"{"model_calls":[]}"#),
+        ]);
+        let info = super::read_zip_entry_json(&mut old_bundle, "BUNDLE_INFO.json").unwrap();
+        let legacy = info
+            .get("bundle_version")
+            .and_then(|value| value.as_str())
+            .map(is_legacy_bundle_version)
+            .unwrap();
+        let model_check = check_run_snapshot_consistency(&mut old_bundle);
+        assert_eq!(model_check.result, "FAIL");
+        let summary = ValidationSummary {
+            checklist_version: "test".to_string(),
+            policy: "STRICT".to_string(),
+            overall: overall_validation_status(&[model_check], legacy).to_string(),
+            checks: Vec::new(),
+        };
+        assert_eq!(summary.overall, "LEGACY_UNVERIFIABLE");
+        let unrelated_blocker =
+            super::fail("CHK.AUDIT.REQUIRED_KEYS_AND_CHAIN", "bad chain".to_string());
+        assert_eq!(
+            overall_validation_status(&[unrelated_blocker], legacy),
+            "FAIL"
+        );
+    }
+
+    #[test]
+    fn current_network_snapshot_must_declare_policy_source_consistently() {
+        let offline = r#"{"proof_source":"POLICY_DECLARATION","network_mode":"OFFLINE","proof_level":"OFFLINE_STRICT","allowlist":[],"ui_remote_fetch_disabled":true,"adapter_endpoints":[]}"#;
+        let mut current = archive(&[("inputs_snapshot/network_snapshot.json", offline)]);
+        assert_eq!(
+            check_network_proof_source(&mut current, false).result,
+            "PASS"
+        );
+
+        let ungrounded = r#"{"proof_source":"POLICY_DECLARATION","network_mode":"ONLINE_ALLOWLISTED","proof_level":"OFFLINE_STRICT","allowlist":[{}],"ui_remote_fetch_disabled":true,"adapter_endpoints":[]}"#;
+        let mut inconsistent = archive(&[("inputs_snapshot/network_snapshot.json", ungrounded)]);
+        assert_eq!(
+            check_network_proof_source(&mut inconsistent, false).result,
+            "FAIL"
+        );
+
+        let mut old = archive(&[(
+            "inputs_snapshot/network_snapshot.json",
+            r#"{"network_mode":"OFFLINE"}"#,
+        )]);
+        assert_eq!(check_network_proof_source(&mut old, true).result, "PASS");
+    }
 
     fn complete_v3_report(policy: PolicyMode) -> EvalReport {
         let policy_name = format!("{policy:?}");
@@ -1481,7 +2175,7 @@ mod tests {
         let missing_id = missing.gates.pop().expect("applicable gate").gate_id;
         let missing_error =
             validate_eval_report(&missing, "PASS", PolicyMode::STRICT, "evidenceos")
-            .expect_err("missing gate must fail");
+                .expect_err("missing gate must fail");
         assert!(missing_error.contains("missing applicable gates"));
         assert!(missing_error.contains(&missing_id));
 
@@ -1504,13 +2198,9 @@ mod tests {
 
         let mut overall_mismatch = complete_v3_report(PolicyMode::STRICT);
         overall_mismatch.overall_status = "WARN".to_string();
-        let overall_error = validate_eval_report(
-            &overall_mismatch,
-            "WARN",
-            PolicyMode::STRICT,
-            "evidenceos",
-        )
-        .expect_err("derived overall mismatch must fail");
+        let overall_error =
+            validate_eval_report(&overall_mismatch, "WARN", PolicyMode::STRICT, "evidenceos")
+                .expect_err("derived overall mismatch must fail");
         assert!(overall_error.contains("does not match gate results"));
 
         let report = complete_v3_report(PolicyMode::STRICT);
@@ -1524,35 +2214,23 @@ mod tests {
     fn v3_eval_report_rejects_registry_metadata_drift() {
         let mut category_drift = complete_v3_report(PolicyMode::STRICT);
         category_drift.gates[0].category = "OTHER".to_string();
-        let category_error = validate_eval_report(
-            &category_drift,
-            "PASS",
-            PolicyMode::STRICT,
-            "evidenceos",
-        )
-        .expect_err("category drift must fail");
+        let category_error =
+            validate_eval_report(&category_drift, "PASS", PolicyMode::STRICT, "evidenceos")
+                .expect_err("category drift must fail");
         assert!(category_error.contains("category mismatch"));
 
         let mut severity_drift = complete_v3_report(PolicyMode::STRICT);
         severity_drift.gates[0].severity = "MAJOR".to_string();
-        let severity_error = validate_eval_report(
-            &severity_drift,
-            "PASS",
-            PolicyMode::STRICT,
-            "evidenceos",
-        )
-        .expect_err("severity downgrade must fail");
+        let severity_error =
+            validate_eval_report(&severity_drift, "PASS", PolicyMode::STRICT, "evidenceos")
+                .expect_err("severity downgrade must fail");
         assert!(severity_error.contains("severity downgrade"));
 
         let mut evidence_drift = complete_v3_report(PolicyMode::STRICT);
         evidence_drift.gates[0].evidence_pointers.clear();
-        let evidence_error = validate_eval_report(
-            &evidence_drift,
-            "PASS",
-            PolicyMode::STRICT,
-            "evidenceos",
-        )
-        .expect_err("evidence pointer drift must fail");
+        let evidence_error =
+            validate_eval_report(&evidence_drift, "PASS", PolicyMode::STRICT, "evidenceos")
+                .expect_err("evidence pointer drift must fail");
         assert!(evidence_error.contains("evidence pointers do not match registry"));
     }
 
@@ -1578,25 +2256,17 @@ mod tests {
             .find(|gate| gate.gate_id == "AUDIT_HASH_CHAIN.VERIFY_V1")
             .expect("audit gate");
         audit_gate.status = "NOT_APPLICABLE".to_string();
-        let not_applicable_error = validate_eval_report(
-            &not_applicable,
-            "PASS",
-            PolicyMode::STRICT,
-            "evidenceos",
-        )
-        .expect_err("unapproved NOT_APPLICABLE must fail");
+        let not_applicable_error =
+            validate_eval_report(&not_applicable, "PASS", PolicyMode::STRICT, "evidenceos")
+                .expect_err("unapproved NOT_APPLICABLE must fail");
         assert!(not_applicable_error.contains("NOT_APPLICABLE is not allowed"));
 
         let mut blocker_failure = complete_v3_report(PolicyMode::STRICT);
         blocker_failure.gates[0].status = "FAIL".to_string();
         blocker_failure.overall_status = "FAIL".to_string();
-        let blocker_error = validate_eval_report(
-            &blocker_failure,
-            "FAIL",
-            PolicyMode::STRICT,
-            "evidenceos",
-        )
-        .expect_err("blocker failure cannot validate final bytes");
+        let blocker_error =
+            validate_eval_report(&blocker_failure, "FAIL", PolicyMode::STRICT, "evidenceos")
+                .expect_err("blocker failure cannot validate final bytes");
         assert!(blocker_error.contains("blocker gate failures"));
     }
 }

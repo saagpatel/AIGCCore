@@ -1,4 +1,3 @@
-use aigc_core::adapters::pinning::{ModelSnapshot, PinningLevel};
 use aigc_core::audit::event::{Actor, AuditEvent};
 use aigc_core::audit::log::AuditLog;
 use aigc_core::determinism::json_canonical;
@@ -10,7 +9,7 @@ use aigc_core::evidence_bundle::builder::EvidenceBundleBuilder;
 use aigc_core::evidence_bundle::schemas::*;
 use aigc_core::evidenceos::model::{CitationInput, EvidenceItem, NarrativeClaimInput};
 use aigc_core::evidenceos::workflow::{generate_evidenceos_artifacts, EvidenceOsRequest};
-use aigc_core::policy::network_snapshot::{AdapterEndpointSnapshot, NetworkSnapshot};
+use aigc_core::policy::network_snapshot::{NetworkProofSource, NetworkSnapshot};
 use aigc_core::policy::types::{InputExportProfile, NetworkMode, PolicyMode, ProofLevel};
 use aigc_core::validator::BundleValidator;
 use serde_json::json;
@@ -74,6 +73,75 @@ fn evidenceos_bundle_validates_and_is_deterministic() {
 }
 
 #[test]
+fn legacy_stamps_are_inspectable_and_current_forged_claims_fail() {
+    use aigc_core::adapters::pinning::{ModelSnapshot, PinningLevel};
+    use aigc_core::policy::network_snapshot::AdapterEndpointSnapshot;
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("bundle");
+    let zip = temp.path().join("bundle.zip");
+    let mut truthful = make_inputs(&root).unwrap();
+    EvidenceBundleBuilder::build_dir(&root, &truthful).unwrap();
+    EvidenceBundleBuilder::build_zip(&root, &zip).unwrap();
+    let eval = EvalRunner::new_v3().unwrap();
+    let gates = eval.run_all_for_bundle(&zip, PolicyMode::STRICT).unwrap();
+    truthful.eval_report = eval
+        .report_from_results(&gates, PolicyMode::STRICT, "evidenceos")
+        .unwrap();
+    let validate = |inputs: &EvidenceBundleInputs| {
+        EvidenceBundleBuilder::build_dir(&root, inputs).unwrap();
+        EvidenceBundleBuilder::build_zip(&root, &zip).unwrap();
+        BundleValidator::new_v3()
+            .validate_zip(&zip, PolicyMode::STRICT)
+            .unwrap()
+    };
+    assert_eq!(validate(&truthful).overall, "PASS");
+
+    let mut forged = truthful.clone();
+    forged.model_snapshot = Some(ModelSnapshot {
+        adapter_id: "local_adapter".into(),
+        adapter_version: "1.0.0".into(),
+        adapter_endpoint: "http://127.0.0.1:11434".into(),
+        model_id: "model-a".into(),
+        model_sha256: Some(sha256_hex(b"model-a")),
+        pinning_level: PinningLevel::CRYPTO_PINNED,
+    });
+    let rejected = validate(&forged);
+    assert_eq!(rejected.overall, "FAIL");
+    assert_eq!(
+        rejected.result_for_check("CHK.RUN.SNAPSHOT_CONSISTENCY").0,
+        "FAIL"
+    );
+
+    forged.bundle_info.bundle_version = "1.0.0".into();
+    forged.policy_snapshot.encryption_at_rest = true;
+    forged.policy_snapshot.encryption_algorithm = Some("XCHACHA20_POLY1305".into());
+    forged
+        .network_snapshot
+        .adapter_endpoints
+        .push(AdapterEndpointSnapshot {
+            endpoint: "http://127.0.0.1:11434".into(),
+            is_loopback: true,
+            validation_error: None,
+        });
+    let legacy = validate(&forged);
+    assert_eq!(legacy.overall, "LEGACY_UNVERIFIABLE");
+    assert_eq!(
+        legacy.result_for_check("CHK.RUN.SNAPSHOT_CONSISTENCY").0,
+        "FAIL"
+    );
+    assert_eq!(
+        legacy
+            .result_for_check("CHK.VAULT_CRYPTO.POLICY_SNAPSHOT")
+            .0,
+        "FAIL"
+    );
+
+    forged = truthful.clone();
+    forged.run_manifest.inputs[0].sha256 = "demo_sha256".into();
+    assert_eq!(validate(&forged).overall, "FAIL");
+}
+
+#[test]
 fn placeholder_eval_report_is_rejected_by_final_validation() {
     let temp = tempfile::tempdir().unwrap();
     let bundle_root = temp.path().join("placeholder_eval_bundle");
@@ -124,9 +192,10 @@ fn legacy_run_manifest_v1_is_inspectable_but_non_authorizing() {
         authority_check.message,
         "legacy RUN_MANIFEST_V1 is inspectable but non-authorizing; migrate to RUN_MANIFEST_V2 with explicit evidence authority"
     );
-    assert!(summary.checks.iter().any(|check| {
-        check.check_id == "CHK.BUNDLE.REQUIRED_FILES" && check.result == "PASS"
-    }));
+    assert!(summary
+        .checks
+        .iter()
+        .any(|check| { check.check_id == "CHK.BUNDLE.REQUIRED_FILES" && check.result == "PASS" }));
 }
 
 #[test]
@@ -166,7 +235,11 @@ fn remove_evidence_authority(bundle_root: &Path) {
         .expect("run manifest must be an object")
         .remove("evidence_authority");
     assert!(removed.is_some(), "fixture must begin with bound authority");
-    fs::write(&manifest_path, serde_json::to_vec_pretty(&manifest).unwrap()).unwrap();
+    fs::write(
+        &manifest_path,
+        serde_json::to_vec_pretty(&manifest).unwrap(),
+    )
+    .unwrap();
 }
 
 fn make_inputs(bundle_root: &Path) -> Result<EvidenceBundleInputs, Box<dyn std::error::Error>> {
@@ -180,6 +253,7 @@ fn make_inputs(bundle_root: &Path) -> Result<EvidenceBundleInputs, Box<dyn std::
     let pack_version = "1.0.0".to_string();
 
     let evidence_req = EvidenceOsRequest {
+        determinism_enabled: true,
         pack_id: pack_id.clone(),
         pack_version: pack_version.clone(),
         run_id: run_id.clone(),
@@ -235,15 +309,6 @@ fn make_inputs(bundle_root: &Path) -> Result<EvidenceBundleInputs, Box<dyn std::
                 "block_reason":"OFFLINE_MODE",
                 "request_hash_sha256": sha256_hex(b"blocked"),
                 "evidence_origin":"CONTROL_SIMULATION"
-            }),
-        ),
-        (
-            "VAULT_ENCRYPTION_STATUS",
-            Actor::System,
-            json!({
-                "encryption_at_rest": true,
-                "algorithm": "XCHACHA20_POLY1305",
-                "key_storage": "FILE_FALLBACK"
             }),
         ),
     ];
@@ -347,7 +412,7 @@ fn make_inputs(bundle_root: &Path) -> Result<EvidenceBundleInputs, Box<dyn std::
             },
         },
         bundle_info: BundleInfo {
-            bundle_version: "1.0.0".to_string(),
+            bundle_version: "1.1.0".to_string(),
             schema_versions: SchemaVersions {
                 run_manifest: "RUN_MANIFEST_V2".to_string(),
                 eval_report: "EVAL_REPORT_V1".to_string(),
@@ -388,28 +453,18 @@ fn make_inputs(bundle_root: &Path) -> Result<EvidenceBundleInputs, Box<dyn std::
             export_profile: ExportProfile {
                 inputs: InputExportProfile::HASH_ONLY,
             },
-            encryption_at_rest: true,
-            encryption_algorithm: "XCHACHA20_POLY1305".to_string(),
+            encryption_at_rest: false,
+            encryption_algorithm: None,
         },
         network_snapshot: NetworkSnapshot {
             network_mode: NetworkMode::OFFLINE,
             proof_level: ProofLevel::OFFLINE_STRICT,
+            proof_source: NetworkProofSource::POLICY_DECLARATION,
             allowlist: vec![],
             ui_remote_fetch_disabled: true,
-            adapter_endpoints: vec![AdapterEndpointSnapshot {
-                endpoint: "http://127.0.0.1:11434".to_string(),
-                is_loopback: true,
-                validation_error: None,
-            }],
+            adapter_endpoints: vec![],
         },
-        model_snapshot: ModelSnapshot {
-            adapter_id: "local_adapter".to_string(),
-            adapter_version: "1.0.0".to_string(),
-            adapter_endpoint: "http://127.0.0.1:11434".to_string(),
-            model_id: "model-a".to_string(),
-            model_sha256: Some(sha256_hex(b"model-a")),
-            pinning_level: PinningLevel::CRYPTO_PINNED,
-        },
+        model_snapshot: None,
         pack_id,
         pack_version,
         deliverables: pack_artifacts.deliverables,
