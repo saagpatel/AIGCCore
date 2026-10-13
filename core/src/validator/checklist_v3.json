@@ -1,5 +1,12 @@
 {
   "checklist_version": "bundle_validator_v3",
+  "resource_limits": {
+    "max_archive_bytes": 268435456,
+    "max_entry_count": 4096,
+    "max_entry_uncompressed_bytes": 67108864,
+    "max_total_uncompressed_bytes": 268435456,
+    "max_compression_ratio": 1000
+  },
   "checks": [
     {
       "check_id": "CHK.BUNDLE.REQUIRED_FILES",

@@ -11,6 +11,13 @@ use std::io::{Read, Seek};
 use std::path::Path;
 use zip::ZipArchive;
 
+/// Validator resource limits. Keep these aligned with the published checklist.
+pub const MAX_ARCHIVE_BYTES: u64 = 256 * 1024 * 1024;
+pub const MAX_ARCHIVE_ENTRIES: usize = 4096;
+pub const MAX_ENTRY_BYTES: u64 = 64 * 1024 * 1024;
+pub const MAX_TOTAL_UNCOMPRESSED_BYTES: u64 = 256 * 1024 * 1024;
+pub const MAX_COMPRESSION_RATIO: u64 = 1000;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CheckResult {
     pub check_id: String,
@@ -123,7 +130,25 @@ impl BundleValidator {
         };
 
         let file = File::open(bundle_zip)?;
+        let archive_bytes = file.metadata()?.len();
+        if archive_bytes > MAX_ARCHIVE_BYTES {
+            return Err(CoreError::Zip(format!(
+                "ARCHIVE_SIZE_LIMIT: {archive_bytes} exceeds {MAX_ARCHIVE_BYTES} bytes"
+            )));
+        }
         let mut zip = ZipArchive::new(file).map_err(|e| CoreError::Zip(e.to_string()))?;
+        let mut entry_limits = Vec::with_capacity(zip.len());
+        for index in 0..zip.len() {
+            let entry = zip
+                .by_index(index)
+                .map_err(|error| CoreError::Zip(error.to_string()))?;
+            entry_limits.push((
+                entry.name().to_string(),
+                entry.size(),
+                entry.compressed_size(),
+            ));
+        }
+        validate_archive_limits(archive_bytes, &entry_limits)?;
 
         // Build entry set for existence checks.
         let mut paths: BTreeSet<String> = BTreeSet::new();
@@ -221,6 +246,45 @@ impl BundleValidator {
     }
 }
 
+fn validate_archive_limits(archive_bytes: u64, entries: &[(String, u64, u64)]) -> CoreResult<()> {
+    if archive_bytes > MAX_ARCHIVE_BYTES {
+        return Err(CoreError::Zip(format!(
+            "ARCHIVE_SIZE_LIMIT: {archive_bytes} exceeds {MAX_ARCHIVE_BYTES} bytes"
+        )));
+    }
+    if entries.len() > MAX_ARCHIVE_ENTRIES {
+        return Err(CoreError::Zip(format!(
+            "ENTRY_COUNT_LIMIT: {} exceeds {MAX_ARCHIVE_ENTRIES}",
+            entries.len()
+        )));
+    }
+    let mut total_uncompressed = 0u64;
+    for (name, size, compressed_size) in entries {
+        if *size > MAX_ENTRY_BYTES {
+            return Err(CoreError::Zip(format!(
+                "ENTRY_SIZE_LIMIT: {name} exceeds {MAX_ENTRY_BYTES} bytes"
+            )));
+        }
+        total_uncompressed = total_uncompressed
+            .checked_add(*size)
+            .ok_or_else(|| CoreError::Zip("TOTAL_SIZE_LIMIT: uncompressed size overflow".into()))?;
+        if total_uncompressed > MAX_TOTAL_UNCOMPRESSED_BYTES {
+            return Err(CoreError::Zip(format!(
+                "TOTAL_SIZE_LIMIT: exceeds {MAX_TOTAL_UNCOMPRESSED_BYTES} bytes"
+            )));
+        }
+        if *size > 1024
+            && u128::from(*size)
+                > u128::from((*compressed_size).max(1)) * u128::from(MAX_COMPRESSION_RATIO)
+        {
+            return Err(CoreError::Zip(format!(
+                "COMPRESSION_RATIO_LIMIT: {name} exceeds {MAX_COMPRESSION_RATIO}:1"
+            )));
+        }
+    }
+    Ok(())
+}
+
 fn check_required_files(paths: &BTreeSet<String>) -> CheckResult {
     let must = [
         "BUNDLE_INFO.json",
@@ -294,11 +358,22 @@ fn read_zip_entry_bytes<R: Read + Seek>(
     zip: &mut ZipArchive<R>,
     path: &str,
 ) -> CoreResult<Vec<u8>> {
-    let mut f = zip
+    let f = zip
         .by_name(path)
         .map_err(|e| CoreError::Zip(e.to_string()))?;
+    if f.size() > MAX_ENTRY_BYTES {
+        return Err(CoreError::Zip(format!(
+            "ENTRY_SIZE_LIMIT: {} exceeds {MAX_ENTRY_BYTES} bytes",
+            f.name()
+        )));
+    }
     let mut out = Vec::new();
-    f.read_to_end(&mut out)?;
+    f.take(MAX_ENTRY_BYTES + 1).read_to_end(&mut out)?;
+    if out.len() as u64 > MAX_ENTRY_BYTES {
+        return Err(CoreError::Zip(format!(
+            "ENTRY_SIZE_LIMIT: exceeds {MAX_ENTRY_BYTES} bytes"
+        )));
+    }
     Ok(out)
 }
 
@@ -1811,7 +1886,8 @@ mod tests {
     use super::{
         check_model_pinning, check_network_proof_source, check_run_snapshot_consistency,
         check_vault_crypto_policy_snapshot, is_legacy_bundle_version, is_sha256_hex,
-        overall_validation_status, validate_eval_report, ValidationSummary,
+        overall_validation_status, validate_archive_limits, validate_eval_report,
+        ValidationSummary, MAX_ARCHIVE_ENTRIES, MAX_ENTRY_BYTES,
     };
     use crate::evidence_bundle::schemas::{EvalGateResult, EvalReport};
     use crate::policy::types::PolicyMode;
@@ -1851,6 +1927,36 @@ mod tests {
             check_model_pinning(&mut zip, PolicyMode::STRICT).result,
             "PASS"
         );
+    }
+
+    #[test]
+    fn zip_resource_limits_reject_count_entry_ratio_total_and_archive_size() {
+        let too_many = vec![("entry".to_string(), 1, 1); MAX_ARCHIVE_ENTRIES + 1];
+        assert!(validate_archive_limits(1, &too_many)
+            .unwrap_err()
+            .to_string()
+            .contains("ENTRY_COUNT_LIMIT"));
+
+        assert!(
+            validate_archive_limits(1, &[("large".into(), MAX_ENTRY_BYTES + 1, 1)])
+                .unwrap_err()
+                .to_string()
+                .contains("ENTRY_SIZE_LIMIT")
+        );
+        assert!(validate_archive_limits(1, &[("bomb".into(), 2_000, 1)])
+            .unwrap_err()
+            .to_string()
+            .contains("COMPRESSION_RATIO_LIMIT"));
+        assert!(
+            validate_archive_limits(1, &vec![("a".into(), MAX_ENTRY_BYTES, 100_000); 5])
+                .unwrap_err()
+                .to_string()
+                .contains("TOTAL_SIZE_LIMIT")
+        );
+        assert!(validate_archive_limits(super::MAX_ARCHIVE_BYTES + 1, &[])
+            .unwrap_err()
+            .to_string()
+            .contains("ARCHIVE_SIZE_LIMIT"));
     }
 
     #[test]
