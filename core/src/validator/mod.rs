@@ -1938,8 +1938,8 @@ fn fail(check_id: &str, msg: String) -> CheckResult {
 mod tests {
     use super::{
         check_model_pinning, check_network_proof_source, check_run_snapshot_consistency,
-        check_vault_crypto_policy_snapshot, is_legacy_bundle_version, is_sha256_hex,
-        overall_validation_status, validate_archive_limits, validate_eval_report,
+        check_vault_crypto_policy_snapshot, check_zip_determinism, is_legacy_bundle_version,
+        is_sha256_hex, overall_validation_status, validate_archive_limits, validate_eval_report,
         ValidationSummary, MAX_ARCHIVE_ENTRIES, MAX_ENTRY_BYTES,
     };
     use crate::evidence_bundle::schemas::{EvalGateResult, EvalReport};
@@ -1957,6 +1957,39 @@ mod tests {
             writer.write_all(contents.as_bytes()).unwrap();
         }
         ZipArchive::new(writer.finish().unwrap()).unwrap()
+    }
+
+    #[test]
+    fn zip_determinism_applies_its_rules_to_cp437_decoded_names() {
+        let mut bytes = archive(&[
+            ("données.json", "{}"),
+            (
+                "inputs_snapshot/policy_snapshot.json",
+                r#"{"determinism":{"enabled":true}}"#,
+            ),
+        ])
+        .into_inner()
+        .into_inner();
+        let accent = "é".as_bytes();
+        let mut patched = 0;
+        for index in 0..=bytes.len() - accent.len() {
+            if &bytes[index..index + accent.len()] == accent {
+                bytes[index..index + accent.len()].copy_from_slice(&[0xFF, 0xFE]);
+                patched += 1;
+            }
+        }
+        assert_eq!(patched, 2, "local and central header names both patched");
+        let mut zip = ZipArchive::new(Cursor::new(bytes)).unwrap();
+
+        // zip 9 decodes a non-UTF-8 name as CP437 (0xFF is a no-break space, 0xFE is
+        // a black square), so the name is readable and every packaging rule applies.
+        assert_eq!(
+            zip.by_index(0).unwrap().name().unwrap(),
+            "donn\u{a0}\u{25a0}es.json"
+        );
+        let check = check_zip_determinism(&mut zip);
+        assert_eq!(check.check_id, "CHK.DETERMINISM.ZIP_RULES");
+        assert_eq!(check.result, "PASS", "{}", check.message);
     }
 
     #[test]
