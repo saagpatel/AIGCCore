@@ -143,7 +143,10 @@ impl BundleValidator {
                 .by_index(index)
                 .map_err(|error| CoreError::Zip(error.to_string()))?;
             entry_limits.push((
-                entry.name().to_string(),
+                entry
+                    .name()
+                    .map_err(|error| CoreError::Zip(error.to_string()))?
+                    .into_owned(),
                 entry.size(),
                 entry.compressed_size(),
             ));
@@ -155,7 +158,11 @@ impl BundleValidator {
         let mut paths: BTreeSet<String> = BTreeSet::new();
         for i in 0..zip.len() {
             let f = zip.by_index(i).map_err(|e| CoreError::Zip(e.to_string()))?;
-            paths.insert(f.name().to_string());
+            paths.insert(
+                f.name()
+                    .map_err(|e| CoreError::Zip(e.to_string()))?
+                    .into_owned(),
+            );
         }
 
         let legacy_bundle = match read_zip_entry_json(&mut zip, "BUNDLE_INFO.json") {
@@ -296,7 +303,10 @@ fn verify_actual_decompressed_sizes<R: Read + Seek>(zip: &mut ZipArchive<R>) -> 
             .by_index(index)
             .map_err(|error| CoreError::Zip(error.to_string()))?;
         let declared = entry.size();
-        let name = entry.name().to_string();
+        let name = entry
+            .name()
+            .map_err(|error| CoreError::Zip(error.to_string()))?
+            .into_owned();
         let read = std::io::copy(
             &mut entry.take(declared.saturating_add(1)),
             &mut std::io::sink(),
@@ -393,14 +403,16 @@ fn read_zip_entry_bytes<R: Read + Seek>(
     let f = zip
         .by_name(path)
         .map_err(|e| CoreError::Zip(e.to_string()))?;
+    let name = f
+        .name()
+        .map_err(|e| CoreError::Zip(e.to_string()))?
+        .into_owned();
     if f.size() > MAX_ENTRY_BYTES {
         return Err(CoreError::Zip(format!(
-            "ENTRY_SIZE_LIMIT: {} exceeds {MAX_ENTRY_BYTES} bytes",
-            f.name()
+            "ENTRY_SIZE_LIMIT: {name} exceeds {MAX_ENTRY_BYTES} bytes"
         )));
     }
     let declared = f.size();
-    let name = f.name().to_string();
     let mut out = Vec::new();
     f.take(declared.saturating_add(1)).read_to_end(&mut out)?;
     if out.len() as u64 > declared {
@@ -1617,12 +1629,21 @@ fn check_zip_determinism<R: Read + Seek>(zip: &mut ZipArchive<R>) -> CheckResult
                 );
             }
         };
-        names.push(f.name().to_string());
+        let name = match f.name() {
+            Ok(name) => name.into_owned(),
+            Err(e) => {
+                return fail(
+                    "CHK.DETERMINISM.ZIP_RULES",
+                    format!("zip entry name error: {}", e),
+                );
+            }
+        };
+        names.push(name.clone());
 
         if f.is_file() && f.compression() != zip::CompressionMethod::Deflated {
             return fail(
                 "CHK.DETERMINISM.ZIP_RULES",
-                format!("entry {} is not DEFLATE-compressed", f.name()),
+                format!("entry {} is not DEFLATE-compressed", name),
             );
         }
         let lm = match f.last_modified() {
@@ -1630,14 +1651,14 @@ fn check_zip_determinism<R: Read + Seek>(zip: &mut ZipArchive<R>) -> CheckResult
             None => {
                 return fail(
                     "CHK.DETERMINISM.ZIP_RULES",
-                    format!("entry {} missing last_modified timestamp", f.name()),
+                    format!("entry {} missing last_modified timestamp", name),
                 );
             }
         };
         if lm != fixed_time {
             return fail(
                 "CHK.DETERMINISM.ZIP_RULES",
-                format!("entry {} has non-fixed timestamp", f.name()),
+                format!("entry {} has non-fixed timestamp", name),
             );
         }
 
@@ -1649,9 +1670,7 @@ fn check_zip_determinism<R: Read + Seek>(zip: &mut ZipArchive<R>) -> CheckResult
                     "CHK.DETERMINISM.ZIP_RULES",
                     format!(
                         "entry {} has mode {:o}, expected {:o}",
-                        f.name(),
-                        perm_bits,
-                        expected
+                        name, perm_bits, expected
                     ),
                 );
             }
@@ -1919,8 +1938,8 @@ fn fail(check_id: &str, msg: String) -> CheckResult {
 mod tests {
     use super::{
         check_model_pinning, check_network_proof_source, check_run_snapshot_consistency,
-        check_vault_crypto_policy_snapshot, is_legacy_bundle_version, is_sha256_hex,
-        overall_validation_status, validate_archive_limits, validate_eval_report,
+        check_vault_crypto_policy_snapshot, check_zip_determinism, is_legacy_bundle_version,
+        is_sha256_hex, overall_validation_status, validate_archive_limits, validate_eval_report,
         ValidationSummary, MAX_ARCHIVE_ENTRIES, MAX_ENTRY_BYTES,
     };
     use crate::evidence_bundle::schemas::{EvalGateResult, EvalReport};
@@ -1938,6 +1957,39 @@ mod tests {
             writer.write_all(contents.as_bytes()).unwrap();
         }
         ZipArchive::new(writer.finish().unwrap()).unwrap()
+    }
+
+    #[test]
+    fn zip_determinism_applies_its_rules_to_cp437_decoded_names() {
+        let mut bytes = archive(&[
+            ("données.json", "{}"),
+            (
+                "inputs_snapshot/policy_snapshot.json",
+                r#"{"determinism":{"enabled":true}}"#,
+            ),
+        ])
+        .into_inner()
+        .into_inner();
+        let accent = "é".as_bytes();
+        let mut patched = 0;
+        for index in 0..=bytes.len() - accent.len() {
+            if &bytes[index..index + accent.len()] == accent {
+                bytes[index..index + accent.len()].copy_from_slice(&[0xFF, 0xFE]);
+                patched += 1;
+            }
+        }
+        assert_eq!(patched, 2, "local and central header names both patched");
+        let mut zip = ZipArchive::new(Cursor::new(bytes)).unwrap();
+
+        // zip 9 decodes a non-UTF-8 name as CP437 (0xFF is a no-break space, 0xFE is
+        // a black square), so the name is readable and every packaging rule applies.
+        assert_eq!(
+            zip.by_index(0).unwrap().name().unwrap(),
+            "donn\u{a0}\u{25a0}es.json"
+        );
+        let check = check_zip_determinism(&mut zip);
+        assert_eq!(check.check_id, "CHK.DETERMINISM.ZIP_RULES");
+        assert_eq!(check.result, "PASS", "{}", check.message);
     }
 
     #[test]
