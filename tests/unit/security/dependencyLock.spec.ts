@@ -15,17 +15,18 @@ describe("dependency security overrides", () => {
     const workspace = readRepoFile("pnpm-workspace.yaml");
     const lockfile = readRepoFile("pnpm-lock.yaml");
 
-    expect(workspace).toContain("body-parser: 1.20.6");
+    expect(workspace).toContain("body-parser: 1.20.9");
     expect(workspace).toContain("nanoid: 3.3.18");
     expect(workspace).toContain("proxy-agent: 8.0.2");
     expect(workspace).toContain('"@puppeteer/browsers": 3.2.1');
-    expect(lockfile).toContain("body-parser: 1.20.6");
+    expect(lockfile).toContain("body-parser: 1.20.9");
     expect(lockfile).toContain("nanoid: 3.3.18");
     expect(lockfile).toContain("proxy-agent: 8.0.2");
     expect(lockfile).toMatch(/["@']@puppeteer\/browsers["@']:\s*3\.2\.1/);
     expect(lockfile).toMatch(/["@']@puppeteer\/browsers@3\.2\.1["@']:/);
-    expect(lockfile).not.toMatch(/body-parser@1\.20\.5:/);
+    expect(lockfile).not.toMatch(/body-parser@1\.20\.[0-8][:(]/);
     expect(lockfile).not.toMatch(/extract-zip@/);
+    expect(lockfile).not.toMatch(/zod@3\./);
     expect(lockfile).not.toMatch(/nanoid@3\.3\.17:/);
     expect(lockfile).not.toMatch(/'@puppeteer\/browsers': 2\./);
   });
