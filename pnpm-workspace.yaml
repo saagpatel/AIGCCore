@@ -47,8 +47,9 @@ overrides:
   browserslist: 4.28.7
   # Held at 4.22.2; re-locking without it resolves 4.22.3. Remove once 4.22.3 or later is verified here.
   express: 4.22.2
-  # Forces the patched release; consumers otherwise resolve 3.1.8. Remove when every consumer requires >=4.1.5.
-  fast-uri: 4.1.5
+  # Forces the patched release (GHSA-w74x-v6f9-j3xg, GHSA-xhq7-xmqj-769h, GHSA-wjr9-j795-jxcr, GHSA-333x-w4r6-6crp).
+  # Remove when every consumer requires >=4.2.3.
+  fast-uri: 4.2.3
   # Held at 10.7.1; re-locking without it resolves 10.7.4. Remove once 10.7.4 or later is verified here.
   ip-address: 10.7.1
   # Forces the patched release; consumers otherwise resolve 3.15.2 and 4.3.2. Remove when every consumer requires >=5.4.1.
@@ -71,8 +72,8 @@ overrides:
   proxy-agent: 8.0.2
   # Forces the current release; consumers otherwise resolve 2.13.2. Remove when every consumer requires >=3.2.1.
   "@puppeteer/browsers": 3.2.1
-  # Forces the patched release; consumers otherwise resolve 6.15.3. Remove when every consumer requires >=6.16.0.
-  qs: 6.16.0
+  # Forces the patched release (GHSA-6pq8-jhm2-2vcw). Remove when every consumer requires >=6.16.1.
+  qs: 6.16.1
   # Forces the patched release; consumers otherwise resolve 0.0.33 and 0.1.0. Remove when every consumer requires >=0.2.7.
   tmp: 0.2.7
   # Forces the patched release; consumers otherwise resolve 8.3.2. Remove when every consumer requires >=14.0.1.
