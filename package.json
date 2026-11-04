@@ -67,7 +67,7 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.14.0",
-    "@commitlint/cli": "^19.8.1",
+    "@commitlint/cli": "^21.2.4",
     "@commitlint/config-conventional": "^19.8.1",
     "@commitlint/cz-commitlint": "^19.8.1",
     "@eslint/js": "9.39.5",
@@ -98,7 +98,7 @@
     "typescript": "6.0.3",
     "vite": "8.3.5",
     "vitest": "5.0.5",
-    "web-vitals": "^5.3.0"
+    "web-vitals": "^6.2.3"
   },
   "config": {
     "commitizen": {
