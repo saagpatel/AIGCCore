@@ -329,6 +329,48 @@ fn audit_open_waits_for_an_in_flight_append_lock() {
 }
 
 #[test]
+fn audit_snapshot_waits_for_append_and_returns_complete_verified_chain() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("audit.ndjson");
+    let mut log = AuditLog::open_or_create(&path).unwrap();
+    log.append(run_created()).unwrap();
+    let holder = fs::OpenOptions::new().append(true).open(&path).unwrap();
+    holder.lock().unwrap();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let reader = std::thread::spawn(move || sender.send(log.read_all_ndjson()).unwrap());
+    assert!(receiver
+        .recv_timeout(std::time::Duration::from_millis(300))
+        .is_err());
+    holder.unlock().unwrap();
+    let contents = receiver
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .unwrap()
+        .unwrap();
+    assert_eq!(contents.lines().count(), 1);
+    assert!(contents.ends_with('\n'));
+    reader.join().unwrap();
+}
+
+#[test]
+fn audit_snapshot_rejects_post_open_corruption_and_unterminated_tail() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("audit.ndjson");
+    let mut log = AuditLog::open_or_create(&path).unwrap();
+    log.append(run_created()).unwrap();
+    let original = fs::read_to_string(&path).unwrap();
+    fs::write(&path, original.replace("RUN_CREATED", "RUN_COMPLETED")).unwrap();
+    assert!(log.read_all_ndjson().is_err());
+    fs::write(&path, original.trim_end_matches('\n')).unwrap();
+    assert!(log
+        .read_all_ndjson()
+        .unwrap_err()
+        .to_string()
+        .contains("AUDIT_UNTERMINATED_TAIL"));
+    fs::write(&path, &original).unwrap();
+    assert_eq!(log.read_all_ndjson().unwrap(), original);
+}
+
+#[test]
 fn audit_open_error_names_the_operation_and_path() {
     let temp = tempfile::tempdir().unwrap();
     // A regular file where the parent directory should be.
