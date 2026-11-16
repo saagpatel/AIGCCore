@@ -102,7 +102,28 @@ impl AuditLog {
     }
 
     pub fn read_all_ndjson(&self) -> CoreResult<String> {
-        Ok(fs::read_to_string(&self.path)?)
+        let mut file = OpenOptions::new()
+            .read(true)
+            .open(&self.path)
+            .map_err(|e| CoreError::io("open audit log", &self.path, e))?;
+        file.lock_shared()
+            .map_err(|e| CoreError::io("lock audit log", &self.path, e))?;
+        let result = (|| {
+            let mut contents = String::new();
+            file.read_to_string(&mut contents)
+                .map_err(|e| CoreError::io("read audit log", &self.path, e))?;
+            if !contents.is_empty() && !contents.ends_with('\n') {
+                return Err(CoreError::InvalidInput(
+                    "AUDIT_UNTERMINATED_TAIL: refusing to export an incomplete final record".into(),
+                ));
+            }
+            verify_ndjson(&contents)?;
+            Ok(contents)
+        })();
+        let unlock = file.unlock();
+        let contents = result?;
+        unlock.map_err(|e| CoreError::io("unlock audit log", &self.path, e))?;
+        Ok(contents)
     }
 }
 
