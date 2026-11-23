@@ -2,16 +2,16 @@
 
 [![Rust](https://img.shields.io/badge/Rust-dea584?style=flat-square&logo=rust&logoColor=white)](#) [![TypeScript](https://img.shields.io/badge/TypeScript-3178c6?style=flat-square&logo=typescript&logoColor=white)](#) [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](#)
 
-> Most AI apps leak data by default and audit by accident. AIGCCore flips that — offline-first, hash-chained audit trail, deterministic artifact serialization
+> Offline-first governance, a hash-chained audit trail, and deterministic artifact serialization.
 
 AIGCCore is a local-first governance and audit kernel for privacy-first desktop AI applications, with EvidenceOS as its sole pack. EvidenceOS maps evidence to capability-based controls and produces citation-grounded exports through the kernel's deterministic bundle and audit pipeline. The scope decision is recorded in [ADR 0011](docs/adr/0011-scope-kernel-and-evidenceos.md).
 
 ## Features
 
-- **Offline-by-default enforcement** — the app runs fully offline; any online capability is explicitly gated, network egress is allowlisted, and local model adapters are restricted to literal IPv4 loopback addresses or ::1
+- **Offline-by-default enforcement** — EvidenceOS exports run locally. The webview configuration sets `connect-src 'self'`, and adapter endpoints must use literal IPv4 loopback addresses or `::1`.
 - **Deterministic outputs** — canonical JSON and ZIP serialization are deterministic for identical bundle contents; runtime audit timestamps can change complete bundle hashes between runs
 - **Hash-chained audit trail** — recorded audit events are canonicalized and hash-chained; local verification detects edits inconsistent with the stored hash chain without an external service
-- **Evidence Bundle v1 exports** — locked bundle contract includes all artifacts, hashes, and metadata needed for third-party verification
+- **Evidence Bundle v1 exports** — each ZIP contains the generated deliverables, input and output hashes, run metadata, and audit log for local verification
 - **Eval gates** — stable-ID quality and security correctness gates run before any bundle export is finalized
 - **Fuzz/property tests** — a cargo-fuzz target exercises the Rust authority-integrity loopback policy boundary; fast-check property tests cover the UI request handoff before Rust validation
 
@@ -29,10 +29,10 @@ plan and closure criteria live in [`docs/openssf-best-practices.md`](docs/openss
 - Node.js **26.11.1**, pinned in `.node-version`; the supported major is 26.
 - pnpm **11.28.5**, pinned by `packageManager` in `package.json`.
 - Make and the [Tauri platform prerequisites](https://tauri.app/start/prerequisites/)
-  for macOS, Windows, or Linux. On Windows, use a Make-compatible shell.
+  for macOS, Windows, or Linux. On Windows, run Make with a POSIX shell available.
 
-After cloning, one command installs the committed dependency graph and Chromium,
-then checks every shipped language surface:
+From the repository root, run setup and checks with network access to download
+dependencies and Chromium:
 
 ```bash
 make setup && make check
@@ -41,7 +41,8 @@ make setup && make check
 `make setup` uses only frozen pnpm installs. `make check` checks Rust formatting
 and Clippy, lint/typecheck, Rust and JS tests, authority integrity, integration
 gates, and UI regression without rewriting source or lockfiles. `make test`
-runs just the tests; `make build` builds the desktop app. Native platform
+runs just the tests. On macOS and Linux, `make build` builds the desktop app.
+On Windows, run `pnpm exec tauri build` from the repository root. Native platform
 dependencies must be installed first; Linux browser hosts may additionally need
 `pnpm exec playwright install-deps chromium`.
 
@@ -61,12 +62,16 @@ pnpm lean:dev
 # Run tests
 pnpm test
 
-# Run the authority-integrity loopback policy fuzzer
+# Optional fuzzer example for x86-64 or ARM64 Unix
+# Requires nightly Rust and a C++17-capable compiler.
 cargo install cargo-fuzz
-cargo fuzz run authority_integrity_loopback
+cargo +nightly fuzz run authority_integrity_loopback
 
-# Production build
-pnpm tauri build
+# Desktop build on macOS (.app) or Linux
+pnpm build
+
+# Desktop build on Windows
+pnpm exec tauri build
 
 # Production macOS direct-distribution release
 pnpm release:macos
@@ -77,7 +82,7 @@ pnpm clean:heavy
 
 `pnpm release:macos` is the only production macOS distribution path. It
 requires a usable Developer ID identity plus complete Apple notarization
-credentials, builds the app separately in a non-File-Provider Cargo target,
+credentials, builds the app in a temporary Cargo target by default,
 normalizes unsafe extended attributes, packages a metadata-clean DMG, mounts
 the image to verify the embedded app, and requires Gatekeeper and stapled-ticket
 validation. The multi-platform release workflow uses this path for macOS;
@@ -100,7 +105,7 @@ hash chaining, determinism enforcement, and bundle assembly.
 | -------------- | ------------------------------------------------------------------------------------------------------ |
 | Desktop shell  | Tauri 2.12                                                                                             |
 | Core logic     | Rust (aes-gcm, sha2, serde)                                                                            |
-| UI             | React 19.3 + TypeScript 5.9                                                                            |
+| UI             | React 19.3 + TypeScript 6.0                                                                            |
 | Build          | Vite 8.3                                                                                               |
 | Storage        | Vault library in the core crate (SQLite bytes and blob artifacts); the desktop app does not use it yet |
 | Cryptography   | AES-256-GCM, XChaCha20-Poly1305, SHA-256                                                               |
