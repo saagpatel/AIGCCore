@@ -41,7 +41,8 @@ make setup && make check
 `make setup` uses only frozen pnpm installs. `make check` checks Rust formatting
 and Clippy, lint/typecheck, Rust and JS tests, authority integrity, integration
 gates, and UI regression without rewriting source or lockfiles. `make test`
-runs just the tests; `make build` builds the desktop app. Native platform
+runs just the tests. On macOS and Linux, `make build` builds the desktop app.
+On Windows, run `pnpm exec tauri build` from the repository root. Native platform
 dependencies must be installed first; Linux browser hosts may additionally need
 `pnpm exec playwright install-deps chromium`.
 
@@ -61,12 +62,16 @@ pnpm lean:dev
 # Run tests
 pnpm test
 
-# Optional fuzzer (requires nightly Rust and a C++11 compiler on x86-64 or ARM64 Unix)
+# Optional fuzzer example for x86-64 or ARM64 Unix
+# Requires nightly Rust and a C++17-capable compiler.
 cargo install cargo-fuzz
 cargo +nightly fuzz run authority_integrity_loopback
 
-# Desktop build (.app on macOS)
+# Desktop build on macOS (.app) or Linux
 pnpm build
+
+# Desktop build on Windows
+pnpm exec tauri build
 
 # Production macOS direct-distribution release
 pnpm release:macos
